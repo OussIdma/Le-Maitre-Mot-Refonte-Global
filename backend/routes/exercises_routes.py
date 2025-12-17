@@ -701,9 +701,10 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 raise HTTPException(
                     status_code=422,
                     detail={
+                        "error_code": "NO_EXERCISE_AVAILABLE",
                         "error": "no_tests_dyn_exercise_found",
-                        "message": f"Aucun exercice dynamique trouvé pour offer='{request.offer}' et difficulty='{request.difficulte}'",
-                        "hint": "Vérifiez les filtres ou utilisez /generate/batch/tests_dyn pour les lots"
+                        "message": f"Aucun exercice disponible pour offer='{request.offer}' et difficulty='{request.difficulte}'. Le fallback vers 'free' a été tenté mais aucun exercice n'a été trouvé.",
+                        "hint": "Vérifiez les filtres (difficulty) ou utilisez /generate/batch/tests_dyn pour les lots"
                     }
                 )
             

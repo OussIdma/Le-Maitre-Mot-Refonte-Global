@@ -127,6 +127,9 @@ def get_tests_dyn_exercises(
 ) -> List[Dict[str, Any]]:
     """
     Filtre les exercices selon les critères.
+    
+    IMPORTANT: Si offer="pro" mais qu'aucun exercice "pro" n'existe,
+    on fait un fallback explicite vers "free" pour éviter un pool vide.
     """
     exercises = TESTS_DYN_EXERCISES
     
@@ -135,7 +138,13 @@ def get_tests_dyn_exercises(
         if offer == "free":
             exercises = [ex for ex in exercises if ex["offer"] == "free"]
         elif offer == "pro":
-            exercises = [ex for ex in exercises if ex["offer"] == "pro"]
+            # Filtrer les exercices "pro"
+            pro_exercises = [ex for ex in exercises if ex["offer"] == "pro"]
+            # Fallback explicite: si aucun exercice "pro", utiliser "free"
+            if not pro_exercises:
+                exercises = [ex for ex in exercises if ex["offer"] == "free"]
+            else:
+                exercises = pro_exercises
         # Si offer est autre chose, on garde tous les exercices (comportement par défaut)
     else:
         exercises = [ex for ex in exercises if ex["offer"] == "free"]
@@ -152,16 +161,22 @@ def get_random_tests_dyn_exercise(
     difficulty: Optional[str] = None,
     seed: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
-    """Sélectionne UN exercice aléatoire."""
+    """
+    Sélectionne UN exercice de manière déterministe.
+    
+    Utilise random.Random(seed) pour éviter les effets de bord du random.seed() global.
+    """
     available = get_tests_dyn_exercises(offer=offer, difficulty=difficulty)
     
     if not available:
         return None
     
+    # Utiliser random.Random(seed) pour un déterminisme isolé
     if seed is not None:
-        random.seed(seed)
-    
-    return random.choice(available)
+        rng = random.Random(seed)
+        return rng.choice(available)
+    else:
+        return random.choice(available)
 
 
 def get_tests_dyn_batch(
@@ -172,17 +187,22 @@ def get_tests_dyn_batch(
 ) -> tuple:
     """
     Retourne un batch d'exercices sans doublons.
+    
+    Utilise random.Random(seed) pour un déterminisme isolé.
     """
     available = get_tests_dyn_exercises(offer=offer, difficulty=difficulty)
     
     if not available:
         return [], {"requested": count, "available": 0, "returned": 0}
     
+    # Utiliser random.Random(seed) pour un déterminisme isolé
     if seed is not None:
-        random.seed(seed)
-    
-    shuffled = available.copy()
-    random.shuffle(shuffled)
+        rng = random.Random(seed)
+        shuffled = available.copy()
+        rng.shuffle(shuffled)
+    else:
+        shuffled = available.copy()
+        random.shuffle(shuffled)
     
     actual_count = min(count, len(shuffled))
     selected = shuffled[:actual_count]

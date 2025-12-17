@@ -141,39 +141,32 @@ def generate_tests_dyn_exercise(
     Génère UN exercice dynamique.
     
     Args:
-        offer: "free" ou "pro"
+        offer: "free" ou "pro" (fallback automatique vers "free" si aucun exercice "pro")
         difficulty: "facile", "moyen", "difficile"
-        seed: Graine pour reproductibilité
+        seed: Graine pour reproductibilité (utilisée tel quel, sans dérivation)
     
     Returns:
-        Exercice formaté pour l'API ou None
+        Exercice formaté pour l'API ou None si aucun exercice disponible
     """
     offer = (offer or "free").lower()
     if difficulty:
         difficulty = difficulty.lower()
     
-    # Sélectionner un template
+    # Sélectionner un template (le fallback pro→free est géré dans get_tests_dyn_exercises)
     exercise_template = get_random_tests_dyn_exercise(
         offer=offer,
         difficulty=difficulty,
         seed=seed
     )
     
-    # Fallback: si aucun exercice trouvé avec l'offer demandé, essayer "free"
-    if not exercise_template and offer == "pro":
-        exercise_template = get_random_tests_dyn_exercise(
-            offer="free",
-            difficulty=difficulty,
-            seed=seed
-        )
-    
     if not exercise_template:
         return None
     
     timestamp = int(time.time() * 1000)
     
-    # Utiliser un seed dérivé pour le générateur
-    gen_seed = (seed or timestamp) + exercise_template["id"]
+    # Utiliser le seed tel quel pour garantir le déterminisme
+    # Même seed + mêmes params = même résultat
+    gen_seed = seed if seed is not None else timestamp
     
     return format_dynamic_exercise(exercise_template, timestamp, seed=gen_seed)
 
@@ -223,8 +216,9 @@ def generate_tests_dyn_batch(
     exercises = []
     
     for i, template in enumerate(templates):
-        # Seed unique pour chaque exercice
-        ex_seed = (seed or timestamp) + i * 1000 + template["id"]
+        # Seed unique pour chaque exercice, mais déterministe
+        # Utiliser seed + i pour garantir l'unicité tout en restant déterministe
+        ex_seed = (seed + i) if seed is not None else (timestamp + i)
         
         formatted = format_dynamic_exercise(template, timestamp + i, seed=ex_seed)
         exercises.append(formatted)

@@ -530,7 +530,16 @@ const ExerciseGeneratorPage = () => {
       // ========================================================================
       // AUTRES CHAPITRES: Comportement existant (variation single)
       // ========================================================================
-      const seed = Date.now() + Math.random() * 1000;
+      // Seed déterministe et reproductible (utiliser crypto si disponible, sinon Math.random)
+      let seed;
+      if (window.crypto && window.crypto.getRandomValues) {
+        const array = new Uint32Array(1);
+        window.crypto.getRandomValues(array);
+        seed = array[0];
+      } else {
+        // Fallback: utiliser timestamp + index pour un seed unique mais stable
+        seed = Date.now() + index * 1000;
+      }
       
       // IMPORTANT: Pour une variation, on doit respecter le type de l'exercice COURANT
       // Si l'exercice courant est PREMIUM, la variation doit aussi être PREMIUM
@@ -548,11 +557,13 @@ const ExerciseGeneratorPage = () => {
       // Sinon, on utilise le statut PRO de l'utilisateur pour les nouvelles générations
       if (isCurrentPremium) {
         payload.offer = "pro";
-        console.log('🔄 Variation PREMIUM demandée (exercice courant est PREMIUM)');
+        console.log('🔄 Variation PREMIUM demandée (exercice courant est PREMIUM), seed:', seed);
       } else if (isPro) {
         // Utilisateur PRO mais exercice standard → génération standard (pas de forçage PREMIUM)
         // On NE MET PAS offer: "pro" pour garder la cohérence avec l'exercice d'origine
-        console.log('🔄 Variation STANDARD demandée (exercice courant est standard)');
+        console.log('🔄 Variation STANDARD demandée (exercice courant est standard), seed:', seed);
+      } else {
+        console.log('🔄 Variation STANDARD demandée, seed:', seed);
       }
       
       const response = await axios.post(`${API_V1}/generate`, payload);
@@ -565,7 +576,37 @@ const ExerciseGeneratorPage = () => {
       
     } catch (error) {
       console.error("Erreur lors de la génération de variation:", error);
-      setError("Erreur lors de la génération de la variation");
+      
+      // Parsing robuste de l'erreur backend
+      let errorMessage = "Erreur lors de la génération de la variation";
+      
+      if (error.response?.data) {
+        const data = error.response.data;
+        
+        // Format nouveau JSON-safe : {error_code, message, ...}
+        if (data.message) {
+          errorMessage = data.message;
+        }
+        // Format FastAPI legacy : {detail: {message, ...} ou {detail: "string"}
+        else if (data.detail) {
+          if (typeof data.detail === 'string') {
+            errorMessage = data.detail;
+          } else if (data.detail && data.detail.message) {
+            errorMessage = data.detail.message;
+          } else if (data.detail && typeof data.detail === 'object') {
+            // Essayer d'extraire un message lisible
+            errorMessage = JSON.stringify(data.detail);
+          }
+        }
+        // Format autre
+        else if (data.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoadingVariation(false);
     }
