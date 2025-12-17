@@ -74,6 +74,29 @@ def format_dynamic_exercise(
     # Fusionner variables et results pour le rendu
     all_vars = {**variables, **results}
     
+    # Mapping temporaire pour compatibilité template/générateur
+    # Le générateur peut produire triangle (base/hauteur) ou rectangle (longueur/largeur)
+    # Les templates peuvent attendre l'autre format, donc on mappe dans les deux sens
+    # Mapping triangle → rectangle (si générateur produit triangle mais template attend rectangle)
+    if "base_initiale" in all_vars and "longueur_initiale" not in all_vars:
+        all_vars["longueur_initiale"] = all_vars["base_initiale"]
+    if "hauteur_initiale" in all_vars and "largeur_initiale" not in all_vars:
+        all_vars["largeur_initiale"] = all_vars["hauteur_initiale"]
+    if "base_finale" in all_vars and "longueur_finale" not in all_vars:
+        all_vars["longueur_finale"] = all_vars["base_finale"]
+    if "hauteur_finale" in all_vars and "largeur_finale" not in all_vars:
+        all_vars["largeur_finale"] = all_vars["hauteur_finale"]
+    
+    # Mapping rectangle → triangle (si générateur produit rectangle mais template attend triangle)
+    if "longueur_initiale" in all_vars and "base_initiale" not in all_vars:
+        all_vars["base_initiale"] = all_vars["longueur_initiale"]
+    if "largeur_initiale" in all_vars and "hauteur_initiale" not in all_vars:
+        all_vars["hauteur_initiale"] = all_vars["largeur_initiale"]
+    if "longueur_finale" in all_vars and "base_finale" not in all_vars:
+        all_vars["base_finale"] = all_vars["longueur_finale"]
+    if "largeur_finale" in all_vars and "hauteur_finale" not in all_vars:
+        all_vars["hauteur_finale"] = all_vars["largeur_finale"]
+    
     enonce_html = render_template(enonce_template, all_vars)
     solution_html = render_template(solution_template, all_vars)
     
