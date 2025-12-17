@@ -404,12 +404,35 @@ const ExerciseGeneratorPage = () => {
     } catch (error) {
       console.error("Erreur lors de la génération:", error);
       
-      if (error.response?.status === 422) {
-        const detail = error.response.data.detail;
-        setError(detail.message || "Chapitre invalide ou non disponible");
-      } else {
-        setError(error.message || "Erreur lors de la génération des exercices");
+      // Gestion défensive des erreurs : supporter plusieurs formats
+      let errorMessage = "Erreur lors de la génération des exercices";
+      
+      if (error.response?.data) {
+        const data = error.response.data;
+        
+        // Format nouveau JSON-safe : {success: false, message, error_code, details}
+        if (data.message) {
+          errorMessage = data.message;
+        }
+        // Format FastAPI legacy : {detail: {message, ...} ou {detail: "string"}
+        else if (data.detail) {
+          if (typeof data.detail === 'string') {
+            errorMessage = data.detail;
+          } else if (data.detail && data.detail.message) {
+            errorMessage = data.detail.message;
+          } else {
+            errorMessage = "Chapitre invalide ou non disponible";
+          }
+        }
+        // Format autre
+        else if (data.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
