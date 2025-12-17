@@ -159,6 +159,14 @@ def generate_tests_dyn_exercise(
         seed=seed
     )
     
+    # Fallback: si aucun exercice trouvé avec l'offer demandé, essayer "free"
+    if not exercise_template and offer == "pro":
+        exercise_template = get_random_tests_dyn_exercise(
+            offer="free",
+            difficulty=difficulty,
+            seed=seed
+        )
+    
     if not exercise_template:
         return None
     

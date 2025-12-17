@@ -134,6 +134,9 @@ def get_tests_dyn_exercises(
         offer = offer.lower()
         if offer == "free":
             exercises = [ex for ex in exercises if ex["offer"] == "free"]
+        elif offer == "pro":
+            exercises = [ex for ex in exercises if ex["offer"] == "pro"]
+        # Si offer est autre chose, on garde tous les exercices (comportement par défaut)
     else:
         exercises = [ex for ex in exercises if ex["offer"] == "free"]
     
