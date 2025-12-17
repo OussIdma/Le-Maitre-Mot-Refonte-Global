@@ -1,6 +1,9 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Depends, BackgroundTasks, Request, Form, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request as StarletteRequest
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -395,6 +398,78 @@ db = client[os.environ['DB_NAME']]
 
 # Create the main app without a prefix
 app = FastAPI()
+
+# ============================================================================
+# GLOBAL EXCEPTION HANDLERS - Garantir JSON même en cas d'erreur non catchée
+# ============================================================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: StarletteRequest, exc: Exception):
+    """
+    Handler global pour toutes les exceptions non catchées.
+    Garantit que toute erreur renvoie du JSON structuré, jamais du HTML/text.
+    """
+    import traceback
+    from backend.logger import get_logger
+    
+    logger = get_logger()
+    logger.error(f"❌ Unhandled exception: {type(exc).__name__}: {str(exc)}", exc_info=True)
+    
+    # Si c'est déjà une HTTPException, la traiter séparément
+    if isinstance(exc, (HTTPException, StarletteHTTPException)):
+        detail = exc.detail if hasattr(exc, 'detail') else str(exc)
+        status_code = exc.status_code if hasattr(exc, 'status_code') else 500
+        
+        # Si detail est déjà un dict, l'utiliser tel quel
+        if isinstance(detail, dict):
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "error_code": detail.get("error_code", detail.get("error", "http_error")),
+                    "error": detail.get("error", "http_error"),
+                    "message": detail.get("message", str(detail)),
+                    "details": detail
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "error_code": "HTTP_ERROR",
+                    "error": "http_error",
+                    "message": str(detail),
+                    "details": None
+                }
+            )
+    
+    # Exception générique non catchée
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_code": "INTERNAL_SERVER_ERROR",
+            "error": "internal_server_error",
+            "message": "Une erreur interne s'est produite",
+            "details": str(exc)
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: StarletteRequest, exc: RequestValidationError):
+    """
+    Handler pour les erreurs de validation Pydantic.
+    Garantit du JSON structuré.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_code": "VALIDATION_ERROR",
+            "error": "validation_error",
+            "message": "Erreur de validation des paramètres",
+            "details": exc.errors()
+        }
+    )
+
 
 # Create uploads directory and mount static files
 uploads_dir = ROOT_DIR / "uploads"

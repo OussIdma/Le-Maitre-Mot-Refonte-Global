@@ -39,18 +39,62 @@ export async function apiCall(endpoint, options = {}) {
       const response = await fetch(`${BACKEND_URL}${endpoint}`, fetchOptions);
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      // Parsing défensif : vérifier Content-Type avant JSON.parse
+      const contentType = response.headers.get('content-type') || '';
+      let data = null;
+      
+      if (contentType.includes('application/json')) {
+        try {
+          const text = await response.text();
+          data = JSON.parse(text);
+        } catch (jsonError) {
+          // Si JSON.parse échoue malgré Content-Type JSON, traiter comme erreur
+          lastError = {
+            error_code: "non_json_response",
+            message: `Réponse invalide du serveur (JSON attendu): ${jsonError.message}`,
+            details: null
+          };
+          throw new Error(lastError.message);
+        }
+      } else {
+        // Si ce n'est pas du JSON, lire le texte et construire une erreur structurée
+        const text = await response.text();
+        lastError = {
+          error_code: "non_json_response",
+          message: `Réponse non-JSON du serveur (Content-Type: ${contentType || 'non spécifié'}): ${text.slice(0, 200)}...`,
+          details: text
+        };
+        throw new Error(lastError.message);
+      }
 
       if (!response.ok) {
-        throw new Error(data.detail?.message || data.detail || `Erreur ${response.status}`);
+        // Construire une erreur structurée depuis la réponse
+        const errorMessage = data.message || data.detail?.message || data.detail || `Erreur ${response.status}`;
+        lastError = {
+          error_code: data.error_code || data.error || "http_error",
+          message: errorMessage,
+          details: data
+        };
+        throw new Error(errorMessage);
       }
 
       return { success: true, data };
     } catch (error) {
-      lastError = error;
-      
-      if (error.name === 'AbortError') {
-        lastError = new Error('La requête a expiré. Vérifiez votre connexion et réessayez.');
+      // Si lastError a déjà été défini (non-JSON ou erreur structurée), l'utiliser
+      if (!lastError || (error.name !== 'AbortError' && !lastError.error_code)) {
+        if (error.name === 'AbortError') {
+          lastError = {
+            error_code: "timeout",
+            message: 'La requête a expiré. Vérifiez votre connexion et réessayez.',
+            details: null
+          };
+        } else {
+          lastError = {
+            error_code: "network_error",
+            message: error.message || 'Erreur inconnue lors de la requête.',
+            details: null
+          };
+        }
       }
       
       // Si on a encore des retries, attendre un peu avant de réessayer
@@ -61,7 +105,13 @@ export async function apiCall(endpoint, options = {}) {
   }
 
   clearTimeout(timeoutId);
-  return { success: false, error: lastError?.message || 'Erreur inconnue' };
+  
+  // Retourner une erreur structurée
+  return { 
+    success: false, 
+    error: lastError?.message || 'Erreur inconnue',
+    error_details: lastError || { error_code: "unknown_error", message: 'Erreur inconnue' }
+  };
 }
 
 /**

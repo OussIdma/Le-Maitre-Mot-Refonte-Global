@@ -12,6 +12,8 @@ Version: 2.0.0 (Dynamic Factory v1)
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi import status
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
@@ -36,6 +38,24 @@ from backend.logger import get_logger
 logger = get_logger()
 
 router = APIRouter()
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def get_generator_schema(generator_key: str):
+    """
+    Récupère le schéma d'un générateur (essaie Factory puis Legacy).
+    Retourne None si non trouvé.
+    """
+    # Essayer d'abord le nouveau système Factory
+    schema = factory_get_schema(generator_key.upper())
+    if schema:
+        return schema
+    
+    # Fallback sur le système legacy
+    return legacy_get_schema(generator_key.upper())
 
 
 # =============================================================================
@@ -82,16 +102,34 @@ class DynamicPreviewResponse(BaseModel):
 @router.get("/generators/{generator_key}/schema", response_model=GeneratorSchemaResponse, tags=["Generators"])
 async def get_generator_schema_endpoint(generator_key: str):
     """Récupère le schéma complet d'un générateur dynamique."""
-    schema = get_generator_schema(generator_key.upper())
-    
-    if not schema:
-        available = get_all_generator_keys()
+    try:
+        schema = get_generator_schema(generator_key.upper())
+        
+        if not schema:
+            available = get_all_generator_keys()
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "generator_not_found",
+                    "error": "generator_not_found",
+                    "message": f"Générateur '{generator_key}' non trouvé",
+                    "available_generators": available
+                }
+            )
+        
+        return GeneratorSchemaResponse(**schema.to_dict())
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting generator schema: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=404,
-            detail={"error": "generator_not_found", "message": f"Générateur '{generator_key}' non trouvé", "available_generators": available}
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "error": "internal_error",
+                "message": f"Erreur lors de la récupération du schéma: {str(e)}"
+            }
         )
-    
-    return GeneratorSchemaResponse(**schema.to_dict())
 
 
 @router.get("/generators/list", tags=["Generators"])
@@ -105,16 +143,36 @@ async def list_generators_endpoint():
 async def preview_dynamic_exercise(request: DynamicPreviewRequest):
     """Prévisualise un exercice dynamique AVANT de le sauvegarder."""
     import re
+    from fastapi.responses import JSONResponse
+    from fastapi import status
+    import traceback
     
     logger.info(f"🔍 Preview dynamic: generator={request.generator_key}, seed={request.seed}")
     
-    errors = []
-    
-    schema = get_generator_schema(request.generator_key.upper())
-    if not schema:
-        raise HTTPException(status_code=400, detail={"error": "invalid_generator", "message": f"Générateur '{request.generator_key}' non reconnu"})
-    
+    # Wrapper COMPLET dans try/except pour garantir JSON même en cas d'erreur
     try:
+        errors = []
+        
+        # Récupération du schéma (dans le try pour catch les exceptions d'import/attribut)
+        schema = get_generator_schema(request.generator_key.upper())
+        if not schema:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={
+                    "error_code": "invalid_generator",
+                    "error": "invalid_generator",
+                    "message": f"Générateur '{request.generator_key}' non reconnu",
+                    "success": False,
+                    "enonce_html": "",
+                    "solution_html": "",
+                    "variables_used": {},
+                    "svg_enonce": None,
+                    "svg_solution": None,
+                    "errors": [f"Générateur '{request.generator_key}' non reconnu"]
+                }
+            )
+        
+        # Génération de l'exercice
         gen_result = generate_dynamic_exercise(
             generator_key=request.generator_key.upper(),
             seed=request.seed,
@@ -125,9 +183,11 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
         results = gen_result.get("results", {})
         all_vars = {**variables, **results}
         
+        # Rendu des templates
         enonce_html = render_template(request.enonce_template_html, all_vars)
         solution_html = render_template(request.solution_template_html, all_vars)
         
+        # Détection des placeholders non résolus
         unreplaced_enonce = re.findall(r'\{\{(\w+)\}\}', enonce_html)
         unreplaced_solution = re.findall(r'\{\{(\w+)\}\}', solution_html)
         
@@ -147,9 +207,41 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
             errors=errors
         )
         
+    except HTTPException as http_exc:
+        # Re-raise HTTPException mais en format JSON structuré
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content={
+                "error_code": http_exc.detail.get("error", "http_error") if isinstance(http_exc.detail, dict) else "http_error",
+                "error": http_exc.detail.get("error", "http_error") if isinstance(http_exc.detail, dict) else "http_error",
+                "message": http_exc.detail.get("message", str(http_exc.detail)) if isinstance(http_exc.detail, dict) else str(http_exc.detail),
+                "success": False,
+                "enonce_html": "",
+                "solution_html": "",
+                "variables_used": {},
+                "svg_enonce": None,
+                "svg_solution": None,
+                "errors": [str(http_exc.detail)]
+            }
+        )
     except Exception as e:
-        logger.error(f"❌ Preview error: {str(e)}")
-        raise HTTPException(status_code=500, detail={"error": "preview_failed", "message": str(e)})
+        logger.error(f"❌ Preview internal error: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "error": "preview_failed",
+                "message": "Erreur interne lors de la prévisualisation",
+                "details": str(e),
+                "success": False,
+                "enonce_html": "",
+                "solution_html": "",
+                "variables_used": {},
+                "svg_enonce": None,
+                "svg_solution": None,
+                "errors": [f"Erreur interne: {str(e)}"]
+            }
+        )
 
 
 @router.post("/validate-template", tags=["Generators"])
