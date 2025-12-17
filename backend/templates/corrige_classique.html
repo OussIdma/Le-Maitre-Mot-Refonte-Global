@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        
+        body {
+            font-family: 'Times New Roman', serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #2c3e50;
+            background: #ffffff;
+        }
+        
+        .document-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #8b4513;
+        }
+        
+        .document-title {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #8b4513;
+            margin-bottom: 8px;
+        }
+        
+        .document-subtitle {
+            font-size: 12pt;
+            color: #654321;
+            font-style: italic;
+        }
+        
+        .exercise {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: #faf8f3;
+            border: 1px solid #e8dcc0;
+            border-radius: 5px;
+        }
+        
+        .exercise-header {
+            font-size: 13pt;
+            font-weight: bold;
+            color: #8b4513;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #d4b896;
+        }
+        
+        .exercise-content {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .solution {
+            background: #f0f8ff;
+            padding: 12px;
+            border: 1px solid #b8d4f0;
+            border-radius: 4px;
+        }
+        
+        .solution-header {
+            font-weight: bold;
+            color: #2c5aa0;
+            margin-bottom: 10px;
+        }
+        
+        .solution-steps {
+            margin-bottom: 10px;
+        }
+        
+        .solution-step {
+            margin-bottom: 8px;
+            padding-left: 15px;
+            position: relative;
+        }
+        
+        .solution-step::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #2c5aa0;
+            font-weight: bold;
+        }
+        
+        .solution-result {
+            font-weight: bold;
+            color: #2c5aa0;
+            background: #e8f4f8;
+            padding: 8px;
+            border-radius: 3px;
+            border-left: 4px solid #2c5aa0;
+        }
+        
+        /* Geometric schema styling */
+        .geometric-schema {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .geometric-schema svg {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* Style for exercise figures (geometry SVG) */
+        .exercise-figure {
+            margin: 14px 0;
+            text-align: center;
+            width: 100%;
+        }
+        
+        .exercise-figure svg {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* Pro header styles */
+        .pro-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f6f0;
+            border: 2px solid #8b4513;
+            border-radius: 5px;
+        }
+        
+        .pro-logo {
+            max-height: 60px;
+            max-width: 120px;
+        }
+        
+        .pro-info {
+            text-align: right;
+            font-size: 10pt;
+        }
+        
+        .pro-school {
+            font-weight: bold;
+            color: #8b4513;
+            margin-bottom: 3px;
+        }
+        
+        .pro-professor, .pro-year {
+            color: #654321;
+            margin-bottom: 2px;
+        }
+        
+        /* Pro footer styles */
+        .pro-footer {
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #8b4513;
+            text-align: center;
+            font-size: 9pt;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <!-- Pro header avec infos personnalisées -->
+    {% if template_config %}
+    <div class="pro-header">
+        <div>
+            {% if template_config.logo_url %}
+                <img src="{{ template_config.logo_url }}" class="pro-logo" alt="Logo" />
+            {% endif %}
+        </div>
+        <div class="pro-info">
+            {% if template_config.school_name %}
+                <div class="pro-school">{{ template_config.school_name }}</div>
+            {% endif %}
+            {% if template_config.professor_name %}
+                <div class="pro-professor">{{ template_config.professor_name }}</div>
+            {% endif %}
+            {% if template_config.school_year %}
+                <div class="pro-year">Année scolaire {{ template_config.school_year }}</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="document-header">
+        <div class="document-title">CORRIGÉ — {{ document.type_doc|upper }}</div>
+        <div class="document-subtitle">
+            {{ document.matiere }} — {{ document.niveau }} — {{ document.chapitre }}
+        </div>
+    </div>
+
+    {% for exercice in document.exercises %}
+    <div class="exercise">
+        <div class="exercise-header">Exercice {{ loop.index }}</div>
+        <div class="exercise-content">
+            {{ exercice.enonce | safe }}
+            
+            <!-- NEW: Render exercise figures (geometry SVG from questions) -->
+            {% if exercice.figure_html %}
+                <div class="exercise-figure">
+                    {{ exercice.figure_html | safe }}
+                </div>
+            {% endif %}
+            
+            <!-- NEW: Render geometric schema SVG if generated -->
+            {% if exercice.schema_svg %}
+                <div class="geometric-schema">
+                    {{ exercice.schema_svg|safe }}
+                </div>
+            {% endif %}
+        </div>
+        
+        {% if exercice.solution %}
+        <div class="solution">
+            <div class="solution-header">Solution :</div>
+            
+            {% if exercice.solution.etapes %}
+            <div class="solution-steps">
+                {% for etape in exercice.solution.etapes %}
+                <div class="solution-step">{{ etape | safe }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            {% if exercice.solution.resultat %}
+            <div class="solution-result">Résultat : {{ exercice.solution.resultat }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    
+    <!-- Pro footer -->
+    {% if template_config %}
+    <div class="pro-footer">
+        Document généré avec le système de correction automatique
+    </div>
+    {% endif %}
+</body>
+</html>

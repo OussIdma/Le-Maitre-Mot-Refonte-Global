@@ -1,0 +1,778 @@
+{
+  "version": 2,
+  "niveau": "6e",
+  "description": "Référentiel pédagogique officiel 6e basé sur le programme de mathématiques",
+  "macro_groups": [
+    {
+      "label": "Nombres entiers",
+      "codes_officiels": [
+        "6e_N01",
+        "6e_N02",
+        "6e_N03"
+      ],
+      "description": "Lecture, écriture, comparaison des nombres entiers"
+    },
+    {
+      "label": "Calcul posé et mental",
+      "codes_officiels": [
+        "6e_N04",
+        "6e_N05",
+        "6e_N06",
+        "6e_N07"
+      ],
+      "description": "Opérations et calculs avec les entiers"
+    },
+    {
+      "label": "Fractions",
+      "codes_officiels": [
+        "6e_N08",
+        "6e_N09"
+      ],
+      "description": "Fractions comme partage, quotient et comparaison"
+    },
+    {
+      "label": "Problèmes",
+      "codes_officiels": [
+        "6e_N10"
+      ],
+      "description": "Résolution de problèmes à étapes"
+    },
+    {
+      "label": "Géométrie plane",
+      "codes_officiels": [
+        "6e_G01",
+        "6e_G02",
+        "6e_G03",
+        "6e_G04",
+        "6e_G05",
+        "6e_G06"
+      ],
+      "description": "Points, droites, triangles, quadrilatères, cercles"
+    },
+    {
+      "label": "Symétrie axiale",
+      "codes_officiels": [
+        "6e_G07"
+      ],
+      "description": "Transformations et symétrie"
+    },
+    {
+      "label": "Longueurs, masses, durées",
+      "codes_officiels": [
+        "6e_GM01",
+        "6e_GM05",
+        "6e_GM06",
+        "6e_GM07",
+        "6e_GM08"
+      ],
+      "description": "Mesures et conversions (inclut lecture de l'heure et longueurs)"
+    },
+    {
+      "label": "Périmètres et aires",
+      "codes_officiels": [
+        "6e_GM02",
+        "6e_GM03",
+        "6e_GM04"
+      ],
+      "description": "Calcul de périmètres et aires de figures"
+    },
+    {
+      "label": "Données et statistiques",
+      "codes_officiels": [
+        "6e_SP01",
+        "6e_SP02",
+        "6e_SP04"
+      ],
+      "description": "Tableaux, diagrammes et moyennes"
+    },
+    {
+      "label": "Proportionnalité",
+      "codes_officiels": [
+        "6e_SP03"
+      ],
+      "description": "Tableaux de proportionnalité"
+    },
+    {
+      "label": "Tests Dynamiques",
+      "codes_officiels": [
+        "6e_TESTS_DYN"
+      ],
+      "description": "Chapitre de test pour les exercices générés dynamiquement"
+    }
+  ],
+  "chapitres": [
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G01",
+      "domaine": "Géométrie",
+      "libelle": "Points, segments, droites, demi-droites",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "TRIANGLE_QUELCONQUE",
+        "RECTANGLE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 2,
+      "statut": "prod",
+      "tags": [
+        "vocabulaire",
+        "géométrie de base",
+        "notation"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G02",
+      "domaine": "Géométrie",
+      "libelle": "Alignement, milieu d'un segment",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "TRIANGLE_QUELCONQUE",
+        "RECTANGLE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 2,
+      "statut": "prod",
+      "tags": [
+        "alignement",
+        "milieu",
+        "segment"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G03",
+      "domaine": "Géométrie",
+      "libelle": "Perpendiculaires et parallèles à la règle et à l'équerre",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "TRIANGLE_QUELCONQUE",
+        "RECTANGLE",
+        "QUADRILATERES"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "perpendiculaires",
+        "parallèles",
+        "construction"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G04",
+      "domaine": "Géométrie",
+      "libelle": "Triangles (construction et classification)",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "TRIANGLE_QUELCONQUE",
+        "TRIANGLE_CONSTRUCTION",
+        "AIRE_TRIANGLE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "triangles",
+        "construction",
+        "classification"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G05",
+      "domaine": "Géométrie",
+      "libelle": "Quadrilatères usuels (carré, rectangle, losange, parallélogramme)",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "RECTANGLE",
+        "QUADRILATERES",
+        "PERIMETRE_AIRE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "quadrilatères",
+        "propriétés",
+        "construction"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G06",
+      "domaine": "Géométrie",
+      "libelle": "Cercle et disque (vocabulaire et constructions)",
+      "chapitre_backend": "Aires",
+      "exercise_types": [
+        "CERCLE",
+        "PERIMETRE_AIRE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "cercle",
+        "disque",
+        "rayon",
+        "diamètre"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_G07",
+      "domaine": "Géométrie",
+      "libelle": "Symétrie axiale(TEST_MODIF_2) (points, segments, figures)",
+      "chapitre_backend": "Symétrie axiale",
+      "exercise_types": [
+        "SYMETRIE_AXIALE",
+        "SYMETRIE_PROPRIETES"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "symétrie",
+        "axiale",
+        "transformation"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM01",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Mesurer et comparer des longueurs",
+      "chapitre_backend": "Longueurs, masses, durées",
+      "exercise_types": [
+        "GRANDEURS_MESURES_DEDIE",
+        "CONVERSIONS_UNITES"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "longueurs",
+        "mesures",
+        "conversions"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM02",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Périmètre de figures usuelles",
+      "chapitre_backend": "Périmètres et aires",
+      "exercise_types": [
+        "PERIMETRE_AIRE",
+        "RECTANGLE",
+        "CERCLE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "périmètre",
+        "formules",
+        "calcul"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM03",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Aire du rectangle et du carré",
+      "chapitre_backend": "Périmètres et aires",
+      "exercise_types": [
+        "PERIMETRE_AIRE",
+        "RECTANGLE",
+        "AIRE_FIGURES_COMPOSEES"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "aire",
+        "rectangle",
+        "carré"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM04",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Aire du triangle rectangle",
+      "chapitre_backend": "Aires",
+      "exercise_types": [
+        "AIRE_TRIANGLE",
+        "PERIMETRE_AIRE"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "aire",
+        "triangle",
+        "rectangle"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM05",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Durées : conversions et calculs",
+      "chapitre_backend": "Longueurs, masses, durées",
+      "exercise_types": [
+        "CONVERSION_DUREES",
+        "CALCUL_DUREE",
+        "PROBLEME_DUREES"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "durées",
+        "conversions",
+        "calcul"
+      ],
+      "contexts": [
+        "film",
+        "trajet",
+        "sport",
+        "école"
+      ]
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM06",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Masses, contenances et conversions simples",
+      "chapitre_backend": "Longueurs, masses, durées",
+      "exercise_types": [
+        "GRANDEURS_MESURES_DEDIE",
+        "CONVERSIONS_UNITES"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "masses",
+        "contenances",
+        "conversions"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM07",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Lecture de l'heure (horloge analogique)",
+      "chapitre_backend": "Durées et lecture de l'heure",
+      "exercise_types": [
+        "LECTURE_HORLOGE",
+        "CALCUL_DUREE",
+        "CONVERSION_DUREES",
+        "PROBLEME_DUREES",
+        "DUREES_PREMIUM"
+      ],
+      "premium_generators": [
+        "DUREES_PREMIUM"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "heure",
+        "horloge",
+        "lecture",
+        "SVG",
+        "premium"
+      ],
+      "contexts": [
+        "école",
+        "sport",
+        "film",
+        "cuisine"
+      ]
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_GM08",
+      "domaine": "Grandeurs et mesures",
+      "libelle": "Longueurs et périmètres",
+      "chapitre_backend": "Grandeurs et mesures - Longueurs",
+      "exercise_types": [
+        "CONVERSION_LONGUEURS",
+        "COMPARAISON_LONGUEURS",
+        "PERIMETRE",
+        "PROBLEME_LONGUEURS"
+      ],
+      "premium_generators": [],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "longueurs",
+        "conversion",
+        "périmètre",
+        "mesures",
+        "pilote"
+      ],
+      "contexts": [
+        "école",
+        "sport",
+        "jardinage",
+        "bricolage"
+      ]
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N01",
+      "domaine": "Nombres et calculs",
+      "libelle": "Lire et écrire les nombres entiers",
+      "chapitre_backend": "Nombres entiers et décimaux",
+      "exercise_types": [
+        "NOMBRES_LECTURE",
+        "CALCUL_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "entiers",
+        "lecture",
+        "écriture"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N02",
+      "domaine": "Nombres et calculs",
+      "libelle": "Comparer et ranger des nombres entiers",
+      "chapitre_backend": "Nombres entiers et décimaux",
+      "exercise_types": [
+        "NOMBRES_COMPARAISON",
+        "CALCUL_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "entiers",
+        "comparaison",
+        "ordre"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N03",
+      "domaine": "Nombres et calculs",
+      "libelle": "Droite numérique et repérage",
+      "chapitre_backend": "Nombres entiers et décimaux",
+      "exercise_types": [
+        "DROITE_GRADUEE_ENTIERS",
+        "DROITE_GRADUEE_DECIMAUX"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "droite graduée",
+        "repérage",
+        "position"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N04",
+      "domaine": "Nombres et calculs",
+      "libelle": "Addition et soustraction de nombres entiers",
+      "chapitre_backend": "Calculs posés",
+      "exercise_types": [
+        "CALCUL_POSE_DEDIE",
+        "CALCUL_DECIMAUX",
+        "CALCUL_MENTAL_DEDIE"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "addition",
+        "soustraction",
+        "calcul posé"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N05",
+      "domaine": "Nombres et calculs",
+      "libelle": "Multiplication de nombres entiers",
+      "chapitre_backend": "Calculs posés",
+      "exercise_types": [
+        "CALCUL_POSE_DEDIE",
+        "CALCUL_DECIMAUX",
+        "PRIORITES_OPERATIONS"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "multiplication",
+        "calcul posé",
+        "tables"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N06",
+      "domaine": "Nombres et calculs",
+      "libelle": "Division euclidienne",
+      "chapitre_backend": "Calculs posés",
+      "exercise_types": [
+        "CALCUL_DECIMAUX",
+        "CRITERES_DIVISIBILITE"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "division",
+        "quotient",
+        "reste"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N07",
+      "domaine": "Nombres et calculs",
+      "libelle": "Multiples et diviseurs, critères de divisibilité",
+      "chapitre_backend": "Calcul mental",
+      "exercise_types": [
+        "CRITERES_DIVISIBILITE",
+        "MULTIPLES"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "divisibilité",
+        "multiples",
+        "diviseurs"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N08",
+      "domaine": "Nombres et calculs",
+      "libelle": "Fractions comme partage et quotient",
+      "chapitre_backend": "Fractions",
+      "exercise_types": [
+        "CALCUL_FRACTIONS",
+        "FRACTION_REPRESENTATION"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "fractions",
+        "partage",
+        "quotient"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N09",
+      "domaine": "Nombres et calculs",
+      "libelle": "Fractions simples de l'unité",
+      "chapitre_backend": "Nombres en écriture fractionnaire",
+      "exercise_types": [
+        "CALCUL_FRACTIONS",
+        "FRACTIONS_EGALES",
+        "FRACTION_COMPARAISON"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "fractions",
+        "unité",
+        "simplification"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_N10",
+      "domaine": "Nombres et calculs",
+      "libelle": "Problèmes à étapes avec les quatre opérations",
+      "chapitre_backend": "Géométrie dans le plan",
+      "exercise_types": [
+        "PROBLEME_2_ETAPES",
+        "PROBLEME_1_ETAPE"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 2,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "problèmes",
+        "étapes",
+        "raisonnement"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_SP01",
+      "domaine": "Organisation et gestion de données",
+      "libelle": "Lire et compléter des tableaux de données",
+      "chapitre_backend": "Proportionnalité",
+      "exercise_types": [
+        "TABLEAU_LECTURE",
+        "TABLEAU_COMPLETER"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 2,
+      "statut": "prod",
+      "tags": [
+        "tableaux",
+        "lecture",
+        "données"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_SP02",
+      "domaine": "Organisation et gestion de données",
+      "libelle": "Diagrammes en barres et pictogrammes",
+      "chapitre_backend": "Proportionnalité",
+      "exercise_types": [
+        "DIAGRAMME_BARRES",
+        "STATISTIQUES"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 2,
+      "statut": "prod",
+      "tags": [
+        "diagrammes",
+        "barres",
+        "graphiques"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_SP03",
+      "domaine": "Organisation et gestion de données",
+      "libelle": "Proportionnalité simple dans des tableaux",
+      "chapitre_backend": "Proportionnalité",
+      "exercise_types": [
+        "PROPORTIONNALITE",
+        "PROP_TABLEAU",
+        "PROP_ACHAT"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "proportionnalité",
+        "tableaux",
+        "coefficient"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_SP04",
+      "domaine": "Organisation et gestion de données",
+      "libelle": "Moyenne arithmétique simple",
+      "chapitre_backend": "Proportionnalité",
+      "exercise_types": [
+        "STATISTIQUES"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "moyenne",
+        "statistiques",
+        "calcul"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_TESTS_DYN",
+      "domaine": "Tests",
+      "libelle": "Exercices Dynamiques (Test)",
+      "chapitre_backend": "Tests Dynamiques",
+      "exercise_types": [
+        "AGRANDISSEMENT_REDUCTION"
+      ],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "beta",
+      "tags": [
+        "dynamique",
+        "proportionnalité",
+        "agrandissement",
+        "réduction"
+      ],
+      "contexts": [],
+      "is_pilot": true,
+      "supports_dynamic": true,
+      "available_generators": [
+        "THALES_V1"
+      ]
+    }
+  ]
+}

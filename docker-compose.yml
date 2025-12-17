@@ -1,0 +1,68 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: le-maitre-mot-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: mathalea_db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: le-maitre-mot-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Temporairement désactivé pour éviter deadlock au boot
+      # - ./backend:/app/backend
+      # - ./scripts:/app/scripts
+      - backend_uploads:/app/backend/uploads
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=mathalea_db
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - PYTHONPATH=/app
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: uvicorn backend.server:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: le-maitre-mot-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_BACKEND_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - GENERATE_SOURCEMAP=false
+      - DISABLE_ESLINT_PLUGIN=true
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+
+volumes:
+  mongo_data:
+  backend_uploads:
+
