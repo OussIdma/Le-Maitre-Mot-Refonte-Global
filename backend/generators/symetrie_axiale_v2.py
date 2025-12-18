@@ -20,15 +20,15 @@ Conforme au cahier des charges:
 """
 
 from typing import Dict, Any, List, Optional
-from generators.base_generator import (
-    BaseGenerator, 
-    GeneratorMeta, 
-    ParamSchema, 
+from backend.generators.base_generator import (
+    BaseGenerator,
+    GeneratorMeta,
+    ParamSchema,
     Preset,
     ParamType,
-    create_svg_wrapper
+    create_svg_wrapper,
 )
-from generators.factory import GeneratorFactory
+from backend.generators.factory import GeneratorFactory
 
 
 @GeneratorFactory.register

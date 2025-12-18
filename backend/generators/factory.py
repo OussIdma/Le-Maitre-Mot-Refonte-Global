@@ -15,7 +15,7 @@ Endpoints exposés:
 """
 
 from typing import Dict, Any, List, Optional, Type
-from generators.base_generator import BaseGenerator, GeneratorMeta, ParamSchema, Preset
+from backend.generators.base_generator import BaseGenerator, GeneratorMeta, ParamSchema, Preset
 
 
 # =============================================================================
@@ -27,6 +27,12 @@ class GeneratorFactory:
     
     _generators: Dict[str, Type[BaseGenerator]] = {}
     
+    # Aliases pour compatibilité arrière (clés legacy -> nouveaux générateurs)
+    _ALIASES: Dict[str, str] = {
+        # Ancienne clé générique pour la symétrie axiale → nouveau générateur Factory
+        "SYMETRIE_AXIALE": "SYMETRIE_AXIALE_V2",
+    }
+
     @classmethod
     def register(cls, generator_class: Type[BaseGenerator]) -> Type[BaseGenerator]:
         """
@@ -44,7 +50,10 @@ class GeneratorFactory:
     @classmethod
     def get(cls, key: str) -> Optional[Type[BaseGenerator]]:
         """Récupère une classe de générateur par sa clé."""
-        return cls._generators.get(key.upper())
+        normalized = key.upper()
+        # Appliquer les alias pour compatibilité arrière
+        normalized = cls._ALIASES.get(normalized, normalized)
+        return cls._generators.get(normalized)
     
     @classmethod
     def list_all(cls) -> List[Dict[str, Any]]:
@@ -171,11 +180,12 @@ def generate_exercise(
     
     Params effectifs = defaults + exercise_params + overrides
     """
+    # generate() applique déjà l'aliasing via GeneratorFactory.get()
     return GeneratorFactory.generate(
         key=generator_key,
         exercise_params=exercise_params,
         overrides=overrides,
-        seed=seed
+        seed=seed,
     )
 
 

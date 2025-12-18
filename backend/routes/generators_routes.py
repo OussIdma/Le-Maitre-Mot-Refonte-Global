@@ -154,7 +154,8 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
         errors = []
         
         # Récupération du schéma (dans le try pour catch les exceptions d'import/attribut)
-        schema = get_generator_schema(request.generator_key.upper())
+        generator_key = request.generator_key.upper()
+        schema = get_generator_schema(generator_key)
         if not schema:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -172,16 +173,48 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
                 }
             )
         
+        # =========================================================================
         # Génération de l'exercice
-        gen_result = generate_dynamic_exercise(
-            generator_key=request.generator_key.upper(),
-            seed=request.seed,
-            difficulty=request.difficulty
-        )
-        
-        variables = gen_result.get("variables", {})
-        results = gen_result.get("results", {})
-        all_vars = {**variables, **results}
+        # - Si le générateur existe dans la Factory v1 -> utiliser factory_generate
+        # - Sinon, fallback sur le pipeline legacy THALES_V1
+        # =========================================================================
+
+        factory_schema = factory_get_schema(generator_key)
+        if factory_schema:
+            # Nouveau pipeline Factory (ex: SYMETRIE_AXIALE_V2, THALES_V2, ...)
+            logger.info(f"🏭 Preview via Factory pour generator={generator_key}")
+            result = factory_generate(
+                generator_key=generator_key,
+                exercise_params=None,
+                overrides=None,
+                seed=request.seed,
+            )
+
+            variables = result.get("variables", {})
+            # La Factory peut aussi retourner des résultats/geo_data utiles pour le template
+            all_vars = {
+                **variables,
+                **result.get("results", {}),
+                **result.get("geo_data", {}),
+            }
+
+            svg_enonce = result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
+            svg_solution = result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
+        else:
+            # Pipeline legacy (THALES_V1 historique)
+            logger.info(f"📐 Preview via générateur legacy pour generator={generator_key}")
+            gen_result = generate_dynamic_exercise(
+                generator_key=generator_key,
+                seed=request.seed,
+                difficulty=request.difficulty,
+            )
+
+            variables = gen_result.get("variables", {})
+            results = gen_result.get("results", {})
+            all_vars = {**variables, **results}
+
+            svg_enonce = gen_result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
+            svg_solution = gen_result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
         
         # Rendu des templates
         enonce_html = render_template(request.enonce_template_html, all_vars)
@@ -193,9 +226,6 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
         
         for var in set(unreplaced_enonce + unreplaced_solution):
             errors.append(f"Variable inconnue: {{{{{var}}}}}")
-        
-        svg_enonce = gen_result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
-        svg_solution = gen_result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
         
         return DynamicPreviewResponse(
             success=len(errors) == 0,

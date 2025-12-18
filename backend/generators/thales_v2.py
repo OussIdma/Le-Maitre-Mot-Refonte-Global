@@ -12,15 +12,15 @@ Il conserve la compatibilité arrière tout en ajoutant:
 """
 
 from typing import Dict, Any, List, Optional
-from generators.base_generator import (
-    BaseGenerator, 
-    GeneratorMeta, 
-    ParamSchema, 
+from backend.generators.base_generator import (
+    BaseGenerator,
+    GeneratorMeta,
+    ParamSchema,
     Preset,
-    ParamType
+    ParamType,
 )
-from generators.factory import GeneratorFactory
-from generators.thales_generator import ThalesV1Generator, ThalesV1Config
+from backend.generators.factory import GeneratorFactory
+from backend.generators.thales_generator import ThalesV1Generator, ThalesV1Config
 
 
 @GeneratorFactory.register
