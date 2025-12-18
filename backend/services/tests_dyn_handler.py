@@ -53,6 +53,25 @@ def _extract_placeholders(template_str: str) -> Set[str]:
     return set(re.findall(pattern, template_str))
 
 
+def _normalize_figure_type(raw: Optional[str]) -> Optional[str]:
+    """
+    Normalise le type de figure pour THALES_V1.
+    - lower + trim
+    - enlève les accents simples
+    - mappe quelques synonymes évidents (square -> carre, etc.)
+    """
+    if not raw:
+        return None
+
+    v = str(raw).strip().lower()
+    # Normalisation minimale pour les cas connus
+    mapping = {
+        "carré": "carre",
+        "square": "carre",
+    }
+    return mapping.get(v, v)
+
+
 def format_dynamic_exercise(
     exercise_template: Dict[str, Any],
     timestamp: int,
@@ -100,7 +119,21 @@ def format_dynamic_exercise(
     # Fusionner variables et results pour le rendu
     all_vars: Dict[str, Any] = {**variables, **results}
 
-    figure_type = all_vars.get("figure_type")
+    raw_figure_type = all_vars.get("figure_type")
+    figure_type = _normalize_figure_type(raw_figure_type)
+    if figure_type:
+        all_vars["figure_type"] = figure_type
+
+    # Log de contexte pour diagnostiquer les cas carrés / placeholders résiduels
+    logger.info(
+        f"[TESTS_DYN] format_dynamic_exercise: template_id={exercise_template.get('id')}, "
+        f"exercise_id={exercise_id}, seed={seed}, generator={generator_key}, "
+        f"difficulty={difficulty}, figure_type_raw={raw_figure_type}, figure_type={figure_type}"
+    )
+    logger.info(
+        f"[TESTS_DYN] keys variables={sorted(list(variables.keys()))}, "
+        f"results={sorted(list(results.keys()))}"
+    )
 
     # =========================================================================
     # MAPPINGS DE COMPATIBILITÉ THALES (triangle / rectangle / carré)
@@ -132,8 +165,24 @@ def format_dynamic_exercise(
 
     # 3) carré → rectangle + triangle (cote -> longueur/largeur/base/hauteur)
     if figure_type == "carre":
-        cote_initial = all_vars.get("cote_initial")
-        cote_final = all_vars.get("cote_final")
+        # Supporter quelques variantes de nommage éventuelles côté générateur
+        cote_initial = (
+            all_vars.get("cote_initial")
+            or all_vars.get("cote_initiale")
+            or all_vars.get("side_initial")
+            or all_vars.get("side")
+        )
+        cote_final = (
+            all_vars.get("cote_final")
+            or all_vars.get("cote_finale")
+            or all_vars.get("side_final")
+        )
+
+        # Back-fill des clés canoniques si seules les variantes existent
+        if cote_initial is not None:
+            all_vars.setdefault("cote_initial", cote_initial)
+        if cote_final is not None:
+            all_vars.setdefault("cote_final", cote_final)
 
         if cote_initial is not None:
             # Aliases rectangle
@@ -161,10 +210,11 @@ def format_dynamic_exercise(
     missing_before_render = sorted(expected_placeholders - provided_keys)
 
     if expected_placeholders:
-        logger.debug(
+        logger.info(
             f"[TESTS_DYN] Placeholders attendus (ex {exercise_template.get('id')} "
             f"/ {generator_key} / {figure_type}): {sorted(expected_placeholders)} | "
-            f"clés fournies: {sorted(provided_keys)} | manquantes avant rendu: {missing_before_render}"
+            f"clés fournies avant mapping: {sorted(provided_keys)} | "
+            f"manquantes avant rendu: {missing_before_render}"
         )
 
     # Rendu HTML

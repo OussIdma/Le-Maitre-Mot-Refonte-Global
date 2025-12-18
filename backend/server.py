@@ -396,6 +396,33 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+
+def _compute_build_id() -> str:
+    """
+    Calcule un identifiant de build simple pour le backend.
+    - Essaie de récupérer le git short SHA si disponible
+    - Sinon, fallback sur 'nogit'
+    - Ajoute un timestamp UTC pour différencier les builds locaux
+    """
+    from datetime import datetime
+    try:
+        import subprocess
+        # On essaie de se placer à la racine du projet si possible
+        repo_root = ROOT_DIR.parent
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(repo_root),
+            text=True
+        ).strip()
+    except Exception:
+        sha = "nogit"
+
+    ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"{ts}_{sha}"
+
+
+APP_BUILD_ID = os.environ.get("APP_BUILD_ID", _compute_build_id())
+
 # Create the main app without a prefix
 app = FastAPI()
 
@@ -478,6 +505,29 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Log build ID au démarrage
+print(f"APP_BUILD_ID={APP_BUILD_ID}")
+try:
+    _startup_logger = get_logger()
+    _startup_logger.info(f"APP_BUILD_ID={APP_BUILD_ID}")
+except Exception:
+    # En cas de problème de logger au démarrage, on ne bloque pas l'app
+    pass
+
+
+class BuildInfo(BaseModel):
+    app_build_id: str
+
+
+@api_router.get("/debug/build", response_model=BuildInfo, tags=["Debug"])
+async def get_build_info():
+    """
+    Endpoint de debug pour vérifier le build backend en cours.
+    Utile pour s'assurer que le frontend pointe sur le bon container.
+    """
+    return BuildInfo(app_build_id=APP_BUILD_ID)
+
 
 # Initialize LLM Chat
 emergent_key = os.environ.get('EMERGENT_LLM_KEY')
