@@ -58,6 +58,93 @@ def get_generator_schema(generator_key: str):
     return legacy_get_schema(generator_key.upper())
 
 
+def _normalize_figure_type(raw: Optional[str]) -> Optional[str]:
+    """
+    Normalise le type de figure pour les générateurs de géométrie (THALES_V1, ...).
+    - lower + trim
+    - mapping de quelques synonymes évidents (carré/square -> carre)
+    """
+    if not raw:
+        return None
+
+    v = str(raw).strip().lower()
+    mapping = {
+        "carré": "carre",
+        "square": "carre",
+    }
+    return mapping.get(v, v)
+
+
+def _apply_thales_alias_mappings(all_vars: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Applique les mêmes mappings d'alias que pour le pipeline TESTS_DYN
+    afin d'éviter les placeholders {{...}} en preview admin pour THALES_V1.
+
+    - triangle: base/hauteur -> longueur/largeur
+    - rectangle: longueur/largeur -> base/hauteur
+    - carre: cote -> longueur/largeur/base/hauteur
+    """
+    raw_figure_type = all_vars.get("figure_type")
+    figure_type = _normalize_figure_type(raw_figure_type)
+    if figure_type:
+        all_vars["figure_type"] = figure_type
+
+    # 1) triangle → rectangle (base/hauteur -> longueur/largeur)
+    if figure_type == "triangle":
+        if "base_initiale" in all_vars:
+            all_vars.setdefault("longueur_initiale", all_vars["base_initiale"])
+        if "hauteur_initiale" in all_vars:
+            all_vars.setdefault("largeur_initiale", all_vars["hauteur_initiale"])
+        if "base_finale" in all_vars:
+            all_vars.setdefault("longueur_finale", all_vars["base_finale"])
+        if "hauteur_finale" in all_vars:
+            all_vars.setdefault("largeur_finale", all_vars["hauteur_finale"])
+
+    # 2) rectangle → triangle (longueur/largeur -> base/hauteur)
+    if figure_type == "rectangle":
+        if "longueur_initiale" in all_vars:
+            all_vars.setdefault("base_initiale", all_vars["longueur_initiale"])
+        if "largeur_initiale" in all_vars:
+            all_vars.setdefault("hauteur_initiale", all_vars["largeur_initiale"])
+        if "longueur_finale" in all_vars:
+            all_vars.setdefault("base_finale", all_vars["longueur_finale"])
+        if "largeur_finale" in all_vars:
+            all_vars.setdefault("hauteur_finale", all_vars["largeur_finale"])
+
+    # 3) carré → rectangle + triangle (cote -> longueur/largeur/base/hauteur)
+    if figure_type == "carre":
+        cote_initial = (
+            all_vars.get("cote_initial")
+            or all_vars.get("cote_initiale")
+            or all_vars.get("side_initial")
+            or all_vars.get("side")
+        )
+        cote_final = (
+            all_vars.get("cote_final")
+            or all_vars.get("cote_finale")
+            or all_vars.get("side_final")
+        )
+
+        if cote_initial is not None:
+            all_vars.setdefault("cote_initial", cote_initial)
+        if cote_final is not None:
+            all_vars.setdefault("cote_final", cote_final)
+
+        if cote_initial is not None:
+            all_vars.setdefault("longueur_initiale", cote_initial)
+            all_vars.setdefault("largeur_initiale", cote_initial)
+            all_vars.setdefault("base_initiale", cote_initial)
+            all_vars.setdefault("hauteur_initiale", cote_initial)
+
+        if cote_final is not None:
+            all_vars.setdefault("longueur_finale", cote_final)
+            all_vars.setdefault("largeur_finale", cote_final)
+            all_vars.setdefault("base_finale", cote_final)
+            all_vars.setdefault("hauteur_finale", cote_final)
+
+    return all_vars
+
+
 # =============================================================================
 # MODÈLES PYDANTIC
 # =============================================================================
@@ -212,6 +299,12 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
             variables = gen_result.get("variables", {})
             results = gen_result.get("results", {})
             all_vars = {**variables, **results}
+
+            # Harmoniser le comportement avec le pipeline élève (TESTS_DYN) pour THALES_V1 :
+            # appliquer les mêmes alias de variables afin d'éviter les placeholders {{...}}
+            # lorsque les templates utilisent base/hauteur/longueur/largeur avec des carrés.
+            if generator_key.startswith("THALES"):
+                all_vars = _apply_thales_alias_mappings(all_vars)
 
             svg_enonce = gen_result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
             svg_solution = gen_result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
