@@ -761,7 +761,10 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         request.chapitre = curriculum_chapter.chapitre_backend
         
         # Convertir les types d'exercices du référentiel en enum
-        # IMPORTANT: En mode gratuit, filtrer les générateurs premium
+        # IMPORTANT:
+        # - En mode gratuit, filtrer les générateurs premium
+        # - Ne JAMAIS faire de fallback silencieux vers le mapping legacy
+        #   si des exercise_types configurés sont inconnus.
         if curriculum_chapter.exercise_types:
             try:
                 # Liste des générateurs premium à exclure en mode gratuit
@@ -772,20 +775,66 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     # Mode PRO: tous les générateurs disponibles
                     filtered_types = curriculum_chapter.exercise_types
                 else:
-                    # Mode gratuit: exclure les générateurs premium
+                    # Mode gratuit: exclure les générateurs premium explicites
                     filtered_types = [
                         et for et in curriculum_chapter.exercise_types
                         if et not in premium_only_generators
                     ]
                 
-                exercise_types_override = [
-                    MathExerciseType[et] for et in filtered_types
-                    if hasattr(MathExerciseType, et)
-                ]
+                # Conversion stricte vers MathExerciseType
+                valid_types = []
+                invalid_types = []
+                for et in filtered_types:
+                    if hasattr(MathExerciseType, et):
+                        valid_types.append(MathExerciseType[et])
+                    else:
+                        invalid_types.append(et)
                 
-                logger.info(f"Types d'exercices filtrés pour {request.code_officiel} (offer={request.offer}): {filtered_types}")
+                exercise_types_override = valid_types
+                
+                # Si au moins un type est valide mais certains sont inconnus:
+                # - on log un warning explicite,
+                # - mais on continue avec les types valides uniquement.
+                if invalid_types and valid_types:
+                    logger.warning(
+                        f"Certains exercise_types sont inconnus pour {request.code_officiel} "
+                        f"(ignorés): {invalid_types}"
+                    )
+                
+                # Si TOUS les types configurés sont inconnus, lever une erreur claire
+                # plutôt que de retomber silencieusement sur le mapping legacy.
+                if filtered_types and not valid_types:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error_code": "INVALID_CURRICULUM_EXERCISE_TYPES",
+                            "error": "invalid_exercise_types",
+                            "message": (
+                                f"Les exercise_types configurés pour le chapitre "
+                                f"'{request.code_officiel}' ne correspondent à aucun "
+                                f"MathExerciseType connu: {filtered_types}."
+                            ),
+                            "chapter_code": request.code_officiel,
+                            "exercise_types_configured": filtered_types,
+                            "hint": (
+                                "Ajoutez ces types dans MathExerciseType ou corrigez "
+                                "le référentiel curriculum_6e."
+                            ),
+                        },
+                    )
+                
+                logger.info(
+                    f"Types d'exercices filtrés pour {request.code_officiel} "
+                    f"(offer={request.offer}): {filtered_types}"
+                )
+            except HTTPException:
+                # Propager l'erreur structurée telle quelle
+                raise
             except Exception as e:
-                logger.warning(f"Erreur conversion exercise_types pour {request.code_officiel}: {e}")
+                logger.warning(
+                    f"Erreur conversion exercise_types pour {request.code_officiel}: {e}"
+                )
         
         logger.info(
             f"Génération exercice (mode officiel): code={request.code_officiel}, "
