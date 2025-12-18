@@ -208,6 +208,11 @@ def format_dynamic_exercise(
 
     template_variants = exercise_template.get("template_variants") or []
     if template_variants:
+        # IMPORTANT:
+        # - Dès que template_variants est non vide, ils deviennent la SEULE source de vérité
+        #   pour le choix du template énoncé/solution côté élève.
+        # - Les champs legacy "enonce_template_html"/"solution_template_html" ne sont plus
+        #   utilisés pour le rendu (uniquement miroir/compat éventuel côté admin/DB).
         # On construit une liste d'objets avec les attributs attendus par choose_template_variant
         variant_objs: List[SimpleNamespace] = []
         for v in template_variants:

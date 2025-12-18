@@ -165,6 +165,38 @@ export async function previewDynamicExercise(data) {
 }
 
 /**
+ * Crée un exercice pour un chapitre donné (CRUD admin)
+ */
+export async function createChapterExercise(chapterCode, exercisePayload) {
+  return apiCall(`/api/admin/chapters/${chapterCode}/exercises`, {
+    method: 'POST',
+    body: exercisePayload,
+    timeout: DEFAULT_TIMEOUT,
+  });
+}
+
+/**
+ * Met à jour un exercice existant (CRUD admin)
+ */
+export async function updateChapterExercise(chapterCode, exerciseId, exercisePayload) {
+  return apiCall(`/api/admin/chapters/${chapterCode}/exercises/${exerciseId}`, {
+    method: 'PUT',
+    body: exercisePayload,
+    timeout: DEFAULT_TIMEOUT,
+  });
+}
+
+/**
+ * Supprime un exercice existant (CRUD admin)
+ */
+export async function deleteChapterExercise(chapterCode, exerciseId) {
+  return apiCall(`/api/admin/chapters/${chapterCode}/exercises/${exerciseId}`, {
+    method: 'DELETE',
+    timeout: DEFAULT_TIMEOUT,
+  });
+}
+
+/**
  * Valide un template
  */
 export async function validateTemplate(template, generatorKey) {
@@ -178,5 +210,8 @@ export default {
   fetchGeneratorSchema,
   fetchGeneratorsList,
   previewDynamicExercise,
-  validateTemplate
+  validateTemplate,
+  createChapterExercise,
+  updateChapterExercise,
+  deleteChapterExercise,
 };

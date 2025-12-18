@@ -22,6 +22,13 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 import { 
   Eye, 
   RefreshCw, 
@@ -39,13 +46,17 @@ const DynamicPreviewModal = ({
   generatorKey,
   enonceTemplate,
   solutionTemplate,
-  difficulty = 'moyen'
+  difficulty = 'moyen',
+  templateVariants = null,
+  stableKey = null
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
   const [seed, setSeed] = useState('');
   const [showVariables, setShowVariables] = useState(false);
+  const [variantMode, setVariantMode] = useState('auto'); // 'auto' | 'fixed'
+  const [selectedVariantId, setSelectedVariantId] = useState('');
   
   const generatePreview = async (customSeed = null) => {
     setLoading(true);
@@ -55,14 +66,31 @@ const DynamicPreviewModal = ({
       ? customSeed 
       : (seed ? parseInt(seed) : Math.floor(Math.random() * 100000));
     
-    const result = await previewDynamicExercise({
+    const payload = {
       generator_key: generatorKey,
       enonce_template_html: enonceTemplate,
       solution_template_html: solutionTemplate,
       difficulty: difficulty,
       seed: seedValue,
       svg_mode: 'AUTO'
-    });
+    };
+
+    const hasVariants = Array.isArray(templateVariants) && templateVariants.length > 0;
+
+    if (hasVariants) {
+      payload.template_variants = templateVariants;
+      if (stableKey) {
+        payload.stable_key = stableKey;
+      }
+      if (variantMode === 'fixed') {
+        const effectiveId = selectedVariantId || (templateVariants[0] && templateVariants[0].id);
+        if (effectiveId) {
+          payload.variant_id = effectiveId;
+        }
+      }
+    }
+
+    const result = await previewDynamicExercise(payload);
     
     if (result.success) {
       setPreview({ ...result.data, seed_used: seedValue });
@@ -94,40 +122,86 @@ const DynamicPreviewModal = ({
         </DialogHeader>
         
         {/* Contrôles de génération */}
-        <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-          <div className="flex items-center gap-2 flex-1">
-            <Label className="text-sm whitespace-nowrap">Seed :</Label>
-            <Input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(e.target.value)}
-              placeholder="Aléatoire"
-              className="w-28 h-8"
-            />
+        <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 flex-1">
+              <Label className="text-sm whitespace-nowrap">Seed :</Label>
+              <Input
+                type="number"
+                value={seed}
+                onChange={(e) => setSeed(e.target.value)}
+                placeholder="Aléatoire"
+                className="w-28 h-8"
+              />
+            </div>
+            
+            <Button 
+              onClick={() => generatePreview()} 
+              disabled={loading}
+              size="sm"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-1" />
+              )}
+              Régénérer
+            </Button>
+            
+            <Button 
+              variant="outline"
+              onClick={() => generatePreview(Math.floor(Math.random() * 100000))} 
+              disabled={loading}
+              size="sm"
+            >
+              <Dice5 className="h-4 w-4 mr-1" />
+              Aléatoire
+            </Button>
           </div>
-          
-          <Button 
-            onClick={() => generatePreview()} 
-            disabled={loading}
-            size="sm"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-1" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-1" />
-            )}
-            Régénérer
-          </Button>
-          
-          <Button 
-            variant="outline"
-            onClick={() => generatePreview(Math.floor(Math.random() * 100000))} 
-            disabled={loading}
-            size="sm"
-          >
-            <Dice5 className="h-4 w-4 mr-1" />
-            Aléatoire
-          </Button>
+
+          {Array.isArray(templateVariants) && templateVariants.length > 0 && (
+            <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm whitespace-nowrap">Variant :</Label>
+                <Select
+                  value={variantMode}
+                  onValueChange={setVariantMode}
+                >
+                  <SelectTrigger className="h-8 w-32 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto (seed)</SelectItem>
+                    <SelectItem value="fixed">Forcé</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Label className="text-sm whitespace-nowrap">ID variant :</Label>
+                <Select
+                  value={
+                    selectedVariantId ||
+                    (templateVariants[0] && templateVariants[0].id) ||
+                    ''
+                  }
+                  onValueChange={setSelectedVariantId}
+                  disabled={variantMode !== 'fixed'}
+                >
+                  <SelectTrigger className="h-8 w-40 text-xs">
+                    <SelectValue placeholder="Choisir un variant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templateVariants.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.label || v.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Erreur */}
@@ -157,6 +231,9 @@ const DynamicPreviewModal = ({
                 )}
                 <span className="text-xs text-gray-500">
                   Seed: {preview.seed_used}
+                  {preview.variant_id_used && (
+                    <span className="ml-2">• Variant: {preview.variant_id_used}</span>
+                  )}
                 </span>
               </div>
               

@@ -36,7 +36,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Switch } from '../ui/switch';
-import { 
+import {
   RefreshCw, 
   CheckCircle, 
   AlertCircle, 
@@ -52,13 +52,18 @@ import {
   ExternalLink,
   ArrowLeft,
   Sparkles,
-  PlayCircle
+  PlayCircle,
+  Copy
 } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import GeneratorVariablesPanel from './GeneratorVariablesPanel';
 import DynamicPreviewModal from './DynamicPreviewModal';
 import GeneratorParamsForm from './GeneratorParamsForm';
-import { apiCall, fetchGeneratorsList } from '../../lib/adminApi';
+import {
+  createChapterExercise,
+  updateChapterExercise,
+  deleteChapterExercise,
+} from '../../lib/adminApi';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -102,7 +107,8 @@ const ChapterExercisesAdminPage = () => {
     generator_key: '',
     enonce_template_html: '',
     solution_template_html: '',
-    variables: null
+    variables: null,
+    template_variants: []
   });
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -113,6 +119,8 @@ const ChapterExercisesAdminPage = () => {
   // Modal de prévisualisation
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState(null);
+  // Variants dynamiques (UI)
+  const [activeVariantIndex, setActiveVariantIndex] = useState(0);
   
   // Confirmation suppression
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -229,6 +237,107 @@ const ChapterExercisesAdminPage = () => {
       ? 'bg-purple-100 text-purple-800 border-purple-300' 
       : 'bg-blue-100 text-blue-800 border-blue-300';
   };
+
+  // Helpers variants dynamiques
+  const hasTemplateVariants =
+    Array.isArray(formData.template_variants) &&
+    formData.template_variants.length > 0;
+
+  // Dès que des template_variants existent, ils sont la source de vérité pour l'UI
+  const isVariantMode = hasTemplateVariants;
+
+  const effectiveVariants = hasTemplateVariants
+    ? formData.template_variants
+    : [
+        {
+          id: 'v1',
+          label: 'Variant 1',
+          weight: 1,
+          enonce_template_html: formData.enonce_template_html || '',
+          solution_template_html: formData.solution_template_html || '',
+        },
+      ];
+
+  const currentVariantIndex =
+    activeVariantIndex >= 0 && activeVariantIndex < effectiveVariants.length
+      ? activeVariantIndex
+      : 0;
+
+  const currentVariant = effectiveVariants[currentVariantIndex];
+
+  const updateVariantField = (index, field, value) => {
+    setFormData((prev) => {
+      if (!Array.isArray(prev.template_variants) || prev.template_variants.length === 0) {
+        // Pas encore en mode variants: on ne met à jour que les champs legacy
+        return prev;
+      }
+      const updated = prev.template_variants.map((v, i) =>
+        i === index ? { ...v, [field]: value } : v
+      );
+      return { ...prev, template_variants: updated };
+    });
+  };
+
+  const handleAddVariant = () => {
+    if (!Array.isArray(formData.template_variants) || formData.template_variants.length === 0) {
+      const baseVariant = {
+        id: 'v1',
+        label: 'Variant 1',
+        weight: 1,
+        enonce_template_html: formData.enonce_template_html || '',
+        solution_template_html: formData.solution_template_html || '',
+      };
+      const newVariant = {
+        id: 'v2',
+        label: 'Variant 2',
+        weight: 1,
+        enonce_template_html: formData.enonce_template_html || '',
+        solution_template_html: formData.solution_template_html || '',
+      };
+      setFormData((prev) => ({
+        ...prev,
+        template_variants: [baseVariant, newVariant],
+      }));
+      setActiveVariantIndex(1);
+    } else {
+      const existing = formData.template_variants;
+      const base = existing[existing.length - 1];
+      const nextIndex = existing.length + 1;
+      const newVariant = {
+        ...base,
+        id: `v${nextIndex}`,
+        label: base.label || `Variant ${nextIndex}`,
+      };
+      const updated = [...existing, newVariant];
+      setFormData((prev) => ({ ...prev, template_variants: updated }));
+      setActiveVariantIndex(updated.length - 1);
+    }
+  };
+
+  const handleDuplicateVariant = () => {
+    if (!isVariantMode) return;
+    const existing = formData.template_variants || [];
+    if (existing.length === 0) return;
+    const base = existing[currentVariantIndex];
+    const nextIndex = existing.length + 1;
+    const newVariant = {
+      ...base,
+      id: `v${nextIndex}`,
+      label: base.label || `Variant ${nextIndex}`,
+    };
+    const updated = [...existing, newVariant];
+    setFormData((prev) => ({ ...prev, template_variants: updated }));
+    setActiveVariantIndex(updated.length - 1);
+  };
+
+  const handleDeleteVariant = () => {
+    if (!isVariantMode) return;
+    const existing = formData.template_variants || [];
+    if (existing.length <= 1) return; // Ne jamais supprimer le dernier
+    const updated = existing.filter((_, idx) => idx !== currentVariantIndex);
+    setFormData((prev) => ({ ...prev, template_variants: updated }));
+    setActiveVariantIndex(0);
+  };
   
   // Ouvrir modal création
   const handleOpenCreate = () => {
@@ -248,8 +357,10 @@ const ChapterExercisesAdminPage = () => {
       generator_key: '',
       enonce_template_html: '',
       solution_template_html: '',
-      variables: null
+      variables: null,
+      template_variants: []
     });
+    setActiveVariantIndex(0);
     setFormErrors({});
     setIsModalOpen(true);
   };
@@ -316,8 +427,10 @@ const ChapterExercisesAdminPage = () => {
       generator_key: exercise.generator_key || '',
       enonce_template_html: exercise.enonce_template_html || '',
       solution_template_html: exercise.solution_template_html || '',
-      variables: exercise.variables || null
+      variables: exercise.variables || null,
+      template_variants: exercise.template_variants || []
     });
+    setActiveVariantIndex(0);
     setFormErrors({});
     setIsModalOpen(true);
   };
@@ -365,13 +478,44 @@ const ChapterExercisesAdminPage = () => {
       if (!formData.generator_key) {
         errors.generator_key = 'Le générateur est requis pour les exercices dynamiques';
       }
-      
-      if (!formData.enonce_template_html?.trim()) {
-        errors.enonce_template_html = 'Le template énoncé est requis';
-      }
-      
-      if (!formData.solution_template_html?.trim()) {
-        errors.solution_template_html = 'Le template solution est requis';
+
+      const hasVariants =
+        Array.isArray(formData.template_variants) &&
+        formData.template_variants.length > 0;
+
+      if (hasVariants) {
+        // Les variants deviennent la source de vérité
+        formData.template_variants.forEach((variant, idx) => {
+          if (!variant.id || !variant.id.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`id_${idx}`] =
+              "Chaque variant doit avoir un identifiant non vide";
+          }
+          if (!variant.enonce_template_html?.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`enonce_${idx}`] =
+              "Le template énoncé est requis pour chaque variant";
+          }
+          if (!variant.solution_template_html?.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`solution_${idx}`] =
+              "Le template solution est requis pour chaque variant";
+          }
+          const weight = Number(variant.weight ?? 1);
+          if (Number.isNaN(weight) || weight < 1) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`weight_${idx}`] =
+              "Le poids de chaque variant doit être un entier ≥ 1";
+          }
+        });
+      } else {
+        // Mode legacy: on valide les templates uniques
+        if (!formData.enonce_template_html?.trim()) {
+          errors.enonce_template_html = 'Le template énoncé est requis';
+        }
+        if (!formData.solution_template_html?.trim()) {
+          errors.solution_template_html = 'Le template solution est requis';
+        }
       }
     }
     
@@ -379,37 +523,39 @@ const ChapterExercisesAdminPage = () => {
     return Object.keys(errors).length === 0;
   };
   
-  // Soumettre avec gestion robuste des erreurs (P0.1)
+  // Soumettre avec gestion robuste des erreurs (P0.1) via adminApi
   const handleSubmit = async () => {
     if (!validateForm()) return;
     
     setSaving(true);
     
-    // Timeout controller
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
     try {
-      const url = modalMode === 'create'
-        ? `${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises`
-        : `${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises/${editingExercise.id}`;
-      
-      const method = modalMode === 'create' ? 'POST' : 'PUT';
-      
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.detail?.message || data.detail || 'Erreur lors de la sauvegarde');
+      // Préparer le payload en respectant la règle:
+      // - si template_variants non vide: source de vérité pour le dynamique côté backend/rendu
+      // - les champs legacy enonce_template_html/solution_template_html restent un miroir
+      //   (compat uniquement, jamais source principale en mode variants)
+      const payload = { ...formData };
+      if (payload.is_dynamic && Array.isArray(payload.template_variants) && payload.template_variants.length > 0) {
+        const first = payload.template_variants[0];
+        payload.enonce_template_html = first.enonce_template_html || '';
+        payload.solution_template_html = first.solution_template_html || '';
       }
+      
+      const result =
+        modalMode === 'create'
+          ? await createChapterExercise(chapterCode, payload)
+          : await updateChapterExercise(chapterCode, editingExercise.id, payload);
+
+      if (!result.success) {
+        const details = result.error_details || {};
+        const message =
+          result.error ||
+          details.message ||
+          'Erreur lors de la sauvegarde';
+        throw new Error(message);
+      }
+
+      const data = result.data || {};
       
       setOperationMessage({
         type: 'success',
@@ -420,12 +566,7 @@ const ChapterExercisesAdminPage = () => {
       fetchExercises();
       
     } catch (err) {
-      clearTimeout(timeoutId);
-      
       let errorMessage = err.message;
-      if (err.name === 'AbortError') {
-        errorMessage = 'La requête a expiré. Vérifiez votre connexion et réessayez.';
-      }
       
       setOperationMessage({
         type: 'error',
@@ -450,16 +591,18 @@ const ChapterExercisesAdminPage = () => {
     setDeleting(true);
     
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises/${exerciseToDelete.id}`,
-        { method: 'DELETE' }
-      );
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.detail || 'Erreur lors de la suppression');
+      const result = await deleteChapterExercise(chapterCode, exerciseToDelete.id);
+
+      if (!result.success) {
+        const details = result.error_details || {};
+        const message =
+          result.error ||
+          details.message ||
+          'Erreur lors de la suppression';
+        throw new Error(message);
       }
+
+      const data = result.data || {};
       
       setOperationMessage({
         type: 'success',
@@ -941,12 +1084,135 @@ const ChapterExercisesAdminPage = () => {
                     />
                   )}
                   
+                  {/* Bloc Variants d'énoncés */}
+                  <div className="border border-purple-200 rounded-lg p-3 bg-white space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-purple-800">
+                        Variants d’énoncés dynamiques
+                      </Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleAddVariant}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Ajouter
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleDuplicateVariant}
+                          disabled={!isVariantMode}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Dupliquer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleDeleteVariant}
+                          disabled={!isVariantMode || (formData.template_variants || []).length <= 1}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1 text-red-600" />
+                          Supprimer
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2">
+                      {effectiveVariants.map((variant, idx) => (
+                        <Button
+                          key={variant.id || `variant-${idx}`}
+                          type="button"
+                          size="xs"
+                          variant={idx === currentVariantIndex ? 'default' : 'outline'}
+                          className={idx === currentVariantIndex ? 'bg-purple-600 text-white' : 'text-purple-700'}
+                          onClick={() => setActiveVariantIndex(idx)}
+                        >
+                          {variant.label || variant.id || `Variant ${idx + 1}`}
+                        </Button>
+                      ))}
+                    </div>
+                    
+                    {isVariantMode && currentVariant && (
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs text-gray-600">ID du variant *</Label>
+                          <Input
+                            value={currentVariant.id || ''}
+                            onChange={(e) =>
+                              updateVariantField(currentVariantIndex, 'id', e.target.value)
+                            }
+                            className="h-8 text-xs font-mono"
+                          />
+                          {formErrors.template_variants?.[`id_${currentVariantIndex}`] && (
+                            <p className="text-xs text-red-500 mt-1">
+                              {formErrors.template_variants[`id_${currentVariantIndex}`]}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Label (optionnel)</Label>
+                          <Input
+                            value={currentVariant.label || ''}
+                            onChange={(e) =>
+                              updateVariantField(currentVariantIndex, 'label', e.target.value)
+                            }
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Poids *</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={currentVariant.weight ?? 1}
+                            onChange={(e) =>
+                              updateVariantField(
+                                currentVariantIndex,
+                                'weight',
+                                e.target.value ? parseInt(e.target.value, 10) : 1
+                              )
+                            }
+                            className="h-8 text-xs w-20"
+                          />
+                          {formErrors.template_variants?.[`weight_${currentVariantIndex}`] && (
+                            <p className="text-xs text-red-500 mt-1">
+                              {formErrors.template_variants[`weight_${currentVariantIndex}`]}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {isVariantMode && formErrors.template_variants && (
+                      <p className="text-xs text-red-500">
+                        Certains variants contiennent des erreurs, merci de corriger les champs en rouge.
+                      </p>
+                    )}
+                  </div>
+                  
                   {/* Template énoncé */}
                   <div>
                     <Label className="text-sm">Template énoncé *</Label>
                     <Textarea
-                      value={formData.enonce_template_html}
-                      onChange={(e) => setFormData(p => ({...p, enonce_template_html: e.target.value}))}
+                      value={
+                        isVariantMode
+                          ? currentVariant?.enonce_template_html || ''
+                          : formData.enonce_template_html
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (isVariantMode) {
+                          updateVariantField(currentVariantIndex, 'enonce_template_html', value);
+                        } else {
+                          setFormData((p) => ({ ...p, enonce_template_html: value }));
+                        }
+                      }}
                       placeholder="<p>Exercice avec {{variable}}...</p>"
                       className="font-mono text-sm min-h-[100px] bg-white"
                     />
@@ -959,8 +1225,23 @@ const ChapterExercisesAdminPage = () => {
                   <div>
                     <Label className="text-sm">Template solution *</Label>
                     <Textarea
-                      value={formData.solution_template_html}
-                      onChange={(e) => setFormData(p => ({...p, solution_template_html: e.target.value}))}
+                      value={
+                        isVariantMode
+                          ? currentVariant?.solution_template_html || ''
+                          : formData.solution_template_html
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (isVariantMode) {
+                          updateVariantField(
+                            currentVariantIndex,
+                            'solution_template_html',
+                            value
+                          );
+                        } else {
+                          setFormData((p) => ({ ...p, solution_template_html: value }));
+                        }
+                      }}
                       placeholder="<h4>Correction</h4>..."
                       className="font-mono text-sm min-h-[100px] bg-white"
                     />
@@ -1244,6 +1525,8 @@ const ChapterExercisesAdminPage = () => {
         enonceTemplate={formData.enonce_template_html}
         solutionTemplate={formData.solution_template_html}
         difficulty={formData.difficulty}
+        templateVariants={formData.is_dynamic ? formData.template_variants : null}
+        stableKey={editingExercise ? `${chapterCode}:${editingExercise.id}` : null}
       />
     </div>
   );

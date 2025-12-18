@@ -81,6 +81,9 @@
     - Application de ce mapping dans `preview_dynamic_exercise` :
       - **branche Factory** : pour tout générateur THALES (ex. `THALES_V2`) via `factory_generate`, juste après la fusion `variables + results + geo_data` ;
       - **branche legacy** : pour le générateur `THALES_V1` historique, après `all_vars = {**variables, **results}`.
+  - `backend/services/exercise_persistence_service.py` :
+    - Ajout du modèle `TemplateVariant` et du champ `template_variants` dans `ExerciseCreateRequest` / `ExerciseUpdateRequest` / `ExerciseResponse`.
+    - Validation métier : tout exercice dynamique doit disposer d’au moins un template (legacy ou variant), sinon la création est refusée.
 - **Frontend** :
   - Aucun changement requis : le frontend se contente d’afficher les `errors[]` renvoyés par l’API et l’HTML rendu.
 - **Infra / config** :
@@ -88,6 +91,7 @@
 
 - **Commits** :
   - Commit backend (local) : `Fix: align admin preview THALES_V1 variable mapping (carres)` (hash correspondant à la modif dans `generators_routes.py`).
+  - Commit backend (local) : `Feat: ajout du modèle TemplateVariant et validations dynamiques (Étape 1 variants)`.
 
 ### 8. Validation & tests
 

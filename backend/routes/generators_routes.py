@@ -208,6 +208,7 @@ class DynamicPreviewResponse(BaseModel):
     variables_used: Dict[str, Any]
     svg_enonce: Optional[str]
     svg_solution: Optional[str]
+    variant_id_used: Optional[str] = None
     errors: List[str] = Field(default_factory=list)
 
 
@@ -358,8 +359,13 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
             selection_mode = "fixed"
             fixed_variant_id = request.variant_id
 
+        chosen_variant_id: Optional[str] = None
+
         if request.template_variants and len(request.template_variants) > 0:
-            # Mode multi-variants: on ignore les templates legacy fournis au niveau racine
+            # Mode multi-variants:
+            # - les template_variants sont la source de vérité unique pour énoncé/solution
+            # - les champs legacy enonce_template_html/solution_template_html de la requête
+            #   sont ignorés pour le rendu (seulement utilisés comme compat éventuelle côté admin)
             try:
                 chosen = choose_template_variant(
                     variants=request.template_variants,
@@ -388,6 +394,7 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
 
             template_enonce = chosen.enonce_template_html
             template_solution = chosen.solution_template_html
+            chosen_variant_id = getattr(chosen, "id", None)
         else:
             # Fallback: comportement actuel avec un seul template fourni
             template_enonce = request.enonce_template_html
@@ -411,6 +418,7 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
             variables_used=all_vars,
             svg_enonce=svg_enonce,
             svg_solution=svg_solution,
+            variant_id_used=chosen_variant_id,
             errors=errors
         )
         

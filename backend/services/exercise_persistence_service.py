@@ -675,6 +675,19 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             update_data["solution_html"] = request.solution_html
         if request.needs_svg is not None:
             update_data["needs_svg"] = request.needs_svg
+        # Champs dynamiques
+        if request.enonce_template_html is not None:
+            update_data["enonce_template_html"] = request.enonce_template_html
+        if request.solution_template_html is not None:
+            update_data["solution_template_html"] = request.solution_template_html
+        if request.is_dynamic is not None:
+            update_data["is_dynamic"] = request.is_dynamic
+        if request.generator_key is not None:
+            update_data["generator_key"] = request.generator_key
+        if request.template_variants is not None:
+            update_data["template_variants"] = [
+                variant.dict() for variant in request.template_variants
+            ] or None
         
         if not update_data:
             del existing["_id"]

@@ -6,6 +6,18 @@ Les entrées sont listées de la plus récente à la plus ancienne.
 
 ---
 
+### 2025-12-18 – Variants d’énoncés dynamiques (Étape 5 : réhydratation admin & CRUD)
+
+- **Frontend** : renforcement de la réhydratation des `template_variants` dans `ChapterExercisesAdminPage` (les variants deviennent la source de vérité dès qu’ils sont présents, même en cas d’incohérence sur `is_dynamic`) et centralisation des appels CRUD admin (create/update/delete) via `adminApi` (`frontend/src/lib/adminApi.js`) pour bénéficier d’un parsing JSON défensif et d’erreurs structurées lors de la gestion des exercices dynamiques.
+- **Effet** : les variants créés en admin restent visibles et éditables à la réouverture des exercices, sans “retour” silencieux au mode legacy, et les erreurs réseau/serveur sont homogènes sur l’ensemble du backoffice.
+- **Référence incident** : `docs/incidents/INCIDENT_2025-12-18_template_variants_step5_rehydrate.md`.
+
+### 2025-12-18 – Persistance des `template_variants` en mise à jour (fix update_exercise)
+
+- **Backend** : `ExercisePersistenceService.update_exercise` persiste désormais les champs dynamiques `enonce_template_html`, `solution_template_html`, `is_dynamic`, `generator_key` et surtout `template_variants` (convertis en liste de dicts ou `None`), évitant la perte de variants lors des PUT admin.
+- **Tests** : ajout d’un test de persistance (update avec `template_variants` puis lecture) dans `backend/tests/test_exercise_persistence_models_variants.py`.
+- **Référence incident** : `docs/incidents/INCIDENT_2025-12-18_template_variants_update_put.md`.
+
 ### 2025-12-18 – Alignement preview admin THALES_V1 (carrés) sur pipeline élève
 
 - **Backend** : ajout, dans `backend/routes/generators_routes.py`, d’un mapping d’alias pour les générateurs THALES (`THALES_V1` legacy et `THALES_V2` Factory) identique à celui du handler `tests_dyn_handler.py` afin que la prévisualisation admin ne laisse plus de placeholders `{{base_initiale}}`, `{{hauteur_initiale}}`, etc. lorsqu’on utilise des carrés (ou d’autres variantes triangle/rectangle).
@@ -35,6 +47,11 @@ Les entrées sont listées de la plus récente à la plus ancienne.
 
 - **Backend** : branchement du moteur `choose_template_variant` dans le pipeline élève `6e_TESTS_DYN` via `backend/services/tests_dyn_handler.py::format_dynamic_exercise`, avec sélection de variant basée sur une `stable_key` métier (`"6E_TESTS_DYN:{id}"`) et sur la seed. Si `template_variants` est présent dans le template TESTS_DYN, il devient la source de vérité pour le rendu ; sinon, le comportement legacy (un seul template) est conservé. Le garde-fou `UNRESOLVED_PLACEHOLDERS` reste inchangé.
 - **Effet** : le chapitre pilote `6e_TESTS_DYN` est capable d’exploiter plusieurs variants d’énoncé/correction côté élève de manière déterministe, sans impact sur GM07/GM08 ni sur les chapitres legacy, et sans régression sur la détection de placeholders non résolus.
+
+### 2025-12-18 – Variants d’énoncés dynamiques (Étape 4 : UI admin & preview)
+
+- **Frontend** : ajout d’un bloc de gestion des `template_variants` dans `ChapterExercisesAdminPage` (création/édition/duplication/suppression de variants, validation des champs id/weight/templates) et extension de `DynamicPreviewModal` pour supporter un mode Auto (seed) ou Forcé (`variant_id`), en envoyant `template_variants`, `variant_id` et `stable_key` au backend. L’UI bascule automatiquement en mode variants dès qu’au moins deux variants sont définis et persiste `template_variants` via l’API admin existante.
+- **Backend** : enrichissement léger de `DynamicPreviewResponse` avec `variant_id_used` pour tracer le variant effectivement utilisé en preview ; aucun changement côté génération élève ni sur GM07/GM08.
 
 ### 2025-12-18 – Réorganisation de la documentation d’investigation
 
