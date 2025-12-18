@@ -20,6 +20,22 @@ Les entrées sont listées de la plus récente à la plus ancienne.
 - **Effet** : pour les chapitres comme `6e_G07`, une configuration incohérente entre curriculum/admin et `MathExerciseType` est maintenant signalée clairement (erreur 422) et ne peut plus produire d’exercices issus d’un pool “par défaut” sans lien avec la configuration pédagogique.
 - **Référence incident** : `docs/incidents/INCIDENT_2025-12-18_selection_6e_G07.md`.
 
+### 2025-12-18 – Variants d’énoncés dynamiques (Étape 1 : modèle & validations)
+
+- **Backend** : ajout du modèle `TemplateVariant` et du champ `template_variants` dans `ExerciseCreateRequest` / `ExerciseUpdateRequest` / `ExerciseResponse` (`backend/services/exercise_persistence_service.py`), avec validation métier imposant qu’un exercice dynamique possède au moins un template (legacy ou variant). Aucune modification des pipelines de génération ni de la preview pour cette étape.
+- **Root cause / besoin** : les exercices dynamiques ne permettaient pas encore de définir plusieurs variants d’énoncé/correction pour un même générateur, ce qui limitait la variabilité pédagogique côté wording et empêchait de préparer le moteur de sélection par seed.
+- **Effet** : le modèle de données est prêt pour supporter des variants d’énoncés dynamiques de façon déterministe, sans impacter GM07/GM08 ni les chapitres legacy ; les validations évitent la création d’exercices dynamiques incohérents (sans aucun template exploitable).
+
+### 2025-12-18 – Variants d’énoncés dynamiques (Étape 2 : moteur & preview admin)
+
+- **Backend** : création de `backend/services/dynamic_exercise_engine.py` avec `choose_template_variant` (sélection de variant déterministe par seed + clé stable, pondérée par `weight`, sans RNG global) et branchement dans `preview_dynamic_exercise` (`backend/routes/generators_routes.py`) via de nouveaux champs `template_variants`, `variant_id` et `stable_key` dans `DynamicPreviewRequest`. La preview admin peut désormais choisir un variant d’énoncé/solution de façon déterministe ou forcée, sans toucher aux pipelines élèves / GM07 / GM08.
+- **Effet** : la logique de sélection de variant est centralisée et testée, la preview admin supporte les multi-variants en mode éphémère (sans DB) et remonte des erreurs JSON explicites en cas de variant invalide ou de placeholders non résolus, tout en garantissant la reproductibilité par seed.
+
+### 2025-12-18 – Variants d’énoncés dynamiques (Étape 3 : pilotage élève TESTS_DYN)
+
+- **Backend** : branchement du moteur `choose_template_variant` dans le pipeline élève `6e_TESTS_DYN` via `backend/services/tests_dyn_handler.py::format_dynamic_exercise`, avec sélection de variant basée sur une `stable_key` métier (`"6E_TESTS_DYN:{id}"`) et sur la seed. Si `template_variants` est présent dans le template TESTS_DYN, il devient la source de vérité pour le rendu ; sinon, le comportement legacy (un seul template) est conservé. Le garde-fou `UNRESOLVED_PLACEHOLDERS` reste inchangé.
+- **Effet** : le chapitre pilote `6e_TESTS_DYN` est capable d’exploiter plusieurs variants d’énoncé/correction côté élève de manière déterministe, sans impact sur GM07/GM08 ni sur les chapitres legacy, et sans régression sur la détection de placeholders non résolus.
+
 ### 2025-12-18 – Réorganisation de la documentation d’investigation
 
 - **Docs** : déplacement de tous les fichiers `INVESTIGATION_*.md` de la racine vers le dossier `docs/` pour centraliser les analyses d’incidents et d’anomalies.

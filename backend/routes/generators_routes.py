@@ -33,6 +33,7 @@ from backend.generators.generator_registry import (
 )
 from backend.generators.thales_generator import generate_dynamic_exercise
 from backend.services.template_renderer import render_template
+from backend.services.dynamic_exercise_engine import choose_template_variant
 from backend.logger import get_logger
 
 logger = get_logger()
@@ -163,13 +164,41 @@ class GeneratorSchemaResponse(BaseModel):
     template_example_solution: str
 
 
+class PreviewTemplateVariant(BaseModel):
+    id: str = Field(description="Identifiant du variant (ex: 'v1', 'A', ...)")
+    enonce_template_html: str = Field(description="Template HTML de l'énoncé pour ce variant")
+    solution_template_html: str = Field(description="Template HTML de la solution pour ce variant")
+    weight: int = Field(default=1, ge=1, description="Poids relatif de ce variant pour la sélection")
+
+
 class DynamicPreviewRequest(BaseModel):
     generator_key: str = Field(description="Clé du générateur (ex: THALES_V1)")
-    enonce_template_html: str = Field(description="Template HTML de l'énoncé")
-    solution_template_html: str = Field(description="Template HTML de la solution")
+    enonce_template_html: str = Field(description="Template HTML de l'énoncé", default="")
+    solution_template_html: str = Field(description="Template HTML de la solution", default="")
     difficulty: str = Field(default="moyen")
     seed: Optional[int] = Field(default=None)
     svg_mode: str = Field(default="AUTO")
+    # Variants d'énoncés (mode éphémère, sans lecture DB)
+    template_variants: Optional[List[PreviewTemplateVariant]] = Field(
+        default=None,
+        description=(
+            "Liste de variants de templates pour prévisualisation. "
+            "Si renseigné, devient la source de vérité pour la preview."
+        ),
+    )
+    # Optionnel: identifiant du variant à forcer (mode fixed)
+    variant_id: Optional[str] = Field(
+        default=None,
+        description="Identifiant du variant à forcer pour la preview (mode fixed).",
+    )
+    # Clé stable logique, utilisée pour le hash seed/variant
+    stable_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Clé stable de l'exercice (ex: '6e_G07:3'). "
+            "Si absente, on utilise la generator_key comme clé de hash."
+        ),
+    )
 
 
 class DynamicPreviewResponse(BaseModel):
@@ -314,10 +343,59 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
 
             svg_enonce = gen_result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
             svg_solution = gen_result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
-        
+
+        # =========================================================================
+        # Sélection du template (single ou variants)
+        # =========================================================================
+
+        # Clé stable utilisée pour le hash de sélection
+        exercise_id = request.stable_key or request.generator_key
+
+        # Choix du mode de sélection
+        selection_mode = "seed_random"
+        fixed_variant_id = None
+        if request.variant_id:
+            selection_mode = "fixed"
+            fixed_variant_id = request.variant_id
+
+        if request.template_variants and len(request.template_variants) > 0:
+            # Mode multi-variants: on ignore les templates legacy fournis au niveau racine
+            try:
+                chosen = choose_template_variant(
+                    variants=request.template_variants,
+                    seed=request.seed,
+                    exercise_id=exercise_id,
+                    mode=selection_mode,
+                    fixed_variant_id=fixed_variant_id,
+                )
+            except ValueError as e:
+                # Erreur explicite sur la sélection de variant
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "error_code": "INVALID_TEMPLATE_VARIANT",
+                        "error": "invalid_template_variant",
+                        "message": str(e),
+                        "success": False,
+                        "enonce_html": "",
+                        "solution_html": "",
+                        "variables_used": {},
+                        "svg_enonce": None,
+                        "svg_solution": None,
+                        "errors": [str(e)],
+                    },
+                )
+
+            template_enonce = chosen.enonce_template_html
+            template_solution = chosen.solution_template_html
+        else:
+            # Fallback: comportement actuel avec un seul template fourni
+            template_enonce = request.enonce_template_html
+            template_solution = request.solution_template_html
+
         # Rendu des templates
-        enonce_html = render_template(request.enonce_template_html, all_vars)
-        solution_html = render_template(request.solution_template_html, all_vars)
+        enonce_html = render_template(template_enonce, all_vars)
+        solution_html = render_template(template_solution, all_vars)
         
         # Détection des placeholders non résolus
         unreplaced_enonce = re.findall(r'\{\{(\w+)\}\}', enonce_html)

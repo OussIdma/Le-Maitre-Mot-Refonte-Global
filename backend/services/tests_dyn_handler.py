@@ -17,6 +17,7 @@ Workflow:
 import time
 import random
 import re
+from types import SimpleNamespace
 from typing import Dict, Any, Optional, List, Set
 
 from fastapi import HTTPException
@@ -29,6 +30,7 @@ from backend.data.tests_dyn_exercises import (
 )
 from backend.generators.thales_generator import generate_dynamic_exercise, GENERATORS_REGISTRY
 from backend.services.template_renderer import render_template, get_template_variables
+from backend.services.dynamic_exercise_engine import choose_template_variant
 from backend.logger import get_logger
 
 
@@ -111,10 +113,6 @@ def format_dynamic_exercise(
 
     variables = gen_result["variables"]
     results = gen_result["results"]
-
-    # Rendre les templates
-    enonce_template = exercise_template.get("enonce_template_html", "")
-    solution_template = exercise_template.get("solution_template_html", "")
 
     # Fusionner variables et results pour le rendu
     all_vars: Dict[str, Any] = {**variables, **results}
@@ -199,6 +197,45 @@ def format_dynamic_exercise(
             # Aliases triangle
             all_vars.setdefault("base_finale", cote_final)
             all_vars.setdefault("hauteur_finale", cote_final)
+
+    # =========================================================================
+    # SÉLECTION DU TEMPLATE (SINGLE OU VARIANTS)
+    # =========================================================================
+    # stable_key métier pour la sélection de variant:
+    # - soit fourni explicitement dans exercise_template["stable_key"]
+    # - soit dérivé du chapitre pilote + id local
+    stable_key = exercise_template.get("stable_key") or f"6E_TESTS_DYN:{exercise_template.get('id')}"
+
+    template_variants = exercise_template.get("template_variants") or []
+    if template_variants:
+        # On construit une liste d'objets avec les attributs attendus par choose_template_variant
+        variant_objs: List[SimpleNamespace] = []
+        for v in template_variants:
+            if isinstance(v, dict):
+                variant_objs.append(
+                    SimpleNamespace(
+                        id=v.get("id"),
+                        enonce_template_html=v.get("enonce_template_html", ""),
+                        solution_template_html=v.get("solution_template_html", ""),
+                        weight=v.get("weight", 1),
+                    )
+                )
+            else:
+                # Si déjà un objet avec les bons attributs, on le garde tel quel
+                variant_objs.append(v)  # type: ignore[arg-type]
+
+        chosen_variant = choose_template_variant(
+            variants=variant_objs,
+            seed=seed,
+            exercise_id=stable_key,
+        )
+
+        enonce_template = chosen_variant.enonce_template_html
+        solution_template = chosen_variant.solution_template_html
+    else:
+        # Fallback: comportement legacy, un seul template par exercice
+        enonce_template = exercise_template.get("enonce_template_html", "")
+        solution_template = exercise_template.get("solution_template_html", "")
 
     # =========================================================================
     # DEBUG: placeholders attendus vs variables fournies

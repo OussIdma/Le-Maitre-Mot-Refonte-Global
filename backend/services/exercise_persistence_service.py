@@ -29,46 +29,103 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 # MODÈLES PYDANTIC
 # =============================================================================
 
+class TemplateVariant(BaseModel):
+    """
+    Variant de template pour un exercice dynamique.
+    """
+
+    id: str = Field(..., description="Identifiant stable du variant (ex: 'v1', 'A', ...)")
+    label: Optional[str] = Field(
+        default=None, description="Label lisible du variant (optionnel)"
+    )
+    enonce_template_html: str = Field(
+        ..., description="Template énoncé avec {{variables}}"
+    )
+    solution_template_html: str = Field(
+        ..., description="Template solution avec {{variables}}"
+    )
+    weight: int = Field(
+        default=1,
+        ge=1,
+        description="Poids relatif du variant pour la sélection future",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Métadonnées optionnelles (tags, notes pédagogiques, ...)",
+    )
+
+
 class ExerciseCreateRequest(BaseModel):
     """Modèle pour la création d'un exercice"""
-    family: str = Field(..., description="Famille: CONVERSION, COMPARAISON, PERIMETRE, PROBLEME, DUREES, etc.")
-    exercise_type: Optional[str] = Field(None, description="Type d'exercice (optionnel): LECTURE_HEURE, PLACER_AIGUILLES, etc.")
+
+    family: str = Field(
+        ...,
+        description="Famille: CONVERSION, COMPARAISON, PERIMETRE, PROBLEME, DUREES, etc.",
+    )
+    exercise_type: Optional[str] = Field(
+        None, description="Type d'exercice (optionnel): LECTURE_HEURE, PLACER_AIGUILLES, etc."
+    )
     difficulty: str = Field(..., description="Difficulté: facile, moyen, difficile")
     offer: str = Field(default="free", description="Offre: free ou pro")
     # Flag dynamique EN PREMIER pour que les validateurs puissent le lire
     is_dynamic: bool = Field(default=False, description="Exercice dynamique (template)")
     # Exercices statiques
-    enonce_html: Optional[str] = Field(default="", description="Énoncé en HTML pur (requis si non dynamique)")
-    solution_html: Optional[str] = Field(default="", description="Solution en HTML pur (requis si non dynamique)")
+    enonce_html: Optional[str] = Field(
+        default="", description="Énoncé en HTML pur (requis si non dynamique)"
+    )
+    solution_html: Optional[str] = Field(
+        default="", description="Solution en HTML pur (requis si non dynamique)"
+    )
     needs_svg: bool = Field(default=False, description="Nécessite un SVG")
-    variables: Optional[Dict[str, Any]] = Field(None, description="Variables pour le SVG (ex: {hour: 8, minute: 0})")
-    svg_enonce_brief: Optional[str] = Field(None, description="Description du SVG pour l'énoncé")
-    svg_solution_brief: Optional[str] = Field(None, description="Description du SVG pour la solution")
+    variables: Optional[Dict[str, Any]] = Field(
+        None, description="Variables pour le SVG (ex: {hour: 8, minute: 0})"
+    )
+    svg_enonce_brief: Optional[str] = Field(
+        None, description="Description du SVG pour l'énoncé"
+    )
+    svg_solution_brief: Optional[str] = Field(
+        None, description="Description du SVG pour la solution"
+    )
     # Exercices dynamiques
-    generator_key: Optional[str] = Field(None, description="Clé du générateur (ex: THALES_V1)")
-    enonce_template_html: Optional[str] = Field(None, description="Template énoncé avec {{variables}}")
-    solution_template_html: Optional[str] = Field(None, description="Template solution avec {{variables}}")
-    variables_schema: Optional[Dict[str, str]] = Field(None, description="Schéma des variables")
-    
-    @validator('enonce_html', always=True)
+    generator_key: Optional[str] = Field(
+        None, description="Clé du générateur (ex: THALES_V1)"
+    )
+    enonce_template_html: Optional[str] = Field(
+        None, description="Template énoncé avec {{variables}}"
+    )
+    solution_template_html: Optional[str] = Field(
+        None, description="Template solution avec {{variables}}"
+    )
+    variables_schema: Optional[Dict[str, str]] = Field(
+        None, description="Schéma des variables"
+    )
+    template_variants: Optional[List[TemplateVariant]] = Field(
+        default=None,
+        description=(
+            "Liste des variantes de templates pour les exercices dynamiques. "
+            "Si renseigné, devient la source de vérité pour le rendu dynamique."
+        ),
+    )
+
+    @validator("enonce_html", always=True)
     def validate_enonce(cls, v, values):
-        is_dynamic = values.get('is_dynamic', False)
+        is_dynamic = values.get("is_dynamic", False)
         if not is_dynamic and not v:
-            raise ValueError('enonce_html est requis pour les exercices statiques')
-        return v or ''
-    
-    @validator('solution_html', always=True)
+            raise ValueError("enonce_html est requis pour les exercices statiques")
+        return v or ""
+
+    @validator("solution_html", always=True)
     def validate_solution(cls, v, values):
-        is_dynamic = values.get('is_dynamic', False)
+        is_dynamic = values.get("is_dynamic", False)
         if not is_dynamic and not v:
-            raise ValueError('solution_html est requis pour les exercices statiques')
-        return v or ''
-    
-    @validator('generator_key', always=True)
+            raise ValueError("solution_html est requis pour les exercices statiques")
+        return v or ""
+
+    @validator("generator_key", always=True)
     def validate_generator(cls, v, values):
-        is_dynamic = values.get('is_dynamic', False)
+        is_dynamic = values.get("is_dynamic", False)
         if is_dynamic and not v:
-            raise ValueError('generator_key est requis pour les exercices dynamiques')
+            raise ValueError("generator_key est requis pour les exercices dynamiques")
         return v
 
 
@@ -89,6 +146,7 @@ class ExerciseUpdateRequest(BaseModel):
     enonce_template_html: Optional[str] = None
     solution_template_html: Optional[str] = None
     variables_schema: Optional[Dict[str, str]] = None
+    template_variants: Optional[List[TemplateVariant]] = None
 
 
 class ExerciseResponse(BaseModel):
@@ -109,6 +167,7 @@ class ExerciseResponse(BaseModel):
     generator_key: Optional[str] = None
     enonce_template_html: Optional[str] = None
     solution_template_html: Optional[str] = None
+    template_variants: Optional[List[TemplateVariant]] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -561,6 +620,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             "enonce_template_html": request.enonce_template_html,
             "solution_template_html": request.solution_template_html,
             "variables_schema": request.variables_schema,
+            "template_variants": [
+                variant.dict() for variant in (request.template_variants or [])
+            ] or None,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }
@@ -728,15 +790,56 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         # Validation spécifique selon le type (dynamique ou statique)
         if request.is_dynamic:
-            # Exercice dynamique - vérifier les templates
+            # Exercice dynamique - vérifier le générateur
             if not request.generator_key:
                 raise ValueError("generator_key est requis pour les exercices dynamiques")
-            
-            if not request.enonce_template_html or not request.enonce_template_html.strip():
-                raise ValueError("Le template énoncé ne peut pas être vide pour un exercice dynamique")
-            
-            if not request.solution_template_html or not request.solution_template_html.strip():
-                raise ValueError("Le template solution ne peut pas être vide pour un exercice dynamique")
+
+            # Un exercice dynamique doit avoir AU MOINS un template :
+            # - soit en mode legacy (enonce_template_html + solution_template_html),
+            # - soit via une ou plusieurs TemplateVariant.
+            has_legacy_templates = bool(
+                request.enonce_template_html
+                and request.enonce_template_html.strip()
+                and request.solution_template_html
+                and request.solution_template_html.strip()
+            )
+            has_variants = bool(request.template_variants and len(request.template_variants) > 0)
+
+            if not has_legacy_templates and not has_variants:
+                raise ValueError(
+                    "Au moins un template (legacy ou variant) est requis pour un exercice dynamique"
+                )
+
+            # Si des variants sont fournis, vérifier qu'ils sont complets et cohérents
+            if request.template_variants:
+                for idx, variant in enumerate(request.template_variants):
+                    # id non vide
+                    if not variant.id or not str(variant.id).strip():
+                        raise ValueError(
+                            f"Le variant #{idx + 1} doit avoir un id non vide"
+                        )
+
+                    # weight >= 1 (double garde-fou en plus de la contrainte Pydantic)
+                    if variant.weight is None or variant.weight < 1:
+                        raise ValueError(
+                            f"Le variant #{idx + 1} ({variant.id}) doit avoir un weight >= 1"
+                        )
+
+                    # templates non vides
+                    if (
+                        not variant.enonce_template_html
+                        or not variant.enonce_template_html.strip()
+                    ):
+                        raise ValueError(
+                            f"Le variant #{idx + 1} ({variant.id}) doit avoir un template énoncé non vide"
+                        )
+                    if (
+                        not variant.solution_template_html
+                        or not variant.solution_template_html.strip()
+                    ):
+                        raise ValueError(
+                            f"Le variant #{idx + 1} ({variant.id}) doit avoir un template solution non vide"
+                        )
         else:
             # Exercice statique - vérifier le HTML
             if not request.enonce_html or not request.enonce_html.strip():
