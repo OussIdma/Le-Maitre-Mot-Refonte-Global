@@ -285,6 +285,12 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
                 **result.get("geo_data", {}),
             }
 
+            # IMPORTANT : si le générateur est un THALES (THALES_V2, ou alias),
+            # on applique les mêmes alias de variables que pour le pipeline élève
+            # afin d'éviter les placeholders {{base_initiale}}/{{hauteur_initiale}}.
+            if generator_key.startswith("THALES"):
+                all_vars = _apply_thales_alias_mappings(all_vars)
+
             svg_enonce = result.get("figure_svg_enonce") if request.svg_mode == "AUTO" else None
             svg_solution = result.get("figure_svg_solution") if request.svg_mode == "AUTO" else None
         else:

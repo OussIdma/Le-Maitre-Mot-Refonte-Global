@@ -78,9 +78,9 @@
       - pour `triangle` : mappe base/hauteur vers longueur/largeur ;
       - pour `rectangle` : mappe longueur/largeur vers base/hauteur ;
       - pour `carre` : mappe `cote_(initial|final)` vers toutes les variantes (`base_*`, `hauteur_*`, `longueur_*`, `largeur_*`).
-    - Application de ce mapping **uniquement** pour les générateurs THALES legacy dans `preview_dynamic_exercise` :
-      - après `all_vars = {**variables, **results}` ;
-      - conditionnel sur `generator_key.startswith("THALES")`.
+    - Application de ce mapping dans `preview_dynamic_exercise` :
+      - **branche Factory** : pour tout générateur THALES (ex. `THALES_V2`) via `factory_generate`, juste après la fusion `variables + results + geo_data` ;
+      - **branche legacy** : pour le générateur `THALES_V1` historique, après `all_vars = {**variables, **results}`.
 - **Frontend** :
   - Aucun changement requis : le frontend se contente d’afficher les `errors[]` renvoyés par l’API et l’HTML rendu.
 - **Infra / config** :
