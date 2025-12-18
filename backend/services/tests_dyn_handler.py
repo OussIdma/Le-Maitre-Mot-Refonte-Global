@@ -8,23 +8,31 @@ et des générateurs de variables (comme THALES_V1).
 Workflow:
 1. Sélectionner un exercice template depuis tests_dyn_exercises.py
 2. Appeler le générateur (generator_key) pour obtenir les variables
-3. Rendre les templates avec les variables
-4. Générer les SVG depuis les variables
-5. Retourner l'exercice complet
+3. Enrichir les variables (mappings alias) pour compatibilité template/générateur
+4. Rendre les templates avec les variables
+5. Générer les SVG depuis les variables
+6. Retourner l'exercice complet, ou une erreur JSON propre si placeholders non résolus
 """
 
 import time
 import random
-from typing import Dict, Any, Optional, List
+import re
+from typing import Dict, Any, Optional, List, Set
 
-from data.tests_dyn_exercises import (
+from fastapi import HTTPException
+
+from backend.data.tests_dyn_exercises import (
     get_tests_dyn_exercises,
     get_tests_dyn_batch,
     get_tests_dyn_stats,
     get_random_tests_dyn_exercise
 )
 from backend.generators.thales_generator import generate_dynamic_exercise, GENERATORS_REGISTRY
-from services.template_renderer import render_template
+from backend.services.template_renderer import render_template, get_template_variables
+from backend.logger import get_logger
+
+
+logger = get_logger()
 
 
 def is_tests_dyn_request(code_officiel: Optional[str]) -> bool:
@@ -32,6 +40,17 @@ def is_tests_dyn_request(code_officiel: Optional[str]) -> bool:
     if not code_officiel:
         return False
     return code_officiel.upper() in ["6E_TESTS_DYN", "TESTS_DYN"]
+
+
+def _extract_placeholders(template_str: str) -> Set[str]:
+    """
+    Extrait les placeholders {{variable}} d'un template.
+    Utilisé uniquement pour debug / garde anti-placeholders.
+    """
+    if not template_str:
+        return set()
+    pattern = r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}"
+    return set(re.findall(pattern, template_str))
 
 
 def format_dynamic_exercise(
@@ -48,58 +67,145 @@ def format_dynamic_exercise(
         seed: Seed pour le générateur (reproductibilité)
     
     Returns:
-        Exercice formaté avec HTML rendu et SVG générés
+        Exercice formaté avec HTML rendu et SVG générés.
+
+    Important:
+    - Ajoute des alias de variables pour compatibilité template/générateur
+      (rectangle / triangle / carré)
+    - Garde déterminisme via le seed (aucun random global ajouté ici)
+    - Si des placeholders {{...}} restent après rendu, lève une HTTPException
+      422 UNRESOLVED_PLACEHOLDERS pour éviter d'envoyer un énoncé cassé.
     """
     exercise_id = f"ex_6e_tests_dyn_{exercise_template['id']}_{timestamp}"
     is_premium = exercise_template["offer"] == "pro"
-    
+
     # Récupérer le générateur
     generator_key = exercise_template.get("generator_key", "THALES_V1")
     difficulty = exercise_template.get("difficulty", "moyen")
-    
-    # Générer les variables et SVG
+
+    # Générer les variables et SVG (dépend uniquement du seed + difficulty)
     gen_result = generate_dynamic_exercise(
         generator_key=generator_key,
         seed=seed,
         difficulty=difficulty
     )
-    
+
     variables = gen_result["variables"]
     results = gen_result["results"]
-    
+
     # Rendre les templates
     enonce_template = exercise_template.get("enonce_template_html", "")
     solution_template = exercise_template.get("solution_template_html", "")
-    
+
     # Fusionner variables et results pour le rendu
-    all_vars = {**variables, **results}
-    
-    # Mapping temporaire pour compatibilité template/générateur
-    # Le générateur peut produire triangle (base/hauteur) ou rectangle (longueur/largeur)
-    # Les templates peuvent attendre l'autre format, donc on mappe dans les deux sens
-    # Mapping triangle → rectangle (si générateur produit triangle mais template attend rectangle)
-    if "base_initiale" in all_vars and "longueur_initiale" not in all_vars:
-        all_vars["longueur_initiale"] = all_vars["base_initiale"]
-    if "hauteur_initiale" in all_vars and "largeur_initiale" not in all_vars:
-        all_vars["largeur_initiale"] = all_vars["hauteur_initiale"]
-    if "base_finale" in all_vars and "longueur_finale" not in all_vars:
-        all_vars["longueur_finale"] = all_vars["base_finale"]
-    if "hauteur_finale" in all_vars and "largeur_finale" not in all_vars:
-        all_vars["largeur_finale"] = all_vars["hauteur_finale"]
-    
-    # Mapping rectangle → triangle (si générateur produit rectangle mais template attend triangle)
-    if "longueur_initiale" in all_vars and "base_initiale" not in all_vars:
-        all_vars["base_initiale"] = all_vars["longueur_initiale"]
-    if "largeur_initiale" in all_vars and "hauteur_initiale" not in all_vars:
-        all_vars["hauteur_initiale"] = all_vars["largeur_initiale"]
-    if "longueur_finale" in all_vars and "base_finale" not in all_vars:
-        all_vars["base_finale"] = all_vars["longueur_finale"]
-    if "largeur_finale" in all_vars and "hauteur_finale" not in all_vars:
-        all_vars["hauteur_finale"] = all_vars["largeur_finale"]
-    
+    all_vars: Dict[str, Any] = {**variables, **results}
+
+    figure_type = all_vars.get("figure_type")
+
+    # =========================================================================
+    # MAPPINGS DE COMPATIBILITÉ THALES (triangle / rectangle / carré)
+    # =========================================================================
+    # Objectif: ne JAMAIS laisser un template sans variable attendue,
+    # uniquement en ajoutant des alias, sans modifier les valeurs sources.
+    #
+    # 1) triangle → rectangle (base/hauteur -> longueur/largeur)
+    if figure_type == "triangle":
+        if "base_initiale" in all_vars:
+            all_vars.setdefault("longueur_initiale", all_vars["base_initiale"])
+        if "hauteur_initiale" in all_vars:
+            all_vars.setdefault("largeur_initiale", all_vars["hauteur_initiale"])
+        if "base_finale" in all_vars:
+            all_vars.setdefault("longueur_finale", all_vars["base_finale"])
+        if "hauteur_finale" in all_vars:
+            all_vars.setdefault("largeur_finale", all_vars["hauteur_finale"])
+
+    # 2) rectangle → triangle (longueur/largeur -> base/hauteur)
+    if figure_type == "rectangle":
+        if "longueur_initiale" in all_vars:
+            all_vars.setdefault("base_initiale", all_vars["longueur_initiale"])
+        if "largeur_initiale" in all_vars:
+            all_vars.setdefault("hauteur_initiale", all_vars["largeur_initiale"])
+        if "longueur_finale" in all_vars:
+            all_vars.setdefault("base_finale", all_vars["longueur_finale"])
+        if "largeur_finale" in all_vars:
+            all_vars.setdefault("hauteur_finale", all_vars["largeur_finale"])
+
+    # 3) carré → rectangle + triangle (cote -> longueur/largeur/base/hauteur)
+    if figure_type == "carre":
+        cote_initial = all_vars.get("cote_initial")
+        cote_final = all_vars.get("cote_final")
+
+        if cote_initial is not None:
+            # Aliases rectangle
+            all_vars.setdefault("longueur_initiale", cote_initial)
+            all_vars.setdefault("largeur_initiale", cote_initial)
+            # Aliases triangle
+            all_vars.setdefault("base_initiale", cote_initial)
+            all_vars.setdefault("hauteur_initiale", cote_initial)
+
+        if cote_final is not None:
+            # Aliases rectangle
+            all_vars.setdefault("longueur_finale", cote_final)
+            all_vars.setdefault("largeur_finale", cote_final)
+            # Aliases triangle
+            all_vars.setdefault("base_finale", cote_final)
+            all_vars.setdefault("hauteur_finale", cote_final)
+
+    # =========================================================================
+    # DEBUG: placeholders attendus vs variables fournies
+    # =========================================================================
+    placeholders_enonce = _extract_placeholders(enonce_template)
+    placeholders_solution = _extract_placeholders(solution_template)
+    expected_placeholders = placeholders_enonce.union(placeholders_solution)
+    provided_keys = set(all_vars.keys())
+    missing_before_render = sorted(expected_placeholders - provided_keys)
+
+    if expected_placeholders:
+        logger.debug(
+            f"[TESTS_DYN] Placeholders attendus (ex {exercise_template.get('id')} "
+            f"/ {generator_key} / {figure_type}): {sorted(expected_placeholders)} | "
+            f"clés fournies: {sorted(provided_keys)} | manquantes avant rendu: {missing_before_render}"
+        )
+
+    # Rendu HTML
     enonce_html = render_template(enonce_template, all_vars)
     solution_html = render_template(solution_template, all_vars)
-    
+
+    # =========================================================================
+    # GUARDE ANTI-PLACEHOLDERS: ne jamais renvoyer {{...}} côté élève
+    # =========================================================================
+    unresolved_enonce = re.findall(r"\{\{\s*(\w+)\s*\}\}", enonce_html or "")
+    unresolved_solution = re.findall(r"\{\{\s*(\w+)\s*\}\}", solution_html or "")
+    unresolved = sorted(set(unresolved_enonce + unresolved_solution))
+
+    if unresolved:
+        details = {
+            "unknown_placeholders": unresolved,
+            "placeholders_expected": sorted(expected_placeholders),
+            "keys_provided": sorted(provided_keys),
+            "template_id": exercise_template.get("id"),
+            "generator_key": generator_key,
+            "figure_type": figure_type,
+            "exercise_id": exercise_id,
+        }
+
+        logger.error(
+            f"[TESTS_DYN] UNRESOLVED_PLACEHOLDERS pour ex {exercise_id} "
+            f"(template {exercise_template.get('id')}, generator={generator_key}, figure_type={figure_type}) - "
+            f"restants: {unresolved} | attendus: {sorted(expected_placeholders)} | clés: {sorted(provided_keys)}"
+        )
+
+        # Remonter une erreur structurée JSON-safe, interceptée par FastAPI
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "UNRESOLVED_PLACEHOLDERS",
+                "error": "UNRESOLVED_PLACEHOLDERS",
+                "message": "Un ou plusieurs placeholders n'ont pas été résolus pour 6e_TESTS_DYN.",
+                "details": details,
+            },
+        )
+
     return {
         "id_exercice": exercise_id,
         "niveau": "6e",
