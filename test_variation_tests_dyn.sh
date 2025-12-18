@@ -122,3 +122,4 @@ echo "   - Variation avec offer=pro (fallback): OK"
 echo "   - Déterminisme (même seed): OK"
 echo "   - Erreur JSON sur pool vide: OK"
 
+

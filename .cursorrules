@@ -7,6 +7,14 @@
 2) Fix minimal, pas de patch sans cause.
 3) Validation : proposer commande de test/verification.
 
+# DEBUG OBLIGATOIRE (GÉNÉRAL)
+- Avant tout fix : reproduire le bug avec une entrée exacte (curl/log/seed) et l’inclure.
+- Identifier le chemin d’exécution réel (endpoint/service/fonction) avant de modifier.
+- Si plusieurs pipelines possibles, déterminer lequel est réellement utilisé.
+- Ne proposer le fix qu’après reproduction + chemin confirmé.
+- Ne pas déduire si une reproduction concrète est possible.
+- Si l’exécution n’est pas possible, l’indiquer explicitement et demander les sorties exactes.
+
 # PLAN
 - >1 fichier : plan 3–5 étapes (Analyse → Fix → Tests).
 - Tâche simple : exécution directe.
@@ -18,6 +26,14 @@
 - Pas de génération libre de texte par IA.
 - Pas de suppression de logique sans justification.
 
+# TESTS MULTI‑VARIANTES
+- Si plusieurs variantes d’un même générateur existent (ex: THALES_V1/V2), tester chaque variante après fix, même si le changement est ciblé.
+
+# POST-FIX AUTOMATION
+- Après chaque correctif, créer un fichier d’incident dans `docs/incidents/` (format : symptôme → reproduction → root cause → fix → tests).
+- Mettre à jour `docs/CHANGELOG_TECH.md` avec 1 ligne (date + root cause + fix).
+- Créer les dossiers/fichiers si absents.
+
 # COMMUNICATION
 - Direct : Root cause → Fix → Tests → Risques résiduels.
 - Pas d’hypothèses non prouvées.
@@ -25,6 +41,3 @@
 
 # STACK
 - Python / FastAPI / React.
-
-
-
