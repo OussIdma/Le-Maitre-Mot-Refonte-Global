@@ -1,12 +1,20 @@
 ## Changelog technique
 
-Ce fichier trace les évolutions techniques majeures (backend, frontend, infra, documentation d’architecture) de **Le Maître Mot v16 – Refonte locale**.
+Ce fichier trace les évolutions techniques majeures (backend, frontend, infra, documentation d'architecture) de **Le Maître Mot v16 – Refonte locale**.
 
 Les entrées sont listées de la plus récente à la plus ancienne.
 
 ---
 
-### 2025-12-18 – Variants d’énoncés dynamiques (Étape 5 : réhydratation admin & CRUD)
+### 2025-12-18 – Généralisation template_variants (Phase A : Allowlist)
+
+- **Backend** : création de `backend/services/variants_config.py` avec allowlist explicite `VARIANTS_ALLOWED_CHAPTERS = {"6E_TESTS_DYN"}` et fonction `is_variants_allowed()` pour contrôler l'activation des `template_variants` par chapitre. Enforcement dans `format_dynamic_exercise()` (`backend/services/tests_dyn_handler.py`) : si `template_variants` non vide et chapitre non autorisé → erreur JSON `VARIANTS_NOT_ALLOWED` (HTTP 422), zéro fallback silencieux.
+- **Root cause / besoin** : les `template_variants` fonctionnent sur le pilote `6e_TESTS_DYN`, mais aucun mécanisme n'existait pour autoriser/interdire leur utilisation sur d'autres chapitres dynamiques template-based, avec risque d'utilisation accidentelle sur des chapitres non compatibles (spec-based via `MathGenerationService`).
+- **Effet** : contrôle strict sur l'activation progressive des variants par chapitre (feature flag), non-régression `6e_TESTS_DYN` (chapitre autorisé), évolutivité (ajout facile dans l'allowlist), rollback facile (retrait d'un chapitre).
+- **Tests** : création de `backend/tests/test_variants_allowlist.py` (normalisation, enforcement, non-régression).
+- **Référence incident** : `docs/incidents/INCIDENT_2025-12-18_variants_allowlist_phaseA.md`.
+
+### 2025-12-18 – Variants d'énoncés dynamiques (Étape 5 : réhydratation admin & CRUD)
 
 - **Frontend** : renforcement de la réhydratation des `template_variants` dans `ChapterExercisesAdminPage` (les variants deviennent la source de vérité dès qu’ils sont présents, même en cas d’incohérence sur `is_dynamic`) et centralisation des appels CRUD admin (create/update/delete) via `adminApi` (`frontend/src/lib/adminApi.js`) pour bénéficier d’un parsing JSON défensif et d’erreurs structurées lors de la gestion des exercices dynamiques.
 - **Effet** : les variants créés en admin restent visibles et éditables à la réouverture des exercices, sans “retour” silencieux au mode legacy, et les erreurs réseau/serveur sont homogènes sur l’ensemble du backoffice.

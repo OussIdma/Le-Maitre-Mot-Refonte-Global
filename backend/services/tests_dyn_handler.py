@@ -31,6 +31,7 @@ from backend.data.tests_dyn_exercises import (
 from backend.generators.thales_generator import generate_dynamic_exercise, GENERATORS_REGISTRY
 from backend.services.template_renderer import render_template, get_template_variables
 from backend.services.dynamic_exercise_engine import choose_template_variant
+from backend.services.variants_config import is_variants_allowed, VARIANTS_ALLOWED_CHAPTERS
 from backend.logger import get_logger
 
 
@@ -208,6 +209,66 @@ def format_dynamic_exercise(
 
     template_variants = exercise_template.get("template_variants") or []
     if template_variants:
+        # =====================================================================
+        # EXTRACTION chapter_code (obligatoire pour variants)
+        # =====================================================================
+        # Ne pas inventer chapter_code : soit présent dans exercise_template,
+        # soit dérivé depuis stable_key (format "{chapter_code}:{id}"),
+        # sinon erreur explicite.
+        chapter_code = exercise_template.get("chapter_code")
+        
+        # Dérivation depuis stable_key si absent (format "{chapter_code}:{id}")
+        if not chapter_code and stable_key:
+            if ":" in stable_key:
+                chapter_code = stable_key.split(":")[0]
+        
+        # Si toujours absent et variants présents → erreur explicite
+        if not chapter_code:
+            logger.error(
+                f"[VARIANTS_ALLOWLIST] chapter_code manquant pour template_variants. "
+                f"Exercise template id={exercise_template.get('id')}, stable_key={stable_key}"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "MISSING_CHAPTER_CODE_FOR_VARIANTS",
+                    "error": "missing_chapter_code_for_variants",
+                    "message": (
+                        "Le champ 'chapter_code' est requis pour utiliser template_variants. "
+                        "Il doit être présent dans exercise_template ou dérivable depuis stable_key."
+                    ),
+                    "exercise_template_id": exercise_template.get("id"),
+                    "stable_key": stable_key,
+                    "hint": "Ajoutez 'chapter_code' dans le template d'exercice ou utilisez un stable_key au format '{chapter_code}:{id}'."
+                },
+            )
+        
+        # =====================================================================
+        # ENFORCEMENT ALLOWLIST (Phase A)
+        # =====================================================================
+        # Vérification explicite : chapitre autorisé pour template_variants
+        # Zéro fallback silencieux : si non autorisé → erreur JSON explicite
+        if not is_variants_allowed(chapter_code):
+            logger.error(
+                f"[VARIANTS_ALLOWLIST] Chapitre '{chapter_code}' non autorisé pour template_variants. "
+                f"Exercise template id={exercise_template.get('id')}, stable_key={stable_key}"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "VARIANTS_NOT_ALLOWED",
+                    "error": "variants_not_allowed",
+                    "message": (
+                        f"Les template_variants ne sont pas autorisés pour le chapitre '{chapter_code}'. "
+                        f"Seuls les chapitres suivants sont autorisés : {sorted(list(VARIANTS_ALLOWED_CHAPTERS))}"
+                    ),
+                    "chapter_code": chapter_code,
+                    "exercise_template_id": exercise_template.get("id"),
+                    "stable_key": stable_key,
+                    "allowed_chapters": sorted(list(VARIANTS_ALLOWED_CHAPTERS)),
+                    "hint": "Contactez l'équipe technique pour activer les variants sur ce chapitre."
+                },
+            )
         # IMPORTANT:
         # - Dès que template_variants est non vide, ils deviennent la SEULE source de vérité
         #   pour le choix du template énoncé/solution côté élève.
