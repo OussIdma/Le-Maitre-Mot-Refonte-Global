@@ -1,48 +1,81 @@
 """
-Tests unitaires pour l'allowlist des template_variants (Phase A).
+Tests unitaires pour la détection automatique template-based (Phase Finale).
 
 Vérifie :
-- La fonction is_variants_allowed() (normalisation)
-- L'enforcement dans format_dynamic_exercise() (erreur si chapitre non autorisé)
+- La fonction is_chapter_template_based() (détection automatique)
+- L'enforcement dans format_dynamic_exercise() (erreur si chapitre spec-based)
 - Non-régression : 6e_TESTS_DYN fonctionne toujours
+- Exclusion explicite : GM07/GM08
 """
 
 import pytest
 from fastapi import HTTPException
-from backend.services.variants_config import is_variants_allowed, VARIANTS_ALLOWED_CHAPTERS
+from backend.services.variants_config import is_chapter_template_based, EXCLUDED_CHAPTERS
 from backend.services.tests_dyn_handler import format_dynamic_exercise
 
 
-def test_is_variants_allowed_normalization():
-    """Test la normalisation (uppercase, trim) de is_variants_allowed()."""
-    # Cas autorisé (pilote)
-    assert is_variants_allowed("6E_TESTS_DYN") is True
-    assert is_variants_allowed("6e_TESTS_DYN") is True
-    assert is_variants_allowed(" 6E_TESTS_DYN ") is True
-    assert is_variants_allowed("6e_tests_dyn") is True
+def test_is_chapter_template_based_handler():
+    """Test la détection via handler dédié (tests_dyn_handler)."""
+    # Cas template-based (handler dédié)
+    assert is_chapter_template_based("6E_TESTS_DYN") is True
+    assert is_chapter_template_based("6e_TESTS_DYN") is True
+    assert is_chapter_template_based(" 6E_TESTS_DYN ") is True
+    assert is_chapter_template_based("6e_tests_dyn") is True
+
+
+def test_is_chapter_template_based_exercise_template():
+    """Test la détection via exercise_template (is_dynamic + generator_key + enonce_template_html)."""
+    # Cas template-based (exercice dynamique avec templates)
+    template = {
+        "is_dynamic": True,
+        "generator_key": "THALES_V1",
+        "enonce_template_html": "<p>{{var}}</p>"
+    }
+    assert is_chapter_template_based("6E_G07", template) is True
     
-    # Cas non autorisé
-    assert is_variants_allowed("6E_G07") is False
-    assert is_variants_allowed("6e_N08") is False
-    assert is_variants_allowed("") is False
-    assert is_variants_allowed(None) is False
+    # Cas spec-based (pas de templates)
+    template_no_html = {
+        "is_dynamic": True,
+        "generator_key": "THALES_V1",
+        # Pas de enonce_template_html
+    }
+    assert is_chapter_template_based("6E_G07", template_no_html) is False
 
 
-def test_format_dynamic_exercise_variants_not_allowed():
+def test_is_chapter_template_based_excluded():
+    """Test l'exclusion explicite GM07/GM08."""
+    # Exclusion explicite
+    assert is_chapter_template_based("6E_GM07") is False
+    assert is_chapter_template_based("6e_GM08") is False
+    assert "6E_GM07" in EXCLUDED_CHAPTERS
+    assert "6E_GM08" in EXCLUDED_CHAPTERS
+
+
+def test_is_chapter_template_based_spec_based():
+    """Test que les chapitres spec-based sont détectés comme incompatibles."""
+    # Cas spec-based (pas de handler, pas de template)
+    assert is_chapter_template_based("6E_G07") is False
+    assert is_chapter_template_based("6e_N08") is False
+    assert is_chapter_template_based("") is False
+    assert is_chapter_template_based(None) is False
+
+
+def test_format_dynamic_exercise_variants_not_supported():
     """
     Test réaliste : format_dynamic_exercise() lève HTTPException si :
     - template_variants non vide
-    - chapitre non autorisé (6E_G07)
+    - chapitre spec-based (6E_G07, pas de handler dédié, pas de template dans exercise_template)
     
-    Vérifie que l'erreur JSON contient bien error_code="VARIANTS_NOT_ALLOWED".
+    Vérifie que l'erreur JSON contient bien error_code="VARIANTS_NOT_SUPPORTED".
     """
-    # Template réaliste avec variants mais chapitre non autorisé
+    # Template réaliste avec variants mais chapitre spec-based
     exercise_template = {
         "id": 42,
-        "chapter_code": "6E_G07",  # Non autorisé
+        "chapter_code": "6E_G07",  # Spec-based (pas de handler dédié)
         "offer": "free",
         "difficulty": "moyen",
         "generator_key": "THALES_V1",
+        # Pas de enonce_template_html → pas template-based
         "template_variants": [
             {
                 "id": "v1",
@@ -55,7 +88,7 @@ def test_format_dynamic_exercise_variants_not_allowed():
     
     timestamp = 1234567890
     
-    # Doit lever HTTPException avec error_code VARIANTS_NOT_ALLOWED
+    # Doit lever HTTPException avec error_code VARIANTS_NOT_SUPPORTED
     with pytest.raises(HTTPException) as exc_info:
         format_dynamic_exercise(exercise_template, timestamp, seed=42)
     
@@ -65,27 +98,25 @@ def test_format_dynamic_exercise_variants_not_allowed():
     # Vérification du JSON d'erreur (structure complète)
     detail = exc_info.value.detail
     assert isinstance(detail, dict), "detail doit être un dict (JSON)"
-    assert detail["error_code"] == "VARIANTS_NOT_ALLOWED", f"error_code attendu: VARIANTS_NOT_ALLOWED, reçu: {detail.get('error_code')}"
-    assert detail["error"] == "variants_not_allowed"
+    assert detail["error_code"] == "VARIANTS_NOT_SUPPORTED", f"error_code attendu: VARIANTS_NOT_SUPPORTED, reçu: {detail.get('error_code')}"
+    assert detail["error"] == "variants_not_supported"
     assert "6E_G07" in detail["message"]
+    assert "spec-based" in detail["message"].lower()
     assert detail["chapter_code"] == "6E_G07"
     assert detail["exercise_template_id"] == 42
-    assert "allowed_chapters" in detail
-    assert isinstance(detail["allowed_chapters"], list)
-    assert "6E_TESTS_DYN" in detail["allowed_chapters"]
     assert "hint" in detail
 
 
-def test_format_dynamic_exercise_variants_allowed():
+def test_format_dynamic_exercise_variants_supported():
     """
     Test que format_dynamic_exercise() fonctionne si :
     - template_variants non vide
-    - chapitre autorisé (6E_TESTS_DYN)
+    - chapitre template-based (6E_TESTS_DYN, handler dédié)
     """
-    # Template avec variants et chapitre autorisé
+    # Template avec variants et chapitre template-based
     exercise_template = {
         "id": 1,
-        "chapter_code": "6E_TESTS_DYN",  # Autorisé
+        "chapter_code": "6E_TESTS_DYN",  # Template-based (handler dédié)
         "offer": "free",
         "difficulty": "moyen",
         "generator_key": "THALES_V1",
@@ -101,16 +132,16 @@ def test_format_dynamic_exercise_variants_allowed():
     
     timestamp = 1234567890
     
-    # Ne doit PAS lever d'exception (chapitre autorisé)
+    # Ne doit PAS lever d'exception (chapitre template-based)
     # Note: peut lever UNRESOLVED_PLACEHOLDERS si générateur ne fournit pas les variables,
-    # mais pas VARIANTS_NOT_ALLOWED
+    # mais pas VARIANTS_NOT_SUPPORTED
     try:
         result = format_dynamic_exercise(exercise_template, timestamp, seed=42)
-        # Si on arrive ici, pas d'erreur VARIANTS_NOT_ALLOWED (OK)
+        # Si on arrive ici, pas d'erreur VARIANTS_NOT_SUPPORTED (OK)
         assert result is not None
     except HTTPException as e:
-        # Acceptable si c'est UNRESOLVED_PLACEHOLDERS (générateur), mais pas VARIANTS_NOT_ALLOWED
-        assert e.detail.get("error_code") != "VARIANTS_NOT_ALLOWED"
+        # Acceptable si c'est UNRESOLVED_PLACEHOLDERS (générateur), mais pas VARIANTS_NOT_SUPPORTED
+        assert e.detail.get("error_code") != "VARIANTS_NOT_SUPPORTED"
 
 
 def test_format_dynamic_exercise_no_variants():
@@ -133,14 +164,14 @@ def test_format_dynamic_exercise_no_variants():
     
     timestamp = 1234567890
     
-    # Ne doit PAS lever VARIANTS_NOT_ALLOWED (pas de variants)
+    # Ne doit PAS lever VARIANTS_NOT_SUPPORTED (pas de variants)
     try:
         result = format_dynamic_exercise(exercise_template, timestamp, seed=42)
-        # Si on arrive ici, pas d'erreur VARIANTS_NOT_ALLOWED (OK)
+        # Si on arrive ici, pas d'erreur VARIANTS_NOT_SUPPORTED (OK)
         assert result is not None
     except HTTPException as e:
-        # Acceptable si c'est UNRESOLVED_PLACEHOLDERS (générateur), mais pas VARIANTS_NOT_ALLOWED
-        assert e.detail.get("error_code") != "VARIANTS_NOT_ALLOWED"
+        # Acceptable si c'est UNRESOLVED_PLACEHOLDERS (générateur), mais pas VARIANTS_NOT_SUPPORTED
+        assert e.detail.get("error_code") != "VARIANTS_NOT_SUPPORTED"
 
 
 def test_format_dynamic_exercise_missing_chapter_code():
@@ -209,18 +240,19 @@ def test_format_dynamic_exercise_chapter_code_from_stable_key():
     
     # Ne doit PAS lever MISSING_CHAPTER_CODE_FOR_VARIANTS
     # (chapter_code dérivé depuis stable_key = "6E_TESTS_DYN")
-    # Ne doit PAS lever VARIANTS_NOT_ALLOWED (6E_TESTS_DYN autorisé)
+    # Ne doit PAS lever VARIANTS_NOT_SUPPORTED (6E_TESTS_DYN template-based)
     try:
         result = format_dynamic_exercise(exercise_template, timestamp, seed=42)
-        # Si on arrive ici, pas d'erreur MISSING_CHAPTER_CODE ni VARIANTS_NOT_ALLOWED (OK)
+        # Si on arrive ici, pas d'erreur MISSING_CHAPTER_CODE ni VARIANTS_NOT_SUPPORTED (OK)
         assert result is not None
     except HTTPException as e:
         # Acceptable si c'est UNRESOLVED_PLACEHOLDERS (générateur), mais pas les erreurs de chapter_code/variants
-        assert e.detail.get("error_code") not in ["MISSING_CHAPTER_CODE_FOR_VARIANTS", "VARIANTS_NOT_ALLOWED"]
+        assert e.detail.get("error_code") not in ["MISSING_CHAPTER_CODE_FOR_VARIANTS", "VARIANTS_NOT_SUPPORTED"]
 
 
-def test_allowlist_contains_tests_dyn():
-    """Test que l'allowlist contient bien 6E_TESTS_DYN (pilote)."""
-    assert "6E_TESTS_DYN" in VARIANTS_ALLOWED_CHAPTERS
-    assert len(VARIANTS_ALLOWED_CHAPTERS) >= 1  # Au moins le pilote
+def test_excluded_chapters():
+    """Test que les chapitres exclus (GM07/GM08) sont bien dans EXCLUDED_CHAPTERS."""
+    assert "6E_GM07" in EXCLUDED_CHAPTERS
+    assert "6E_GM08" in EXCLUDED_CHAPTERS
+    assert len(EXCLUDED_CHAPTERS) >= 2
 

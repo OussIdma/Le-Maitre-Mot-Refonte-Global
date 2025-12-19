@@ -84,3 +84,5 @@
   - Étendre, après validation métier, l’usage de `template_variants` à d’autres chapitres dynamiques (via `ExercisePersistenceService`), en réutilisant exactement le même moteur et la même stratégie de garde-fou.
 
 
+
+

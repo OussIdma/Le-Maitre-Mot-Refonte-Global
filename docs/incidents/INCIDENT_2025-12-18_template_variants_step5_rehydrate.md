@@ -231,3 +231,5 @@ setOperationMessage({
   - Les champs legacy restent un miroir/compat, jamais source de vérité en présence de variants.
 
 
+
+

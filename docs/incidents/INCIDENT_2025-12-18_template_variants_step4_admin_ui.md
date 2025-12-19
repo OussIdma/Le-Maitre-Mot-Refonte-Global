@@ -222,3 +222,5 @@
   - Ajouter ultérieurement des tests E2E (frontend + backend) pour automatiser la vérification du comportement Auto/Forcé des variants.
 
 
+
+

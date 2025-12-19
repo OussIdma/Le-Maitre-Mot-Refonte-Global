@@ -1,0 +1,107 @@
+{
+  "chapitre": "Symétrie axiale",
+  "type_exercice": "trouver_valeur",
+  "description": "Gabarits pour exercices où l'élève doit trouver le point symétrique",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "Point {pointA}({coordA_x}, {coordA_y}). Axe {axeDesc}. Trouve {pointB}.",
+        "{pointA}({coordA_x}, {coordA_y}). Symétrie / {axeDesc}. {pointB} = ?",
+        "Coordonnées de {pointA} : ({coordA_x}, {coordA_y}). Axe : {axeDesc}. Calcule {pointB}.",
+        "Donnés : {pointA}({coordA_x}, {coordA_y}), axe {axeDesc}. Trouve {pointB}.",
+        "{pointA} en ({coordA_x}, {coordA_y}). {axeDesc}. {pointB} ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Soit le point {pointA} de coordonnées ({coordA_x}, {coordA_y}). Détermine les coordonnées du point {pointB} symétrique de {pointA} par rapport à l'axe {axeDesc}.",
+        "On considère le point {pointA}({coordA_x}, {coordA_y}). Calcule les coordonnées de son symétrique {pointB} par rapport à {axeDesc}.",
+        "Dans un repère orthonormé, le point {pointA} a pour coordonnées ({coordA_x}, {coordA_y}). Trouve les coordonnées de {pointB}, symétrique de {pointA} par rapport à {axeDesc}.",
+        "Le point {pointA} est placé en ({coordA_x}, {coordA_y}). Détermine les coordonnées de {pointB}, son image par la symétrie d'axe {axeDesc}.",
+        "Soit {pointA}({coordA_x}, {coordA_y}). Quelle est la position du point {pointB}, symétrique de {pointA} relativement à l'axe {axeDesc} ?"
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Dans un repère orthonormé (O; i, j), considère le point {pointA} de coordonnées ({coordA_x}, {coordA_y}). En appliquant les propriétés de la symétrie axiale, détermine les coordonnées du point {pointB}, image de {pointA} par la symétrie d'axe {axeDesc}.",
+        "Soit le point {pointA}({coordA_x}, {coordA_y}) dans le plan muni d'un repère. Par application de la transformation géométrique de symétrie axiale d'axe {axeDesc}, détermine les coordonnées exactes du point image {pointB}.",
+        "Étant donné {pointA}({coordA_x}, {coordA_y}) et l'axe de symétrie {axeDesc}, établis les coordonnées du point {pointB} en utilisant les propriétés de conservation de la distance à l'axe.",
+        "Le point {pointA} possède les coordonnées ({coordA_x}, {coordA_y}). En utilisant la définition rigoureuse de la symétrie axiale relativement à {axeDesc}, détermine {pointB}."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Emma dessine un point {pointA} aux coordonnées ({coordA_x}, {coordA_y}) sur son cahier quadrillé. Elle souhaite tracer son symétrique {pointB} par rapport à {axeDesc}. Aide-la à trouver où placer {pointB}.",
+        "Lucas travaille sur un exercice de symétrie. Il a placé {pointA} en ({coordA_x}, {coordA_y}) et doit trouver son symétrique {pointB} par rapport à {axeDesc}. Quelle sera la position de {pointB} ?",
+        "Marie trace un point {pointA} en ({coordA_x}, {coordA_y}). Son professeur lui demande de construire {pointB}, le symétrique de {pointA} par rapport à {axeDesc}. Où doit-elle le placer ?",
+        "Dans son exercice de géométrie, Thomas a marqué {pointA} aux coordonnées ({coordA_x}, {coordA_y}). Il doit maintenant tracer {pointB} en utilisant la symétrie par rapport à {axeDesc}. Aide-le à calculer les coordonnées.",
+        "Sophie a placé le point {pointA} en ({coordA_x}, {coordA_y}) sur sa feuille. Elle veut savoir où placer {pointB}, son symétrique par rapport à {axeDesc}. Quelle est ta réponse ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe le point {pointA} placé en ({coordA_x}, {coordA_y}). Aide-toi du schéma pour repérer {axeDesc}. À ton avis, où se situera le point {pointB} symétrique ?",
+        "Regarde bien : {pointA} est en ({coordA_x}, {coordA_y}). Utilise la position de {axeDesc} pour déterminer où placer {pointB}. Quelle distance sépare {pointA} de l'axe ?",
+        "Commence par repérer {pointA}({coordA_x}, {coordA_y}) sur ton graphique. Ensuite, localise {axeDesc}. Pour trouver {pointB}, pense à la distance de {pointA} à l'axe.",
+        "Étape par étape : localise {pointA} en ({coordA_x}, {coordA_y}), puis identifie {axeDesc}. Le point {pointB} sera à la même distance de l'axe, mais de l'autre côté. Calcule ses coordonnées."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Défi géométrie ! Le point {pointA} est en ({coordA_x}, {coordA_y}). Sauras-tu trouver rapidement où se place son symétrique {pointB} par rapport à {axeDesc} ?",
+        "Challenge ! {pointA}({coordA_x}, {coordA_y}), axe {axeDesc}. Trouve {pointB} en moins de 2 minutes !",
+        "Mission symétrie : {pointA} en ({coordA_x}, {coordA_y}), {axeDesc}. Calcule {pointB} le plus vite possible !",
+        "Peux-tu relever ce défi ? Avec {pointA}({coordA_x}, {coordA_y}) et {axeDesc}, détermine {pointB} sans erreur !"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Tu vois le point {pointA} là, en ({coordA_x}, {coordA_y}) ? Bon, maintenant on a {axeDesc}. Trouve-moi le symétrique {pointB}, vas-y !",
+        "Alors voilà : {pointA} est en ({coordA_x}, {coordA_y}), et t'as {axeDesc} comme axe. Où tu mets {pointB} ?",
+        "OK, {pointA} c'est ({coordA_x}, {coordA_y}). L'axe c'est {axeDesc}. Maintenant dis-moi où va {pointB}.",
+        "Regarde {pointA} en ({coordA_x}, {coordA_y}). T'as {axeDesc}. Donc {pointB}, il va où ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Repère le point {pointA}({coordA_x}, {coordA_y})\nÉtape 2 : Identifie {axeDesc}\nÉtape 3 : Calcule les coordonnées de {pointB}",
+        "1) Place {pointA} en ({coordA_x}, {coordA_y})\n2) Trace {axeDesc}\n3) Détermine {pointB}, symétrique de {pointA}",
+        "Procédure :\n→ Localise {pointA}({coordA_x}, {coordA_y})\n→ Repère {axeDesc}\n→ Calcule la position de {pointB}",
+        "Méthode :\nÉtape A : Note les coordonnées de {pointA} : ({coordA_x}, {coordA_y})\nÉtape B : Identifie l'axe : {axeDesc}\nÉtape C : Trouve {pointB}"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu as déjà tracé des symétriques. Applique la même méthode : {pointA} est en ({coordA_x}, {coordA_y}), l'axe est {axeDesc}. Que peux-tu en déduire pour {pointB} ?",
+        "Rappelle-toi comment on fait pour les symétries. Ici, {pointA}({coordA_x}, {coordA_y}) et {axeDesc}. Déduis-en la position de {pointB}.",
+        "Comme dans l'exercice précédent, utilise les propriétés de la symétrie. {pointA} : ({coordA_x}, {coordA_y}), axe : {axeDesc}. Où placer {pointB} ?",
+        "Tu connais le principe : même distance de chaque côté de l'axe. Avec {pointA}({coordA_x}, {coordA_y}) et {axeDesc}, trouve {pointB}."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Où est {pointA} ?\nR : En ({coordA_x}, {coordA_y}).\nQ : L'axe de symétrie ?\nR : {axeDesc}.\nQ : Où placer {pointB} ?",
+        "Question : Quelles sont les coordonnées de {pointA} ?\nRéponse : ({coordA_x}, {coordA_y}).\nQuestion : Quel est l'axe ?\nRéponse : {axeDesc}.\nQuestion : Calcule {pointB}.",
+        "Q : Point initial ?\nR : {pointA}({coordA_x}, {coordA_y}).\nQ : Axe ?\nR : {axeDesc}.\nQ : Point symétrique {pointB} ?",
+        "Q : Coordonnées de départ de {pointA} ?\nR : ({coordA_x}, {coordA_y}).\nQ : Axe de réflexion ?\nR : {axeDesc}.\nQ : Position finale de {pointB} ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "pointA": "Nom du point initial (ex: M, A, D)",
+    "pointB": "Nom du point symétrique (ex: M', A', D')",
+    "coordA_x": "Coordonnée x du point initial (entier)",
+    "coordA_y": "Coordonnée y du point initial (entier)",
+    "axeDesc": "Description de l'axe (ex: 'l'axe vertical x = 5', 'l'axe horizontal y = 3', 'l'axe des abscisses', 'l'axe des ordonnées')"
+  }
+}

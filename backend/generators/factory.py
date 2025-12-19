@@ -205,12 +205,17 @@ def _register_all_generators():
     """Importe et enregistre tous les générateurs."""
     # Import des générateurs existants et nouveaux
     try:
-        from generators.thales_v2 import ThalesV2Generator
+        from backend.generators.thales_v2 import ThalesV2Generator  # noqa:F401
     except ImportError:
         pass
     
     try:
-        from generators.symetrie_axiale_v2 import SymetrieAxialeV2Generator
+        from backend.generators.symetrie_axiale_v2 import SymetrieAxialeV2Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.thales_generator import ThalesGenerator  # noqa:F401
     except ImportError:
         pass
 

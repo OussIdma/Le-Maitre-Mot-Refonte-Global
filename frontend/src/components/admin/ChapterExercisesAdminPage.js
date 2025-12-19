@@ -81,6 +81,9 @@ const ChapterExercisesAdminPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // P1: Pipeline du chapitre (chargé depuis le curriculum)
+  const [chapterPipeline, setChapterPipeline] = useState(null);
+  
   // Types d'exercices disponibles (chargés depuis l'API)
   const [exerciseTypes, setExerciseTypes] = useState([]);
   
@@ -175,7 +178,27 @@ const ChapterExercisesAdminPage = () => {
     
     fetchExerciseTypes();
     fetchGenerators();
-  }, []);
+    
+    // P1: Charger le pipeline du chapitre depuis le curriculum
+    const fetchChapterPipeline = async () => {
+      if (!chapterCode) return;
+      
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/admin/curriculum/6e`);
+        if (response.ok) {
+          const data = await response.json();
+          const chapter = data.chapitres?.find(ch => ch.code_officiel === chapterCode);
+          if (chapter) {
+            setChapterPipeline(chapter.pipeline || 'SPEC');
+          }
+        }
+      } catch (err) {
+        console.error('Erreur chargement pipeline chapitre:', err);
+      }
+    };
+    
+    fetchChapterPipeline();
+  }, [chapterCode]);
   
   // Charger les exercices
   const fetchExercises = useCallback(async () => {
@@ -695,6 +718,15 @@ const ChapterExercisesAdminPage = () => {
                 </h1>
                 <p className="text-sm text-gray-500">
                   Gestion des exercices figés • {exercises.length} exercice{exercises.length > 1 ? 's' : ''}
+                  {chapterPipeline && (
+                    <span className="ml-2">
+                      • Pipeline: <Badge variant="outline" className="text-xs">
+                        {chapterPipeline === 'SPEC' && 'Statique (SPEC)'}
+                        {chapterPipeline === 'TEMPLATE' && 'Dynamique (TEMPLATE)'}
+                        {chapterPipeline === 'MIXED' && 'Mixte (MIXED)'}
+                      </Badge>
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -1031,7 +1063,15 @@ const ChapterExercisesAdminPage = () => {
               </div>
               
               {formData.is_dynamic && (
-                <div className="space-y-4 mt-4">
+                <div className={`space-y-4 mt-4 ${chapterPipeline === 'SPEC' ? 'opacity-60' : ''}`}>
+                  {chapterPipeline === 'SPEC' && (
+                    <Alert className="border-yellow-500 bg-yellow-50">
+                      <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      <AlertDescription className="text-yellow-800 text-xs">
+                        ⚠️ Le chapitre utilise le pipeline SPEC (statique). Cet exercice dynamique ne sera pas utilisé lors de la génération.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="text-xs text-purple-600 bg-purple-100 p-2 rounded">
                     💡 Les exercices dynamiques utilisent des templates avec variables <code>{'{{variable}}'}</code> 
                     et génèrent des variantes infinies.
@@ -1267,11 +1307,17 @@ const ChapterExercisesAdminPage = () => {
             
             {/* Type d'exercice (optionnel) - seulement si non dynamique */}
             {!formData.is_dynamic && (
-              <div>
-                <Label className="text-sm">Type exercice (optionnel)</Label>
+              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
+                <Label className="text-sm">
+                  Type exercice (optionnel)
+                  {chapterPipeline === 'TEMPLATE' && (
+                    <span className="text-xs text-gray-400 ml-1">(ignoré pour pipeline TEMPLATE)</span>
+                  )}
+                </Label>
                 <Select 
                   value={formData.exercise_type || ''} 
                   onValueChange={(v) => setFormData(p => ({...p, exercise_type: v === 'none' ? '' : v}))}
+                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionner un type..." />
@@ -1293,13 +1339,19 @@ const ChapterExercisesAdminPage = () => {
             
             {/* Énoncé - seulement si non dynamique */}
             {!formData.is_dynamic && (
-              <div>
-                <Label className="text-sm">Énoncé HTML *</Label>
+              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
+                <Label className="text-sm">
+                  Énoncé HTML *
+                  {chapterPipeline === 'TEMPLATE' && (
+                    <span className="text-xs text-gray-400 ml-1">(ignoré pour pipeline TEMPLATE)</span>
+                  )}
+                </Label>
                 <Textarea
                   value={formData.enonce_html}
                   onChange={(e) => setFormData(p => ({...p, enonce_html: e.target.value}))}
                   placeholder="<p><strong>Titre :</strong> Description de l'exercice...</p>"
                   className={`font-mono text-sm min-h-[120px] ${formErrors.enonce_html ? 'border-red-500' : ''}`}
+                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
                 />
                 {formErrors.enonce_html && (
                   <p className="text-xs text-red-500 mt-1">{formErrors.enonce_html}</p>
@@ -1309,13 +1361,19 @@ const ChapterExercisesAdminPage = () => {
             
             {/* Solution - seulement si non dynamique */}
             {!formData.is_dynamic && (
-              <div>
-                <Label className="text-sm">Solution HTML (4 étapes) *</Label>
+              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
+                <Label className="text-sm">
+                  Solution HTML (4 étapes) *
+                  {chapterPipeline === 'TEMPLATE' && (
+                    <span className="text-xs text-gray-400 ml-1">(ignorée pour pipeline TEMPLATE)</span>
+                  )}
+                </Label>
                 <Textarea
                   value={formData.solution_html}
                   onChange={(e) => setFormData(p => ({...p, solution_html: e.target.value}))}
                   placeholder={getSolutionTemplate()}
                   className={`font-mono text-sm min-h-[200px] ${formErrors.solution_html ? 'border-red-500' : ''}`}
+                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
                 />
                 {formErrors.solution_html && (
                   <p className="text-xs text-red-500 mt-1">{formErrors.solution_html}</p>

@@ -50,13 +50,31 @@ def get_generator_schema(generator_key: str):
     Récupère le schéma d'un générateur (essaie Factory puis Legacy).
     Retourne None si non trouvé.
     """
-    # Essayer d'abord le nouveau système Factory
-    schema = factory_get_schema(generator_key.upper())
+    # Legacy/registry en premier (retourne GeneratorSchema dataclass)
+    schema = legacy_get_schema(generator_key.upper())
     if schema:
         return schema
     
-    # Fallback sur le système legacy
-    return legacy_get_schema(generator_key.upper())
+    # Fallback sur Factory (dict meta/schema)
+    factory_schema = factory_get_schema(generator_key.upper())
+    if factory_schema:
+        # Adapter le format factory -> GeneratorSchemaResponse attendu
+        meta = factory_schema.get("meta", {})
+        return {
+            "generator_key": factory_schema.get("generator_key", generator_key.upper()),
+            "label": meta.get("label"),
+            "description": meta.get("description"),
+            "niveau": ", ".join(meta.get("niveaux", [])) if meta else "",
+            "variables": factory_schema.get("schema", []),
+            "svg_modes": [meta.get("svg_mode")] if meta.get("svg_mode") else [],
+            "supports_double_svg": meta.get("supports_double_svg", False),
+            "difficulties": ["facile", "moyen", "difficile"],
+            "pedagogical_tips": meta.get("pedagogical_tips"),
+            "template_example_enonce": "",
+            "template_example_solution": ""
+        }
+    
+    return None
 
 
 def _normalize_figure_type(raw: Optional[str]) -> Optional[str]:
@@ -233,8 +251,8 @@ async def get_generator_schema_endpoint(generator_key: str):
                     "available_generators": available
                 }
             )
-        
-        return GeneratorSchemaResponse(**schema.to_dict())
+        data = schema.to_dict() if hasattr(schema, "to_dict") else schema
+        return GeneratorSchemaResponse(**data)
     except HTTPException:
         raise
     except Exception as e:

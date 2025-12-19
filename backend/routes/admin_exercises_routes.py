@@ -15,6 +15,7 @@ from backend.services.exercise_persistence_service import (
     ExerciseResponse,
     get_exercise_persistence_service
 )
+from backend.services.curriculum_sync_service import get_curriculum_sync_service
 from logger import get_logger
 
 logger = get_logger()
@@ -42,15 +43,6 @@ class ExerciseCRUDResponse(BaseModel):
     exercise: Optional[dict] = None
 
 
-class ChapterExerciseStatsResponse(BaseModel):
-    """Statistiques des exercices d'un chapitre"""
-    chapter_code: str
-    total: int
-    by_offer: dict
-    by_difficulty: dict
-    by_family: dict
-
-
 # =============================================================================
 # DÉPENDANCES
 # =============================================================================
@@ -64,6 +56,11 @@ async def get_db():
 async def get_exercise_service(db=Depends(get_db)):
     """Dépendance pour obtenir le service de persistance"""
     return get_exercise_persistence_service(db)
+
+
+async def get_curriculum_sync_service_dep(db=Depends(get_db)):
+    """Dépendance pour obtenir le service de synchronisation curriculum"""
+    return get_curriculum_sync_service(db)
 
 
 # =============================================================================
@@ -106,9 +103,32 @@ async def list_exercises(
             stats=stats
         )
     
+    except ValueError as e:
+        # Erreur de validation (ex: import Python échoué)
+        logger.error(f"Erreur validation liste exercices {chapter_code}: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "EXERCISE_LOAD_ERROR",
+                "error": "exercise_load_error",
+                "message": str(e),
+                "chapter_code": chapter_code,
+                "hint": "Vérifiez que le fichier Python source existe et est valide."
+            }
+        )
     except Exception as e:
-        logger.error(f"Erreur liste exercices: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Erreur inattendue
+        logger.error(f"Erreur liste exercices {chapter_code}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "error": "internal_server_error",
+                "message": "Une erreur interne s'est produite lors de la récupération des exercices",
+                "chapter_code": chapter_code,
+                "hint": "Consultez les logs backend pour plus de détails."
+            }
+        )
 
 
 @router.get(
@@ -149,13 +169,29 @@ async def get_exercise(
 async def create_exercise(
     chapter_code: str,
     request: ExerciseCreateRequest,
-    service=Depends(get_exercise_service)
+    service=Depends(get_exercise_service),
+    sync_service=Depends(get_curriculum_sync_service_dep)
 ):
-    """Crée un nouvel exercice"""
+    """Crée un nouvel exercice et synchronise automatiquement le chapitre dans le curriculum"""
     logger.info(f"Admin: Création exercice dans {chapter_code}")
     
     try:
+        # Créer l'exercice
         exercise = await service.create_exercise(chapter_code, request)
+        
+        # Synchroniser automatiquement le chapitre dans le curriculum
+        try:
+            sync_result = await sync_service.sync_chapter_to_curriculum(chapter_code)
+            if sync_result['created']:
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé automatiquement dans le curriculum")
+            elif sync_result['updated']:
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans le curriculum")
+        except Exception as sync_error:
+            # Ne pas faire échouer la création d'exercice si la sync échoue
+            logger.warning(
+                f"[AUTO-SYNC] Échec synchronisation curriculum pour {chapter_code}: {sync_error}. "
+                "L'exercice a été créé mais le chapitre n'est pas synchronisé."
+            )
         
         return ExerciseCRUDResponse(
             success=True,
@@ -180,13 +216,29 @@ async def update_exercise(
     chapter_code: str,
     exercise_id: int,
     request: ExerciseUpdateRequest,
-    service=Depends(get_exercise_service)
+    service=Depends(get_exercise_service),
+    sync_service=Depends(get_curriculum_sync_service_dep)
 ):
-    """Met à jour un exercice"""
+    """Met à jour un exercice et synchronise automatiquement le chapitre dans le curriculum"""
     logger.info(f"Admin: Mise à jour exercice {chapter_code} #{exercise_id}")
     
     try:
+        # Mettre à jour l'exercice
         exercise = await service.update_exercise(chapter_code, exercise_id, request)
+        
+        # Synchroniser automatiquement le chapitre dans le curriculum
+        try:
+            sync_result = await sync_service.sync_chapter_to_curriculum(chapter_code)
+            if sync_result['created']:
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé automatiquement dans le curriculum")
+            elif sync_result['updated']:
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans le curriculum")
+        except Exception as sync_error:
+            # Ne pas faire échouer la mise à jour d'exercice si la sync échoue
+            logger.warning(
+                f"[AUTO-SYNC] Échec synchronisation curriculum pour {chapter_code}: {sync_error}. "
+                "L'exercice a été mis à jour mais le chapitre n'est pas synchronisé."
+            )
         
         return ExerciseCRUDResponse(
             success=True,
@@ -238,7 +290,6 @@ async def delete_exercise(
 
 @router.get(
     "/chapters/{chapter_code}/exercises/stats",
-    response_model=ChapterExerciseStatsResponse,
     summary="Statistiques des exercices d'un chapitre"
 )
 async def get_exercise_stats(
@@ -247,36 +298,40 @@ async def get_exercise_stats(
 ):
     """Retourne les statistiques des exercices d'un chapitre"""
     stats = await service.get_stats(chapter_code)
+    return stats
+
+
+@router.post(
+    "/chapters/{chapter_code}/sync-curriculum",
+    summary="Forcer la synchronisation du chapitre dans le curriculum",
+    description="""
+    Force la synchronisation d'un chapitre depuis la collection exercises 
+    vers le référentiel curriculum. Utile pour corriger un chapitre "indisponible".
     
-    return ChapterExerciseStatsResponse(**stats)
-
-
-@router.get(
-    "/exercises/pilot-chapters",
-    summary="Liste des chapitres pilotes avec exercices figés"
+    Extrait automatiquement les exercise_types depuis les exercices (dynamiques via generator_key,
+    statiques via exercise_type) et crée/met à jour le chapitre dans le curriculum.
+    """
 )
-async def list_pilot_chapters():
-    """Retourne la liste des chapitres pilotes supportés"""
-    from models.exercise_types import get_all_exercise_types
+async def sync_chapter_to_curriculum_endpoint(
+    chapter_code: str,
+    sync_service=Depends(get_curriculum_sync_service_dep)
+):
+    """Force la synchronisation d'un chapitre dans le curriculum"""
+    logger.info(f"Admin: Synchronisation manuelle du chapitre {chapter_code}")
     
-    return {
-        "pilot_chapters": [
-            {
-                "code": "6e_GM07",
-                "name": "Durées et lecture de l'heure",
-                "status": "production",
-                "exercise_count": 20
-            },
-            {
-                "code": "6e_GM08",
-                "name": "Longueurs et périmètres",
-                "status": "production",
-                "exercise_count": 20
-            }
-        ],
-        "families": ["CONVERSION", "COMPARAISON", "PERIMETRE", "PROBLEME", "DUREES", "LECTURE_HORLOGE"],
-        "difficulties": ["facile", "moyen", "difficile"],
-        "offers": ["free", "pro"],
-        "exercise_types": get_all_exercise_types()
-    }
-
+    try:
+        result = await sync_service.sync_chapter_to_curriculum(chapter_code)
+        
+        return {
+            "success": True,
+            "message": f"Chapitre {chapter_code} synchronisé avec succès",
+            "created": result['created'],
+            "updated": result['updated'],
+            "exercise_types": result['exercise_types']
+        }
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erreur synchronisation chapitre: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

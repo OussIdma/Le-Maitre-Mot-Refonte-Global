@@ -1,0 +1,28 @@
+niveau;domaine;code;libelle
+6e;Nombres et calculs;6e_N01;Lire et écrire les nombres entiers
+6e;Nombres et calculs;6e_N02;Comparer et ranger des nombres entiers
+6e;Nombres et calculs;6e_N03;Droite numérique et repérage
+6e;Nombres et calculs;6e_N04;Addition et soustraction de nombres entiers
+6e;Nombres et calculs;6e_N05;Multiplication de nombres entiers
+6e;Nombres et calculs;6e_N06;Division euclidienne
+6e;Nombres et calculs;6e_N07;Multiples et diviseurs, critères de divisibilité
+6e;Nombres et calculs;6e_N08;Fractions comme partage et quotient
+6e;Nombres et calculs;6e_N09;Fractions simples de l'unité
+6e;Nombres et calculs;6e_N10;Problèmes à étapes avec les quatre opérations
+6e;Géométrie;6e_G01;Points, segments, droites, demi-droites
+6e;Géométrie;6e_G02;Alignement, milieu d'un segment
+6e;Géométrie;6e_G03;Perpendiculaires et parallèles à la règle et à l'équerre
+6e;Géométrie;6e_G04;Triangles (construction et classification)
+6e;Géométrie;6e_G05;Quadrilatères usuels (carré, rectangle, losange, parallélogramme)
+6e;Géométrie;6e_G06;Cercle et disque (vocabulaire et constructions)
+6e;Géométrie;6e_G07;Symétrie axiale (points, segments, figures)
+6e;Grandeurs et mesures;6e_GM01;Mesurer et comparer des longueurs
+6e;Grandeurs et mesures;6e_GM02;Périmètre de figures usuelles
+6e;Grandeurs et mesures;6e_GM03;Aire du rectangle et du carré
+6e;Grandeurs et mesures;6e_GM04;Aire du triangle rectangle
+6e;Grandeurs et mesures;6e_GM05;Durées et lecture de l'heure
+6e;Grandeurs et mesures;6e_GM06;Masses, contenances et conversions simples
+6e;Organisation et gestion de données;6e_SP01;Lire et compléter des tableaux de données
+6e;Organisation et gestion de données;6e_SP02;Diagrammes en barres et pictogrammes
+6e;Organisation et gestion de données;6e_SP03;Proportionnalité simple dans des tableaux
+6e;Organisation et gestion de données;6e_SP04;Moyenne arithmétique simple

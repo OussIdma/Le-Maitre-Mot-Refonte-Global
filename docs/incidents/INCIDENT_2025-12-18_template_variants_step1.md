@@ -80,3 +80,5 @@
   - GM07/GM08 restent non impactés (modèle réservé aux exercices dynamiques).
 
 
+
+

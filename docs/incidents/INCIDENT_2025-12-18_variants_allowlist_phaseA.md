@@ -210,3 +210,5 @@ docker compose logs -f backend
 - **Admin preview** : Pas d'enforcement (pas de `chapter_code` dans le contrat preview éphémère)
 - **GM07/GM08** : Non impactés (intercepts en priorité, pas de variants)
 
+
+

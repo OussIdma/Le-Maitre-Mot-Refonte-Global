@@ -193,3 +193,5 @@ curl -s -X POST "http://localhost:8000/api/v1/exercises/generate" \
 - **Admin vs élève** : l’admin peut continuer à configurer des types ou générateurs qui ne sont pas encore reconnus côté élève ; désormais, l’erreur est explicite côté API au lieu de retomber sur un autre générateur, mais une UX d’administration devra aider à valider les types disponibles.
 
 
+
+

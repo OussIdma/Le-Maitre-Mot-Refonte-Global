@@ -16,7 +16,7 @@ Usage:
 import json
 import os
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
 from functools import lru_cache
 
@@ -57,6 +57,10 @@ class CurriculumChapter(BaseModel):
     statut: str = "prod"
     tags: List[str] = Field(default_factory=list)
     contexts: List[str] = Field(default_factory=list)
+    pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
+        default="SPEC",
+        description="Pipeline de génération: SPEC (statique), TEMPLATE (dynamique), MIXED (les deux)"
+    )
     
     def is_active(self) -> bool:
         """Retourne True si le chapitre est actif (prod ou beta)."""
@@ -322,9 +326,16 @@ def _load_macro_groups() -> List[Dict]:
     return data.get("macro_groups", [])
 
 
-def get_catalog(level: str = "6e") -> Dict:
+async def get_catalog(level: str = "6e", db=None) -> Dict:
     """
     Génère le catalogue complet pour le frontend.
+    
+    **Source de vérité enrichie** :
+    - Curriculum (exercise_types) : source principale
+    - Collection exercises (DB) : enrichissement si exercices existent en DB
+    
+    Si un chapitre a des exercices en DB mais pas d'exercise_types dans le curriculum,
+    les exercise_types sont extraits depuis la DB pour rendre le chapitre disponible.
     
     Structure retournée:
     {
@@ -357,86 +368,163 @@ def get_catalog(level: str = "6e") -> Dict:
     
     Args:
         level: Niveau scolaire (par défaut "6e")
+        db: Base de données MongoDB (optionnel, pour enrichissement depuis exercises)
         
     Returns:
         Dictionnaire du catalogue pour le frontend
     """
-    if level != "6e":
+    try:
+        if level != "6e":
+            return {
+                "level": level,
+                "domains": [],
+                "macro_groups": [],
+                "error": f"Niveau '{level}' non supporté pour l'instant"
+            }
+        
+        index = get_curriculum_index()
+        
+        # Service de synchronisation pour enrichir depuis DB (si db fourni)
+        sync_service = None
+        if db is not None:
+            try:
+                from backend.services.curriculum_sync_service import get_curriculum_sync_service
+                sync_service = get_curriculum_sync_service(db)
+            except Exception as e:
+                logger.warning(f"[CATALOG] Impossible d'initialiser sync_service pour enrichissement DB: {e}")
+                # Continuer sans enrichissement DB plutôt que de planter
+        
+        # Construire les domaines avec chapitres
+        domains = []
+        for domaine_name in sorted(index.by_domaine.keys()):
+            chapters_list = index.by_domaine[domaine_name]
+            
+            chapters_data = []
+            for chapter in sorted(chapters_list, key=lambda c: c.code_officiel):
+                # Source de vérité initiale : curriculum
+                generators_from_curriculum = chapter.exercise_types.copy()
+                generators_final = generators_from_curriculum.copy()
+                source_info = "curriculum"
+                
+                # Enrichissement depuis DB si exercices existent
+                # Pour les chapitres TEMPLATE, on doit vérifier s'il y a des exercices dynamiques
+                pipeline_mode = getattr(chapter, 'pipeline', None) or 'SPEC'
+                
+                if sync_service:
+                    try:
+                        has_exercises = await sync_service.has_exercises_in_db(chapter.code_officiel)
+                        if has_exercises:
+                            exercise_types_from_db = await sync_service.get_exercise_types_from_db(chapter.code_officiel)
+                            if exercise_types_from_db:
+                                # Fusion : curriculum + DB (sans doublons)
+                                generators_final = sorted(list(set(generators_from_curriculum) | exercise_types_from_db))
+                                if generators_final != generators_from_curriculum:
+                                    source_info = "curriculum+db"
+                                    logger.info(
+                                        f"[CATALOG] Chapitre {chapter.code_officiel} enrichi depuis DB: "
+                                        f"curriculum={generators_from_curriculum} → final={generators_final}"
+                                    )
+                                else:
+                                    source_info = "curriculum+db (identique)"
+                            else:
+                                # Exercices existent mais aucun exercise_type extrait
+                                # Pour TEMPLATE, on marque comme disponible même sans exercise_types
+                                if pipeline_mode == "TEMPLATE":
+                                    # Chapitre TEMPLATE avec exercices dynamiques : disponible
+                                    generators_final = ["DYNAMIC"]  # Marqueur pour indiquer dynamique
+                                    source_info = "db (dynamic)"
+                                    logger.info(
+                                        f"[CATALOG] Chapitre {chapter.code_officiel} (TEMPLATE) a des exercices dynamiques en DB"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"[CATALOG] Chapitre {chapter.code_officiel} a des exercices en DB "
+                                        f"mais aucun exercise_type extrait (sera marqué 'indisponible')"
+                                    )
+                        elif pipeline_mode == "TEMPLATE":
+                            # Chapitre TEMPLATE sans exercices : indisponible mais visible
+                            generators_final = []  # Vide = indisponible
+                            source_info = "curriculum (template_no_exercises)"
+                            logger.info(
+                                f"[CATALOG] Chapitre {chapter.code_officiel} (TEMPLATE) sans exercices dynamiques - marqué indisponible"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"[CATALOG] Erreur enrichissement DB pour {chapter.code_officiel}: {e}"
+                        )
+                        # En cas d'erreur, on garde les generators du curriculum
+                
+                chapters_data.append({
+                    "code_officiel": chapter.code_officiel,
+                    "libelle": chapter.libelle,
+                    "status": chapter.statut,
+                    "schema_requis": chapter.schema_requis,
+                    "difficulty_min": chapter.difficulte_min,
+                    "difficulty_max": chapter.difficulte_max,
+                    "generators": generators_final,
+                    "has_svg": any(
+                        gen in generators_final
+                        for gen in ["LECTURE_HORLOGE", "CALCUL_DUREE", "SYMETRIE_AXIALE", 
+                                   "TRIANGLE_QUELCONQUE", "RECTANGLE", "CERCLE", "FRACTION_REPRESENTATION"]
+                    ),
+                    "_debug_source": source_info  # Debug uniquement (peut être retiré en prod)
+                })
+            
+            domains.append({
+                "name": domaine_name,
+                "chapters": chapters_data
+            })
+        
+        # Charger les macro groups depuis le JSON
+        raw_macro_groups = _load_macro_groups()
+        
+        # Enrichir les macro groups avec le status calculé
+        macro_groups = []
+        for mg in raw_macro_groups:
+            codes = mg.get("codes_officiels", [])
+            
+            # Calculer le status du groupe (prod si au moins un chapitre est prod)
+            statuses = []
+            generators_count = 0
+            for code in codes:
+                chapter = index.by_official_code.get(code)
+                if chapter:
+                    statuses.append(chapter.statut)
+                    generators_count += len(chapter.exercise_types)
+            
+            if "prod" in statuses:
+                group_status = "prod"
+            elif "beta" in statuses:
+                group_status = "beta"
+            else:
+                group_status = "hidden"
+            
+            macro_groups.append({
+                "label": mg.get("label", ""),
+                "codes_officiels": codes,
+                "description": mg.get("description", ""),
+                "status": group_status,
+                "total_generators": generators_count
+            })
+        
+        return {
+            "level": level,
+            "domains": domains,
+            "macro_groups": macro_groups,
+            "total_chapters": len(index.by_official_code),
+            "total_macro_groups": len(macro_groups)
+        }
+    except Exception as e:
+        logger.error(f"[CATALOG] Erreur critique lors de la génération du catalogue: {e}", exc_info=True)
+        # Retourner un catalogue minimal plutôt que de planter
         return {
             "level": level,
             "domains": [],
             "macro_groups": [],
-            "error": f"Niveau '{level}' non supporté pour l'instant"
+            "total_chapters": 0,
+            "total_macro_groups": 0,
+            "error": f"Erreur lors du chargement du catalogue: {str(e)}"
         }
-    
-    index = get_curriculum_index()
-    
-    # Construire les domaines avec chapitres
-    domains = []
-    for domaine_name in sorted(index.by_domaine.keys()):
-        chapters_list = index.by_domaine[domaine_name]
-        
-        chapters_data = []
-        for chapter in sorted(chapters_list, key=lambda c: c.code_officiel):
-            chapters_data.append({
-                "code_officiel": chapter.code_officiel,
-                "libelle": chapter.libelle,
-                "status": chapter.statut,
-                "schema_requis": chapter.schema_requis,
-                "difficulty_min": chapter.difficulte_min,
-                "difficulty_max": chapter.difficulte_max,
-                "generators": chapter.exercise_types,
-                "has_svg": any(
-                    gen in chapter.exercise_types 
-                    for gen in ["LECTURE_HORLOGE", "CALCUL_DUREE", "SYMETRIE_AXIALE", 
-                               "TRIANGLE_QUELCONQUE", "RECTANGLE", "CERCLE", "FRACTION_REPRESENTATION"]
-                )
-            })
-        
-        domains.append({
-            "name": domaine_name,
-            "chapters": chapters_data
-        })
-    
-    # Charger les macro groups depuis le JSON
-    raw_macro_groups = _load_macro_groups()
-    
-    # Enrichir les macro groups avec le status calculé
-    macro_groups = []
-    for mg in raw_macro_groups:
-        codes = mg.get("codes_officiels", [])
-        
-        # Calculer le status du groupe (prod si au moins un chapitre est prod)
-        statuses = []
-        generators_count = 0
-        for code in codes:
-            chapter = index.by_official_code.get(code)
-            if chapter:
-                statuses.append(chapter.statut)
-                generators_count += len(chapter.exercise_types)
-        
-        if "prod" in statuses:
-            group_status = "prod"
-        elif "beta" in statuses:
-            group_status = "beta"
-        else:
-            group_status = "hidden"
-        
-        macro_groups.append({
-            "label": mg.get("label", ""),
-            "codes_officiels": codes,
-            "description": mg.get("description", ""),
-            "status": group_status,
-            "total_generators": generators_count
-        })
-    
-    return {
-        "level": level,
-        "domains": domains,
-        "macro_groups": macro_groups,
-        "total_chapters": len(index.by_official_code),
-        "total_macro_groups": len(macro_groups)
-    }
 
 
 def get_codes_for_macro_group(label: str) -> List[str]:

@@ -123,3 +123,5 @@ echo "   - Déterminisme (même seed): OK"
 echo "   - Erreur JSON sur pool vide: OK"
 
 
+
+

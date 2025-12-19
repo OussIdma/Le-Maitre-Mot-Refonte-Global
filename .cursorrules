@@ -38,9 +38,55 @@ Avant toute action, simule une réflexion interne :
 - Est-ce cohérent visuellement et mentalement ?
 - Zéro friction inutile, surtout pour enfants / enseignants.
 
+### 🌟 UX / Pédagogie inclusive (DYS)
+- Le wording, la densité visuelle et la structure cognitive sont-ils accessibles
+  (phrases courtes, vocabulaire simple, pas de surcharge, cohérence visuelle) ?
+
 ---
 
 ## 🔎 PHASE 2 — ANALYSE D’IMPACT & GARDE-FOUS
+
+### 🏥 INFRASTRUCTURE HEALTH CHECK (OBLIGATOIRE AVANT VALIDATION)
+
+**Interdiction absolue de valider un fix backend si l'infrastructure est down.**
+
+Avant toute validation / test / curl :
+1. **Vérifier Docker** :
+   ```bash
+   docker compose ps
+   ```
+   - Tous les services doivent être `Up` (backend, frontend, mongo)
+   - Si un service est `Exit` ou `Restarting` → **BLOQUER la validation**
+
+2. **Vérifier MongoDB** :
+   ```bash
+   docker compose exec -T mongo mongosh --eval "db.adminCommand('ping')" 2>/dev/null || echo "Mongo unreachable"
+   ```
+   - Si `Mongo unreachable` ou timeout → **BLOQUER la validation**
+
+3. **Vérifier les logs en cas d'erreur HTTP 500** :
+   ```bash
+   docker compose logs --tail=50 backend | grep -i error
+   docker compose logs --tail=50 mongo | grep -i error
+   ```
+   - Si erreurs DNS (`Temporary failure in name resolution`, `mongo:27017` unreachable) → **INFRASTRUCTURE DOWN, pas un bug code**
+
+4. **Si Docker commands hangent** (timeout > 30s) :
+   - **ARRÊTER immédiatement**
+   - Signaler : "Infrastructure Docker non disponible, impossible de valider"
+
+**Règle stricte** :
+- ❌ **JAMAIS** valider un fix si `docker compose ps` montre des services down
+- ❌ **JAMAIS** interpréter une HTTP 500 comme un bug code sans vérifier les logs infra
+- ❌ **JAMAIS** ignorer un timeout Docker (c'est un problème infra, pas code)
+- ✅ **TOUJOURS** vérifier l'infrastructure AVANT de conclure "corrigé / validé"
+
+**Si infrastructure down** :
+- Dire explicitement : "**NON VALIDÉ — Infrastructure Docker/Mongo non disponible**"
+- Fournir les commandes de diagnostic : `docker compose ps`, `docker compose logs mongo`
+- Ne pas proposer de fix code tant que l'infrastructure n'est pas restaurée
+
+---
 
 ### 📦 Pre-Flight Check (OBLIGATOIRE)
 Avant d’écrire du code :
@@ -61,12 +107,59 @@ Avant d’écrire du code :
 - soit un log serveur clair.
 Sinon → **BUG BLOQUANT**.
 
+### 🛑 NO GREEN WITHOUT PROOF (obligatoire)
+
+Interdiction de conclure "corrigé / validé / OK" sans preuve d'exécution.
+Si je ne peux pas exécuter, je dois dire "NON VALIDÉ" et donner les commandes exactes.
+
+**Proof Pack minimum** (à fournir à chaque fix qui touche backend / persistance / routes / docker)
+1. **INFRASTRUCTURE CHECK** (OBLIGATOIRE EN PREMIER) :
+   - `docker compose ps` → tous les services `Up`
+   - `docker compose logs --tail=20 mongo` → pas d'erreur DNS/connexion
+   - Si infra down → **BLOQUER la validation** (voir section Infrastructure Health Check)
+2. **REBUILD/RESTART** : commandes exactes (docker compose / uvicorn / npm)
+3. **Repro avant → après** : curl ou test qui échouait avant et passe après
+4. **Source of truth vérifiée** :
+   - si bug de persistance : GET montre le champ attendu (ex: template_variants)
+   - si bug runtime : la réponse ne contient jamais {{...}} et erreurs JSON
+   - si bug config : endpoint debug/build ou logs confirment le bon build
+
+**Runtime Reality Check** (anti "j'ai oublié de redémarrer")
+
+Dès que je modifie :
+- un service backend (persistance, routes, handlers),
+- un schéma Pydantic,
+- une route API,
+- un fichier importé au démarrage,
+
+➡️ je DOIS inclure dans la réponse une section "Appliquer le fix" avec :
+- docker compose build <service> si nécessaire
+- docker compose up -d <service> / restart
+- puis un curl de vérification
+
+**Zéro "rollback silencieux"**
+
+Si une opération échoue, elle DOIT :
+- renvoyer une erreur JSON explicite (HTTP 4xx/5xx + error_code) ou
+- être loggée clairement (avec un identifiant de corrélation si possible).
+Tout "fallback / ignore / silent" est un bug à corriger.
+
+**Mode PROD/URGENCE** (si l'utilisateur écrit "PROD" ou "URGENCE")
+- Zéro refactor
+- Fix minimal uniquement
+- Test + Proof Pack obligatoire
+- Si doute : bloquer avec erreur explicite plutôt que fallback
+
 ---
 
 ## 🛑 MODE STRICT — DEFINITION OF DONE (DoD)
 
 Une tâche n’est **JAMAIS** terminée tant que :
 
+0. **Infrastructure** (OBLIGATOIRE EN PREMIER)
+   - `docker compose ps` → tous les services `Up`
+   - MongoDB accessible (pas d'erreur DNS/connexion)
+   - Si infra down → **BLOQUER** (voir section Infrastructure Health Check)
 1. **Intégrité**
    - Aucun TODO, aucun placeholder oublié.
 2. **Réalité**
@@ -84,6 +177,7 @@ Une tâche n’est **JAMAIS** terminée tant que :
    - Même seed = même résultat, toujours.
 
 ❗ Si un point manque → la réponse est INCOMPLÈTE.
+❗ Si infrastructure down → **NON VALIDÉ** (pas de faux positif).
 
 ---
 

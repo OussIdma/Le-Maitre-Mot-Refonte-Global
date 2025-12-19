@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Démo Qualité Géométrique - Style MathALÉA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .comparison {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .figure-demo {
+            text-align: center;
+            margin: 10px;
+        }
+        .figure-demo h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        .svg-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background: white;
+            margin: 10px 0;
+        }
+        .quality-badge {
+            background: #27ae60;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .features {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .features ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        .features li {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .features li:before {
+            content: "✅ ";
+            color: #27ae60;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Système Géométrique Amélioré - Qualité MathALÉA</h1>
+    
+    <div class="features">
+        <h2>🚀 Améliorations Apportées</h2>
+        <ul>
+            <li>Rendu SVG vectoriel pur (plus de matplotlib pixelisé)</li>
+            <li>Traits nets et redimensionnables sans perte de qualité</li>
+            <li>Couleurs et styles cohérents avec MathALÉA (orange #FF6600)</li>
+            <li>Positionnement intelligent automatique des labels</li>
+            <li>Constructions géométriques mathématiquement précises</li>
+            <li>Marqueurs d'angles droits professionnels</li>
+            <li>Cotes dimensionnelles parfaitement alignées</li>
+            <li>Intégration transparente dans "Le Maître Mot"</li>
+        </ul>
+    </div>
+
+    <div class="comparison">
+        <div class="figure-demo">
+            <h3>Rectangle avec Cotes</h3>
+            <div class="quality-badge">Qualité MathALÉA</div>
+            <div class="svg-container" id="rectangle-demo"></div>
+        </div>
+        
+        <div class="figure-demo">
+            <h3>Triangle Rectangle</h3>
+            <div class="quality-badge">Angle Droit Marqué</div>
+            <div class="svg-container" id="triangle-demo"></div>
+        </div>
+        
+        <div class="figure-demo">
+            <h3>Construction Médiatrice</h3>
+            <div class="quality-badge">Perpendiculaire Précise</div>
+            <div class="svg-container" id="mediatrice-demo"></div>
+        </div>
+    </div>
+
+    <script>
+        // Chargement des SVG générés
+        async function loadDemoSVGs() {
+            try {
+                // Rectangle
+                const rectResponse = await fetch('/test_integration_rectangle.svg');
+                const rectSVG = await rectResponse.text();
+                document.getElementById('rectangle-demo').innerHTML = rectSVG;
+                
+                // Triangle
+                const triangleResponse = await fetch('/test_integration_triangle.svg');
+                const triangleSVG = await triangleResponse.text();
+                document.getElementById('triangle-demo').innerHTML = triangleSVG;
+                
+                // Médiatrice
+                const mediatResponse = await fetch('/test_integration_mediatrice.svg');
+                const mediatSVG = await mediatResponse.text();
+                document.getElementById('mediatrice-demo').innerHTML = mediatSVG;
+                
+            } catch (error) {
+                console.log('Fichiers SVG non disponibles, utilisation des exemples intégrés');
+                loadEmbeddedExamples();
+            }
+        }
+        
+        function loadEmbeddedExamples() {
+            // Rectangle exemple
+            document.getElementById('rectangle-demo').innerHTML = `
+                <svg width="300" height="200" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+                    <style>
+                        .geometry-line { fill: none; stroke-width: 1.5px; stroke: #000; }
+                        .geometry-point { fill: #000000; }
+                        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }
+                    </style>
+                    <rect x="50" y="50" width="120" height="80" fill="none" stroke="#000" stroke-width="1.5"/>
+                    <circle cx="50" cy="130" r="3" class="geometry-point"/>
+                    <text x="42" y="148" class="geometry-text">A</text>
+                    <circle cx="50" cy="50" r="3" class="geometry-point"/>
+                    <text x="42" y="40" class="geometry-text">B</text>
+                    <circle cx="170" cy="50" r="3" class="geometry-point"/>
+                    <text x="175" y="40" class="geometry-text">C</text>
+                    <circle cx="170" cy="130" r="3" class="geometry-point"/>
+                    <text x="175" y="148" class="geometry-text">D</text>
+                    <text x="105" y="35" text-anchor="middle" class="geometry-text" style="font-size: 12px;">120 cm</text>
+                    <text x="35" y="95" text-anchor="middle" class="geometry-text" style="font-size: 12px;">80 cm</text>
+                </svg>
+            `;
+            
+            // Triangle exemple
+            document.getElementById('triangle-demo').innerHTML = `
+                <svg width="300" height="200" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+                    <style>
+                        .geometry-line { fill: none; stroke-width: 1.5px; stroke: #000; }
+                        .geometry-point { fill: #000000; }
+                        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }
+                        .right-angle-mark { fill: none; stroke: #000000; stroke-width: 1px; }
+                    </style>
+                    <path d="M 80 50 L 80 130 L 180 130 Z" fill="none" stroke="#000" stroke-width="1.5"/>
+                    <circle cx="80" cy="50" r="3" class="geometry-point"/>
+                    <text x="70" y="40" class="geometry-text">A</text>
+                    <circle cx="80" cy="130" r="3" class="geometry-point"/>
+                    <text x="70" y="148" class="geometry-text">B</text>
+                    <circle cx="180" cy="130" r="3" class="geometry-point"/>
+                    <text x="185" y="148" class="geometry-text">C</text>
+                    <path d="M 80 130 L 80 118 L 92 118 L 92 130 Z" class="right-angle-mark"/>
+                </svg>
+            `;
+            
+            // Médiatrice exemple  
+            document.getElementById('mediatrice-demo').innerHTML = `
+                <svg width="300" height="200" viewBox="0 0 300 200" xmlns="http://www.w3.org/2000/svg">
+                    <style>
+                        .geometry-line { fill: none; stroke-width: 1.5px; stroke: #000; }
+                        .geometry-construction { fill: none; stroke-width: 2px; stroke: #FF6600; }
+                        .geometry-point { fill: #000000; }
+                        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }
+                    </style>
+                    <rect x="60" y="60" width="160" height="80" fill="none" stroke="#000" stroke-width="1.5"/>
+                    <line x1="140" y1="30" x2="140" y2="170" stroke="#FF6600" stroke-width="2" class="geometry-construction"/>
+                    <circle cx="60" cy="60" r="3" class="geometry-point"/>
+                    <text x="50" y="50" class="geometry-text">P</text>
+                    <circle cx="220" cy="140" r="3" class="geometry-point"/>
+                    <text x="225" y="155" class="geometry-text">K</text>
+                </svg>
+            `;
+        }
+        
+        // Charger les démos au chargement de la page
+        document.addEventListener('DOMContentLoaded', loadDemoSVGs);
+    </script>
+</body>
+</html>

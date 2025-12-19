@@ -1,0 +1,98 @@
+{
+  "chapitre": "Périmètres et aires",
+  "type_exercice": "trouver_valeur",
+  "description": "Gabarits pour exercices de calcul de périmètres et d'aires",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "{figureType} : {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}. Calcule {quoiCalculer}.",
+        "{figureType}. Dimensions : {dim1Val} {unite} et {dim2Val} {unite}. {quoiCalculer} = ?",
+        "{dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}. Trouve {quoiCalculer} du {figureType}.",
+        "{figureType} : {dim1Val} {unite} × {dim2Val} {unite}. Calcule {quoiCalculer}."
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Soit un {figureType} de {dim1Nom} {dim1Val} {unite} et de {dim2Nom} {dim2Val} {unite}. Calcule son {quoiCalculer}.",
+        "Un {figureType} a pour {dim1Nom} {dim1Val} {unite} et pour {dim2Nom} {dim2Val} {unite}. Détermine son {quoiCalculer}.",
+        "On considère un {figureType}. Sa {dim1Nom} mesure {dim1Val} {unite} et sa {dim2Nom} mesure {dim2Val} {unite}. Quelle est son {quoiCalculer} ?",
+        "Dans un {figureType}, {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}. Calcule le {quoiCalculer}."
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Étant donné un {figureType} de dimensions {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}, détermine son {quoiCalculer} par application de la formule appropriée.",
+        "Soit un {figureType} dont les mesures sont {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}. Établis la valeur de son {quoiCalculer}.",
+        "Considérant un {figureType} caractérisé par {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}, calcule son {quoiCalculer}."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Paul dessine un {figureType} sur son cahier. Il mesure : {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}. Aide-le à calculer le {quoiCalculer}.",
+        "Marie veut connaître le {quoiCalculer} d'un {figureType}. Elle a mesuré {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}. Quel est le résultat ?",
+        "Léo travaille sur un {figureType} de {dim1Nom} {dim1Val} {unite} et de {dim2Nom} {dim2Val} {unite}. Il doit trouver le {quoiCalculer}. Peux-tu l'aider ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe ce {figureType}. Note {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}. Pour trouver le {quoiCalculer}, rappelle-toi la formule adaptée.",
+        "Commence par identifier la figure : {figureType}. Ensuite, repère {dim1Nom} = {dim1Val} {unite} et {dim2Nom} = {dim2Val} {unite}. Applique la formule du {quoiCalculer}.",
+        "Méthode : 1) Figure = {figureType}, 2) Mesures = {dim1Val} {unite} et {dim2Val} {unite}, 3) Formule du {quoiCalculer}, 4) Calcule."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Challenge géométrie ! {figureType}, {dim1Val} {unite} et {dim2Val} {unite}. Trouve le {quoiCalculer} en 30 secondes !",
+        "Défi rapide : {figureType} de {dim1Nom} {dim1Val} {unite} et {dim2Nom} {dim2Val} {unite}. Calcule {quoiCalculer} !",
+        "Mission : {figureType}. Dimensions : {dim1Val} {unite}, {dim2Val} {unite}. {quoiCalculer} = ? Go !"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Bon, t'as un {figureType}. {dim1Nom} c'est {dim1Val} {unite}, {dim2Nom} c'est {dim2Val} {unite}. Calcule le {quoiCalculer}.",
+        "Regarde : {figureType}, {dim1Val} {unite} par {dim2Val} {unite}. Le {quoiCalculer}, ça fait combien ?",
+        "OK, {figureType}. {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}. Alors le {quoiCalculer} ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Figure = {figureType}\nÉtape 2 : {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}\nÉtape 3 : Applique formule {quoiCalculer}\nÉtape 4 : Calcule",
+        "1) Identifie : {figureType}\n2) Note : {dim1Val} {unite} et {dim2Val} {unite}\n3) Formule du {quoiCalculer}\n4) Résultat",
+        "Procédure :\n→ {figureType}\n→ Dimensions : {dim1Val} {unite}, {dim2Val} {unite}\n→ Calcule {quoiCalculer}"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu connais les formules de {quoiCalculer}. Applique celle du {figureType} avec {dim1Val} {unite} et {dim2Val} {unite}.",
+        "Rappelle-toi comment calculer le {quoiCalculer} d'un {figureType}. Ici : {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}. Trouve le résultat.",
+        "Comme précédemment, utilise la formule. {figureType} : {dim1Val} {unite} et {dim2Val} {unite}. Calcule {quoiCalculer}."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Quelle figure ?\nR : {figureType}.\nQ : Dimensions ?\nR : {dim1Val} {unite} et {dim2Val} {unite}.\nQ : Calcule {quoiCalculer}.",
+        "Question : Type de figure ?\nRéponse : {figureType}.\nQuestion : Mesures ?\nRéponse : {dim1Nom} = {dim1Val} {unite}, {dim2Nom} = {dim2Val} {unite}.\nQuestion : {quoiCalculer} ?",
+        "Q : Figure ?\nR : {figureType}.\nQ : {dim1Nom} ?\nR : {dim1Val} {unite}.\nQ : {dim2Nom} ?\nR : {dim2Val} {unite}.\nQ : {quoiCalculer} ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "figureType": "Type de figure (rectangle, carré, cercle, triangle)",
+    "dim1Nom": "Nom de la première dimension (longueur, côté, rayon, base)",
+    "dim1Val": "Valeur de la première dimension (entier)",
+    "dim2Nom": "Nom de la deuxième dimension (largeur, hauteur)",
+    "dim2Val": "Valeur de la deuxième dimension (entier)",
+    "unite": "Unité de mesure (cm, m)",
+    "quoiCalculer": "Ce qu'il faut calculer (périmètre, aire)"
+  }
+}

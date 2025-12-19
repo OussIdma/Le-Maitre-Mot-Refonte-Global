@@ -84,3 +84,5 @@ def choose_template_variant(
     raise RuntimeError("Échec inattendu de la sélection de variant.")
 
 
+
+

@@ -4,7 +4,7 @@ Routes API pour le catalogue du curriculum.
 Endpoint public pour alimenter /generate avec le référentiel officiel.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
 
 from curriculum.loader import get_catalog, get_codes_for_macro_group
@@ -15,11 +15,24 @@ logger = get_logger()
 router = APIRouter(prefix="/api/v1/curriculum", tags=["Curriculum Catalog"])
 
 
+async def get_db():
+    """Dépendance pour obtenir la base de données"""
+    from server import db
+    return db
+
+
 @router.get(
     "/{level}/catalog",
     summary="Catalogue du curriculum pour le frontend",
     description="""
     Retourne le catalogue complet d'un niveau pour alimenter /generate.
+    
+    **Source de vérité enrichie** :
+    - Curriculum (exercise_types) : source principale
+    - Collection exercises (DB) : enrichissement si exercices existent en DB
+    
+    Si un chapitre a des exercices en DB mais pas d'exercise_types dans le curriculum,
+    les exercise_types sont extraits depuis la DB pour rendre le chapitre disponible.
     
     Contient:
     - **domains**: Liste des domaines avec leurs chapitres officiels
@@ -32,13 +45,13 @@ router = APIRouter(prefix="/api/v1/curriculum", tags=["Curriculum Catalog"])
     Pour générer, utiliser toujours code_officiel dans la requête.
     """
 )
-async def get_curriculum_catalog(level: str):
+async def get_curriculum_catalog(level: str, db=Depends(get_db)):
     """
-    Retourne le catalogue du curriculum pour un niveau.
+    Retourne le catalogue du curriculum pour un niveau, enrichi depuis la DB.
     """
     logger.info(f"Catalog: Récupération du catalogue pour le niveau {level}")
     
-    catalog = get_catalog(level)
+    catalog = await get_catalog(level, db=db)
     
     logger.info(f"Catalog: {catalog.get('total_chapters', 0)} chapitres, {catalog.get('total_macro_groups', 0)} macro groups")
     

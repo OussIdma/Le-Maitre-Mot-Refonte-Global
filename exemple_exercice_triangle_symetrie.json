@@ -1,0 +1,234 @@
+{
+  "id": "math_-6041577572067667442",
+  "type": "ouvert",
+  "enonce": "Trace le triangle MNP sur une feuille de papier millimétré. Les points du triangle ont les coordonnées suivantes : M (2, 3), N (2, 5) et P (4, 2). La tâche consiste à compléter la figure en traçant le triangle symétrique de MNP par rapport à l'axe de symétrie x = 6. Dessine le triangle M'N'P', qui est le symétrique de MNP.",
+  "donnees": null,
+  "difficulte": "difficile",
+  "solution": {
+    "etapes": [
+      "Triangle MNP avec M(2, 3), N(2, 5), P(4, 2)",
+      "Axe de symétrie : droite verticale x = 6",
+      "Pour chaque point, calculer son symétrique :",
+      "M' (10, 3)",
+      "N' (10, 5)",
+      "P' (8, 2)"
+    ],
+    "resultat": "Triangle symétrique : M'N'P'",
+    "explication": "Pour résoudre cet exercice, trace d'abord l'axe de symétrie, qui est la ligne verticale x = 6. Ensuite, pour chaque point du triangle MNP, calcule son symétrique par rapport à cet axe. Le symétrique de M (2, 3) est M' (10, 3), car M et M' doivent être à la même distance de l'axe x = 6 mais de l'autre côté. Pour le point N (2, 5), l'image est N' (10, 5). Enfin, pour P (4, 2), le symétrique est P' (8, 2). Relie les points M'N'P' pour dessiner le triangle symétrique."
+  },
+  "bareme": [
+    {
+      "etape": "Construction des symétriques",
+      "points": 3.0
+    },
+    {
+      "etape": "Tracé de la figure complète",
+      "points": 1.0
+    }
+  ],
+  "version": "A",
+  "seed": null,
+  "exercise_type": "text",
+  "icone": "book-open",
+  "geometric_schema": {
+    "type": "symetrie_axiale",
+    "points": [
+      "M",
+      "N",
+      "P"
+    ],
+    "segments": [
+      [
+        "M",
+        "_x",
+        {
+          "longueur": "2 cm"
+        }
+      ],
+      [
+        "M",
+        "_y",
+        {
+          "longueur": "3 cm"
+        }
+      ],
+      [
+        "N",
+        "_x",
+        {
+          "longueur": "2 cm"
+        }
+      ],
+      [
+        "N",
+        "_y",
+        {
+          "longueur": "5 cm"
+        }
+      ],
+      [
+        "P",
+        "_x",
+        {
+          "longueur": "4 cm"
+        }
+      ],
+      [
+        "P",
+        "_y",
+        {
+          "longueur": "2 cm"
+        }
+      ],
+      [
+        "M'",
+        "_x",
+        {
+          "longueur": "10 cm"
+        }
+      ],
+      [
+        "M'",
+        "_y",
+        {
+          "longueur": "3 cm"
+        }
+      ],
+      [
+        "N'",
+        "_x",
+        {
+          "longueur": "10 cm"
+        }
+      ],
+      [
+        "N'",
+        "_y",
+        {
+          "longueur": "5 cm"
+        }
+      ],
+      [
+        "P'",
+        "_x",
+        {
+          "longueur": "8 cm"
+        }
+      ],
+      [
+        "P'",
+        "_y",
+        {
+          "longueur": "2 cm"
+        }
+      ]
+    ],
+    "angles": []
+  },
+  "schema_img": null,
+  "figure_svg": "<svg width=\"400\" height=\"300\" viewBox=\"0 0 400 300\" xmlns=\"http://www.w3.org/2000/svg\"><style>\n        .geometry-line { fill: none; stroke-width: 1.5px; }\n        .geometry-construction { fill: none; stroke-width: 2px; stroke: #FF6600; }\n        .geometry-point { fill: #000000; }\n        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }\n        .right-angle-mark { fill: none; stroke: #000000; stroke-width: 1px; }\n        </style><line x1=\"40.0\" y1=\"40\" x2=\"40.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"55.714285714285715\" y1=\"40\" x2=\"55.714285714285715\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"71.42857142857143\" y1=\"40\" x2=\"71.42857142857143\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"87.14285714285714\" y1=\"40\" x2=\"87.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"102.85714285714286\" y1=\"40\" x2=\"102.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"118.57142857142857\" y1=\"40\" x2=\"118.57142857142857\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"150.0\" y1=\"40\" x2=\"150.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"165.71428571428572\" y1=\"40\" x2=\"165.71428571428572\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"181.42857142857142\" y1=\"40\" x2=\"181.42857142857142\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"197.14285714285714\" y1=\"40\" x2=\"197.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"212.85714285714286\" y1=\"40\" x2=\"212.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"228.57142857142856\" y1=\"40\" x2=\"228.57142857142856\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"244.28571428571428\" y1=\"40\" x2=\"244.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"260.0\" y1=\"40\" x2=\"260.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"40.0\" x2=\"360\" y2=\"40.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"55.714285714285715\" x2=\"360\" y2=\"55.714285714285715\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"71.42857142857143\" x2=\"360\" y2=\"71.42857142857143\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"87.14285714285714\" x2=\"360\" y2=\"87.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"102.85714285714286\" x2=\"360\" y2=\"102.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"118.57142857142857\" x2=\"360\" y2=\"118.57142857142857\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"134.28571428571428\" x2=\"360\" y2=\"134.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"150.0\" x2=\"360\" y2=\"150.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"165.71428571428572\" x2=\"360\" y2=\"165.71428571428572\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"181.42857142857142\" x2=\"360\" y2=\"181.42857142857142\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"197.14285714285714\" x2=\"360\" y2=\"197.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"212.85714285714286\" x2=\"360\" y2=\"212.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"228.57142857142856\" x2=\"360\" y2=\"228.57142857142856\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"244.28571428571428\" x2=\"360\" y2=\"244.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260.0\" x2=\"360\" y2=\"260.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260\" x2=\"360\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><line x1=\"40\" y1=\"40\" x2=\"40\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><text x=\"365\" y=\"265\" class=\"geometry-text\" font-size=\"12\">x</text><text x=\"30\" y=\"35\" class=\"geometry-text\" font-size=\"12\">y</text><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#FF0000\" stroke-width=\"2\" class=\"geometry-line\" stroke-dasharray=\"5,5\" /><text x=\"139.28571428571428\" y=\"60\" class=\"geometry-text\" font-size=\"12\" fill=\"#FF0000\">x = 6</text><polygon points=\"71.42857142857143,212.85714285714286 71.42857142857143,181.42857142857144 102.85714285714286,228.57142857142858\" fill=\"none\" stroke=\"#0066CC\" stroke-width=\"2\" class=\"triangle-initial\" /><polygon points=\"197.14285714285714,212.85714285714286 197.14285714285714,181.42857142857144 165.71428571428572,228.57142857142858\" fill=\"none\" stroke=\"#99BBDD\" stroke-width=\"2\" stroke-dasharray=\"3,3\" class=\"triangle-image\" /><circle cx=\"71.42857142857143\" cy=\"212.85714285714286\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"230.85714285714286\" class=\"geometry-text\">M</text><circle cx=\"71.42857142857143\" cy=\"181.42857142857144\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"199.42857142857144\" class=\"geometry-text\">N</text><circle cx=\"102.85714285714286\" cy=\"228.57142857142858\" r=\"3\" class=\"geometry-point\" /><text x=\"94.85714285714286\" y=\"246.57142857142858\" class=\"geometry-text\">P</text><circle cx=\"197.14285714285714\" cy=\"212.85714285714286\" r=\"3\" class=\"geometry-point\" /><text x=\"189.14285714285714\" y=\"230.85714285714286\" class=\"geometry-text\">M'</text><circle cx=\"197.14285714285714\" cy=\"181.42857142857144\" r=\"3\" class=\"geometry-point\" /><text x=\"189.14285714285714\" y=\"199.42857142857144\" class=\"geometry-text\">N'</text><circle cx=\"165.71428571428572\" cy=\"228.57142857142858\" r=\"3\" class=\"geometry-point\" /><text x=\"157.71428571428572\" y=\"246.57142857142858\" class=\"geometry-text\">P'</text></svg>",
+  "figure_svg_question": "<svg width=\"400\" height=\"300\" viewBox=\"0 0 400 300\" xmlns=\"http://www.w3.org/2000/svg\"><style>\n        .geometry-line { fill: none; stroke-width: 1.5px; }\n        .geometry-construction { fill: none; stroke-width: 2px; stroke: #FF6600; }\n        .geometry-point { fill: #000000; }\n        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }\n        .right-angle-mark { fill: none; stroke: #000000; stroke-width: 1px; }\n        </style><line x1=\"40.0\" y1=\"40\" x2=\"40.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"55.714285714285715\" y1=\"40\" x2=\"55.714285714285715\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"71.42857142857143\" y1=\"40\" x2=\"71.42857142857143\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"87.14285714285714\" y1=\"40\" x2=\"87.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"102.85714285714286\" y1=\"40\" x2=\"102.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"118.57142857142857\" y1=\"40\" x2=\"118.57142857142857\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"150.0\" y1=\"40\" x2=\"150.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"165.71428571428572\" y1=\"40\" x2=\"165.71428571428572\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"181.42857142857142\" y1=\"40\" x2=\"181.42857142857142\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"197.14285714285714\" y1=\"40\" x2=\"197.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"212.85714285714286\" y1=\"40\" x2=\"212.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"228.57142857142856\" y1=\"40\" x2=\"228.57142857142856\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"244.28571428571428\" y1=\"40\" x2=\"244.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"260.0\" y1=\"40\" x2=\"260.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"40.0\" x2=\"360\" y2=\"40.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"55.714285714285715\" x2=\"360\" y2=\"55.714285714285715\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"71.42857142857143\" x2=\"360\" y2=\"71.42857142857143\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"87.14285714285714\" x2=\"360\" y2=\"87.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"102.85714285714286\" x2=\"360\" y2=\"102.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"118.57142857142857\" x2=\"360\" y2=\"118.57142857142857\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"134.28571428571428\" x2=\"360\" y2=\"134.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"150.0\" x2=\"360\" y2=\"150.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"165.71428571428572\" x2=\"360\" y2=\"165.71428571428572\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"181.42857142857142\" x2=\"360\" y2=\"181.42857142857142\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"197.14285714285714\" x2=\"360\" y2=\"197.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"212.85714285714286\" x2=\"360\" y2=\"212.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"228.57142857142856\" x2=\"360\" y2=\"228.57142857142856\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"244.28571428571428\" x2=\"360\" y2=\"244.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260.0\" x2=\"360\" y2=\"260.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260\" x2=\"360\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><line x1=\"40\" y1=\"40\" x2=\"40\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><text x=\"365\" y=\"265\" class=\"geometry-text\" font-size=\"12\">x</text><text x=\"30\" y=\"35\" class=\"geometry-text\" font-size=\"12\">y</text><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#FF0000\" stroke-width=\"2\" class=\"geometry-line\" stroke-dasharray=\"5,5\" /><text x=\"139.28571428571428\" y=\"60\" class=\"geometry-text\" font-size=\"12\" fill=\"#FF0000\">x = 6</text><polygon points=\"71.42857142857143,212.85714285714286 71.42857142857143,181.42857142857144 102.85714285714286,228.57142857142858\" fill=\"none\" stroke=\"#0066CC\" stroke-width=\"2\" class=\"triangle-initial\" /><circle cx=\"71.42857142857143\" cy=\"212.85714285714286\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"230.85714285714286\" class=\"geometry-text\">M</text><circle cx=\"71.42857142857143\" cy=\"181.42857142857144\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"199.42857142857144\" class=\"geometry-text\">N</text><circle cx=\"102.85714285714286\" cy=\"228.57142857142858\" r=\"3\" class=\"geometry-point\" /><text x=\"94.85714285714286\" y=\"246.57142857142858\" class=\"geometry-text\">P</text></svg>",
+  "figure_svg_correction": "<svg width=\"400\" height=\"300\" viewBox=\"0 0 400 300\" xmlns=\"http://www.w3.org/2000/svg\"><style>\n        .geometry-line { fill: none; stroke-width: 1.5px; }\n        .geometry-construction { fill: none; stroke-width: 2px; stroke: #FF6600; }\n        .geometry-point { fill: #000000; }\n        .geometry-text { font-family: Arial, sans-serif; font-size: 14px; fill: #000000; font-weight: bold; }\n        .right-angle-mark { fill: none; stroke: #000000; stroke-width: 1px; }\n        </style><line x1=\"40.0\" y1=\"40\" x2=\"40.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"55.714285714285715\" y1=\"40\" x2=\"55.714285714285715\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"71.42857142857143\" y1=\"40\" x2=\"71.42857142857143\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"87.14285714285714\" y1=\"40\" x2=\"87.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"102.85714285714286\" y1=\"40\" x2=\"102.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"118.57142857142857\" y1=\"40\" x2=\"118.57142857142857\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"150.0\" y1=\"40\" x2=\"150.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"165.71428571428572\" y1=\"40\" x2=\"165.71428571428572\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"181.42857142857142\" y1=\"40\" x2=\"181.42857142857142\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"197.14285714285714\" y1=\"40\" x2=\"197.14285714285714\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"212.85714285714286\" y1=\"40\" x2=\"212.85714285714286\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"228.57142857142856\" y1=\"40\" x2=\"228.57142857142856\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"244.28571428571428\" y1=\"40\" x2=\"244.28571428571428\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"260.0\" y1=\"40\" x2=\"260.0\" y2=\"260\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"40.0\" x2=\"360\" y2=\"40.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"55.714285714285715\" x2=\"360\" y2=\"55.714285714285715\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"71.42857142857143\" x2=\"360\" y2=\"71.42857142857143\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"87.14285714285714\" x2=\"360\" y2=\"87.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"102.85714285714286\" x2=\"360\" y2=\"102.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"118.57142857142857\" x2=\"360\" y2=\"118.57142857142857\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"134.28571428571428\" x2=\"360\" y2=\"134.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"150.0\" x2=\"360\" y2=\"150.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"165.71428571428572\" x2=\"360\" y2=\"165.71428571428572\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"181.42857142857142\" x2=\"360\" y2=\"181.42857142857142\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"197.14285714285714\" x2=\"360\" y2=\"197.14285714285714\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"212.85714285714286\" x2=\"360\" y2=\"212.85714285714286\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"228.57142857142856\" x2=\"360\" y2=\"228.57142857142856\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"244.28571428571428\" x2=\"360\" y2=\"244.28571428571428\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260.0\" x2=\"360\" y2=\"260.0\" stroke=\"#E8E8E8\" stroke-width=\"0.5\" class=\"grid-line\" /><line x1=\"40\" y1=\"260\" x2=\"360\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><line x1=\"40\" y1=\"40\" x2=\"40\" y2=\"260\" stroke=\"#CCCCCC\" stroke-width=\"1\" class=\"geometry-line\" /><text x=\"365\" y=\"265\" class=\"geometry-text\" font-size=\"12\">x</text><text x=\"30\" y=\"35\" class=\"geometry-text\" font-size=\"12\">y</text><line x1=\"134.28571428571428\" y1=\"40\" x2=\"134.28571428571428\" y2=\"260\" stroke=\"#FF0000\" stroke-width=\"2\" class=\"geometry-line\" stroke-dasharray=\"5,5\" /><text x=\"139.28571428571428\" y=\"60\" class=\"geometry-text\" font-size=\"12\" fill=\"#FF0000\">x = 6</text><polygon points=\"71.42857142857143,212.85714285714286 71.42857142857143,181.42857142857144 102.85714285714286,228.57142857142858\" fill=\"none\" stroke=\"#0066CC\" stroke-width=\"2\" class=\"triangle-initial\" /><polygon points=\"197.14285714285714,212.85714285714286 197.14285714285714,181.42857142857144 165.71428571428572,228.57142857142858\" fill=\"none\" stroke=\"#99BBDD\" stroke-width=\"2\" stroke-dasharray=\"3,3\" class=\"triangle-image\" /><circle cx=\"71.42857142857143\" cy=\"212.85714285714286\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"230.85714285714286\" class=\"geometry-text\">M</text><circle cx=\"71.42857142857143\" cy=\"181.42857142857144\" r=\"3\" class=\"geometry-point\" /><text x=\"63.42857142857143\" y=\"199.42857142857144\" class=\"geometry-text\">N</text><circle cx=\"102.85714285714286\" cy=\"228.57142857142858\" r=\"3\" class=\"geometry-point\" /><text x=\"94.85714285714286\" y=\"246.57142857142858\" class=\"geometry-text\">P</text><circle cx=\"197.14285714285714\" cy=\"212.85714285714286\" r=\"3\" class=\"geometry-point\" /><text x=\"189.14285714285714\" y=\"230.85714285714286\" class=\"geometry-text\">M'</text><circle cx=\"197.14285714285714\" cy=\"181.42857142857144\" r=\"3\" class=\"geometry-point\" /><text x=\"189.14285714285714\" y=\"199.42857142857144\" class=\"geometry-text\">N'</text><circle cx=\"165.71428571428572\" cy=\"228.57142857142858\" r=\"3\" class=\"geometry-point\" /><text x=\"157.71428571428572\" y=\"246.57142857142858\" class=\"geometry-text\">P'</text></svg>",
+  "document": null,
+  "spec_mathematique": {
+    "matiere": "Mathématiques",
+    "niveau": "6e",
+    "chapitre": "Symétrie axiale",
+    "type_exercice": "symetrie_axiale",
+    "difficulte": "difficile",
+    "parametres": {
+      "type": "completer_figure",
+      "figure": "triangle",
+      "points_initiaux": [
+        "M",
+        "N",
+        "P"
+      ],
+      "axe_position": 6
+    },
+    "solution_calculee": {
+      "points_symetriques": {
+        "M'": {
+          "x": 10,
+          "y": 3
+        },
+        "N'": {
+          "x": 10,
+          "y": 5
+        },
+        "P'": {
+          "x": 8,
+          "y": 2
+        }
+      }
+    },
+    "etapes_calculees": [
+      "Triangle MNP avec M(2, 3), N(2, 5), P(4, 2)",
+      "Axe de symétrie : droite verticale x = 6",
+      "Pour chaque point, calculer son symétrique :",
+      "M' (10, 3)",
+      "N' (10, 5)",
+      "P' (8, 2)"
+    ],
+    "resultat_final": "Triangle symétrique : M'N'P'",
+    "figure_geometrique": {
+      "type": "symetrie_axiale",
+      "points": [
+        "M",
+        "N",
+        "P"
+      ],
+      "rectangle_en": null,
+      "longueurs_connues": {
+        "M_x": 2,
+        "M_y": 3,
+        "N_x": 2,
+        "N_y": 5,
+        "P_x": 4,
+        "P_y": 2,
+        "M'_x": 10,
+        "M'_y": 3,
+        "N'_x": 10,
+        "N'_y": 5,
+        "P'_x": 8,
+        "P'_y": 2
+      },
+      "longueurs_a_calculer": [],
+      "angles_connus": {},
+      "angles_a_calculer": [],
+      "proprietes": [
+        "axe_vertical",
+        "axe_position_6",
+        "triangle",
+        "with_grid"
+      ]
+    },
+    "points_bareme": [
+      {
+        "etape": "Construction des symétriques",
+        "points": 3.0
+      },
+      {
+        "etape": "Tracé de la figure complète",
+        "points": 1.0
+      }
+    ],
+    "conseils_prof": []
+  },
+  "solution_calculee": {
+    "points_symetriques": {
+      "M'": {
+        "x": 10,
+        "y": 3
+      },
+      "N'": {
+        "x": 10,
+        "y": 5
+      },
+      "P'": {
+        "x": 8,
+        "y": 2
+      }
+    }
+  }
+}

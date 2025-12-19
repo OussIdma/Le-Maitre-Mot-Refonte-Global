@@ -94,7 +94,8 @@ const Curriculum6eAdminPage = () => {
     difficulte_min: 1,
     difficulte_max: 3,
     statut: 'beta',
-    tags: []
+    tags: [],
+    pipeline: 'SPEC' // P1: Pipeline explicite
   });
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -233,7 +234,8 @@ const Curriculum6eAdminPage = () => {
       difficulte_min: 1,
       difficulte_max: 3,
       statut: 'beta',
-      tags: []
+      tags: [],
+      pipeline: 'SPEC' // P1: Pipeline explicite
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -253,7 +255,8 @@ const Curriculum6eAdminPage = () => {
       difficulte_min: chapitre.difficulte_min || 1,
       difficulte_max: chapitre.difficulte_max || 3,
       statut: chapitre.statut,
-      tags: chapitre.tags || []
+      tags: chapitre.tags || [],
+      pipeline: chapitre.pipeline || 'SPEC' // P1: Pipeline explicite
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -851,6 +854,56 @@ const Curriculum6eAdminPage = () => {
               </div>
             </div>
             
+            {/* Pipeline (P1) */}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="pipeline" className="text-right text-sm">
+                Pipeline *
+              </Label>
+              <div className="col-span-3">
+                <Select 
+                  value={formData.pipeline || 'SPEC'} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, pipeline: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SPEC">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        Statique (SPEC)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="TEMPLATE">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                        Dynamique (TEMPLATE)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="MIXED">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                        Mixte (MIXED)
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.pipeline === 'SPEC' && 'Génération statique uniquement (MathGenerationService)'}
+                  {formData.pipeline === 'TEMPLATE' && 'Génération dynamique uniquement (exercices dynamiques en DB)'}
+                  {formData.pipeline === 'MIXED' && 'Priorité dynamique si exercices DB, sinon statique'}
+                </p>
+                {formData.pipeline === 'TEMPLATE' && formData.exercise_types.length > 0 && (
+                  <Alert className="mt-2 border-yellow-500 bg-yellow-50">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800 text-xs">
+                      Pipeline TEMPLATE : les exercise_types statiques seront ignorés. Utilisez uniquement des exercices dynamiques.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </div>
+            
             {/* Schéma requis */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="schema_requis" className="text-right text-sm">
@@ -916,20 +969,29 @@ const Curriculum6eAdminPage = () => {
             <div className="grid grid-cols-4 items-start gap-4">
               <Label className="text-right text-sm pt-2">
                 Générateurs
+                {formData.pipeline === 'TEMPLATE' && (
+                  <span className="block text-xs text-gray-400 mt-1">(Optionnel)</span>
+                )}
               </Label>
               <div className="col-span-3">
-                <div className="border rounded-md p-3 max-h-40 overflow-y-auto">
+                <div className={`border rounded-md p-3 max-h-40 overflow-y-auto ${formData.pipeline === 'TEMPLATE' ? 'opacity-60' : ''}`}>
                   <div className="flex flex-wrap gap-2">
                     {availableOptions.generators.slice(0, 30).map(gen => (
                       <Badge
                         key={gen}
                         variant={formData.exercise_types.includes(gen) ? 'default' : 'outline'}
                         className={`cursor-pointer text-xs ${
+                          formData.pipeline === 'TEMPLATE' ? 'cursor-not-allowed' : ''
+                        } ${
                           formData.exercise_types.includes(gen) 
                             ? 'bg-blue-600 hover:bg-blue-700' 
                             : 'hover:bg-gray-100'
                         }`}
-                        onClick={() => handleGeneratorToggle(gen)}
+                        onClick={() => {
+                          if (formData.pipeline !== 'TEMPLATE') {
+                            handleGeneratorToggle(gen);
+                          }
+                        }}
                       >
                         {gen}
                       </Badge>
@@ -938,6 +1000,7 @@ const Curriculum6eAdminPage = () => {
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   {formData.exercise_types.length} générateur(s) sélectionné(s)
+                  {formData.pipeline === 'TEMPLATE' && ' (ignorés pour pipeline TEMPLATE)'}
                 </p>
               </div>
             </div>

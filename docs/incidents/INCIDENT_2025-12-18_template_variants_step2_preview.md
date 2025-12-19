@@ -105,3 +105,5 @@
   - `choose_template_variant` n’utilise pas `random` ni `random.seed`, uniquement `hashlib.sha256`.
 
 
+
+

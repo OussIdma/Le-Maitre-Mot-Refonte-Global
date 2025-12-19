@@ -123,6 +123,26 @@ THALES_V1_SCHEMA = GeneratorSchema(
 
 GENERATOR_SCHEMAS: Dict[str, GeneratorSchema] = {
     "THALES_V1": THALES_V1_SCHEMA,
+    "SYMETRIE_AXIALE_V2": GeneratorSchema(
+        generator_key="SYMETRIE_AXIALE_V2",
+        label="Symétrie Axiale",
+        description="Exercices sur la symétrie axiale (point/segment/figure) avec grille",
+        niveau="6e",
+        pedagogical_tips="⚠️ Tracer perpendiculaire à l'axe, éviter la confusion avec translation/rotation.",
+        variables=[
+            VariableSchema("figure_type", "string", "Type de figure (point, segment, triangle, rectangle)", "triangle"),
+            VariableSchema("axe_type", "string", "Orientation de l'axe (vertical, horizontal, oblique)", "vertical"),
+            VariableSchema("show_grid", "boolean", "Afficher la grille de repérage", True),
+            VariableSchema("difficulty", "string", "Niveau de difficulté", "moyen"),
+            VariableSchema("show_solution_steps", "boolean", "Afficher les étapes de construction dans la solution", True),
+            VariableSchema("label_points", "boolean", "Afficher les lettres sur les points", True),
+        ],
+        svg_modes=["AUTO"],
+        supports_double_svg=True,
+        difficulties=["facile", "moyen", "difficile"],
+        template_example_enonce="""<p>Tracer le symétrique de la figure par rapport à l'axe {{axe_type}}.</p>""",
+        template_example_solution="""<ol><li>Tracer la perpendiculaire à l'axe passant par chaque point.</li><li>Reporter la même distance de l'autre côté.</li><li>Relier les points symétriques.</li></ol>"""
+    ),
 }
 
 

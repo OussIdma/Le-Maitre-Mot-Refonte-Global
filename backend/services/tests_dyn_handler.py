@@ -29,9 +29,10 @@ from backend.data.tests_dyn_exercises import (
     get_random_tests_dyn_exercise
 )
 from backend.generators.thales_generator import generate_dynamic_exercise, GENERATORS_REGISTRY
+from backend.generators.factory import GeneratorFactory
 from backend.services.template_renderer import render_template, get_template_variables
 from backend.services.dynamic_exercise_engine import choose_template_variant
-from backend.services.variants_config import is_variants_allowed, VARIANTS_ALLOWED_CHAPTERS
+from backend.services.variants_config import is_chapter_template_based
 from backend.logger import get_logger
 
 
@@ -106,17 +107,62 @@ def format_dynamic_exercise(
     difficulty = exercise_template.get("difficulty", "moyen")
 
     # Générer les variables et SVG (dépend uniquement du seed + difficulty)
-    gen_result = generate_dynamic_exercise(
-        generator_key=generator_key,
-        seed=seed,
-        difficulty=difficulty
-    )
-
-    variables = gen_result["variables"]
-    results = gen_result["results"]
+    factory_gen = GeneratorFactory.get(generator_key)
+    if factory_gen:
+        gen_result = GeneratorFactory.generate(
+            key=generator_key,
+            exercise_params=exercise_template.get("variables") or {},
+            overrides=None,
+            seed=seed,
+        )
+        variables = gen_result.get("variables", {})
+        results = gen_result.get("results", {})
+    else:
+        gen_result = generate_dynamic_exercise(
+            generator_key=generator_key,
+            seed=seed,
+            difficulty=difficulty
+        )
+        variables = gen_result["variables"]
+        results = gen_result["results"]
 
     # Fusionner variables et results pour le rendu
     all_vars: Dict[str, Any] = {**variables, **results}
+
+    # Alias THALES_V1 : mapping explicite et déterministe (éviter placeholders résiduels)
+    if generator_key.startswith("THALES"):
+        alias_actions = []
+
+        def apply_alias(target: str, candidates: List[str]) -> None:
+            if target in all_vars and all_vars[target] is not None:
+                return
+            for cand in candidates:
+                if cand in all_vars and all_vars[cand] is not None:
+                    all_vars[target] = all_vars[cand]
+                    alias_actions.append((target, cand))
+                    return
+
+        apply_alias("cote_initial", ["cote_initial", "base_initiale", "longueur_initiale", "largeur_initiale"])
+        apply_alias("cote_final", ["cote_final", "base_finale", "longueur_finale", "largeur_finale"])
+
+        missing_alias = [k for k in ("cote_initial", "cote_final") if k not in all_vars or all_vars[k] is None]
+        if missing_alias:
+            logger.error(
+                f"[PLACEHOLDER_ALIAS] Impossible de résoudre {missing_alias} pour {generator_key} "
+                f"(candidats présents: {[k for k in all_vars.keys()]})"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "PLACEHOLDER_ALIAS_MISSING",
+                    "error": "placeholder_alias_missing",
+                    "message": f"Impossible de résoudre les placeholders {missing_alias} pour {generator_key}",
+                    "missing": missing_alias,
+                    "generator_key": generator_key
+                }
+            )
+        if alias_actions:
+            logger.info(f"[PLACEHOLDER_ALIAS] Aliases appliqués pour {generator_key}: {alias_actions}")
 
     raw_figure_type = all_vars.get("figure_type")
     figure_type = _normalize_figure_type(raw_figure_type)
@@ -244,29 +290,29 @@ def format_dynamic_exercise(
             )
         
         # =====================================================================
-        # ENFORCEMENT ALLOWLIST (Phase A)
+        # DÉTECTION AUTOMATIQUE TEMPLATE-BASED (Phase Finale)
         # =====================================================================
-        # Vérification explicite : chapitre autorisé pour template_variants
-        # Zéro fallback silencieux : si non autorisé → erreur JSON explicite
-        if not is_variants_allowed(chapter_code):
+        # Détection automatique : chapitre template-based (compatible template_variants)
+        # Zéro fallback silencieux : si spec-based → erreur JSON explicite
+        if not is_chapter_template_based(chapter_code, exercise_template):
             logger.error(
-                f"[VARIANTS_ALLOWLIST] Chapitre '{chapter_code}' non autorisé pour template_variants. "
+                f"[VARIANTS_AUTO_DETECTION] Chapitre '{chapter_code}' non template-based (spec-based). "
                 f"Exercise template id={exercise_template.get('id')}, stable_key={stable_key}"
             )
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "error_code": "VARIANTS_NOT_ALLOWED",
-                    "error": "variants_not_allowed",
+                    "error_code": "VARIANTS_NOT_SUPPORTED",
+                    "error": "variants_not_supported",
                     "message": (
-                        f"Les template_variants ne sont pas autorisés pour le chapitre '{chapter_code}'. "
-                        f"Seuls les chapitres suivants sont autorisés : {sorted(list(VARIANTS_ALLOWED_CHAPTERS))}"
+                        f"Les template_variants ne sont pas supportés pour le chapitre '{chapter_code}'. "
+                        f"Ce chapitre utilise une génération spec-based (MathGenerationService) "
+                        f"et non template-based (is_dynamic=True + generator_key + enonce_template_html)."
                     ),
                     "chapter_code": chapter_code,
                     "exercise_template_id": exercise_template.get("id"),
                     "stable_key": stable_key,
-                    "allowed_chapters": sorted(list(VARIANTS_ALLOWED_CHAPTERS)),
-                    "hint": "Contactez l'équipe technique pour activer les variants sur ce chapitre."
+                    "hint": "Les template_variants sont uniquement disponibles pour les chapitres template-based (avec is_dynamic=True + generator_key + enonce_template_html)."
                 },
             )
         # IMPORTANT:

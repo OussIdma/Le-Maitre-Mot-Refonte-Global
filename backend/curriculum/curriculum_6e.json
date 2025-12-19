@@ -95,7 +95,9 @@
     {
       "label": "Tests Dynamiques",
       "codes_officiels": [
-        "6e_TESTS_DYN"
+        "6e_TESTS_DYN",
+        "6e_AA_TEST",
+        "6e_AA_TEST_STAT"
       ],
       "description": "Chapitre de test pour les exercices générés dynamiquement"
     }
@@ -250,6 +252,37 @@
         "axiale",
         "transformation"
       ],
+      "contexts": []
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_AA_TEST",
+      "domaine": "Géométrie",
+      "libelle": "AA TEST",
+      "chapitre_backend": "",
+      "exercise_types": [],
+      "schema_requis": true,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [],
+      "contexts": [],
+      "pipeline": "TEMPLATE"
+    },
+    {
+      "niveau": "6e",
+      "code_officiel": "6e_AA_TEST_STAT",
+      "domaine": "Géométrie",
+      "libelle": "6e_AA_TEST_STAT",
+      "chapitre_backend": "",
+      "exercise_types": [
+        "AIRE_TRIANGLE"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "beta",
+      "tags": [],
       "contexts": []
     },
     {

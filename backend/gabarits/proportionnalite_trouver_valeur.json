@@ -1,0 +1,96 @@
+{
+  "chapitre": "Proportionnalité",
+  "type_exercice": "trouver_valeur",
+  "description": "Gabarits pour exercices de proportionnalité (produit en croix, tableau)",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "Tableau : {val1} → {res1}, {val2} → {res2}. {val3} → ?",
+        "Proportionnalité : {val1}/{res1} = {val2}/{res2}. Trouve x si {val3}/x.",
+        "{val1} donne {res1}, {val2} donne {res2}. Combien pour {val3} ?",
+        "Coefficient k : {val1} × k = {res1}. Pour {val3}, x = ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Complète le tableau de proportionnalité : {val1} correspond à {res1}, {val2} correspond à {res2}. À combien correspond {val3} ?",
+        "On sait que {val1} et {res1} sont proportionnels, ainsi que {val2} et {res2}. Calcule la valeur correspondant à {val3}.",
+        "Dans un tableau de proportionnalité, {val1} est associé à {res1} et {val2} à {res2}. Quelle valeur correspond à {val3} ?",
+        "Soit un tableau de proportionnalité. Si {val1} → {res1} et {val2} → {res2}, détermine le correspondant de {val3}."
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Étant donné une relation de proportionnalité où {val1} correspond à {res1} et {val2} à {res2}, détermine par le produit en croix la valeur associée à {val3}.",
+        "Dans une situation de proportionnalité, les couples ({val1}, {res1}) et ({val2}, {res2}) vérifient la même constante de proportionnalité. Établis la valeur correspondant à {val3}.",
+        "Utilise les propriétés de la proportionnalité : sachant que {val1} → {res1} et {val2} → {res2}, calcule rigoureusement le résultat pour {val3}."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Julie achète {val1} articles pour {res1} euros et {val2} articles pour {res2} euros. Combien paiera-t-elle pour {val3} articles ?",
+        "Un agriculteur récolte {res1} kg de pommes sur {val1} arbres et {res2} kg sur {val2} arbres. Quelle sera sa récolte sur {val3} arbres ?",
+        "Thomas remarque que {val1} litres d'essence coûte {res1} euros et {val2} litres coûte {res2} euros. Quel sera le prix de {val3} litres ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe le tableau : {val1} correspond à {res1}, {val2} à {res2}. Pour trouver ce qui correspond à {val3}, calcule d'abord le coefficient de proportionnalité.",
+        "Méthode : identifie que {val1} donne {res1} et {val2} donne {res2}. Utilise le produit en croix pour trouver la valeur associée à {val3}.",
+        "Commence par vérifier la proportionnalité : {val1}/{res1} = {val2}/{res2}. Puis applique la même relation pour {val3}."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Challenge proportionnalité ! {val1} → {res1}, {val2} → {res2}. Trouve le résultat pour {val3} en 1 minute !",
+        "Défi rapide : tableau de proportionnalité. {val1} donne {res1}, {val2} donne {res2}. Combien donne {val3} ?",
+        "Mission math : {val1}/{res1} = {val2}/{res2}. Calcule x dans {val3}/x. Go !"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Bon, t'as {val1} qui donne {res1}, et {val2} qui donne {res2}. Maintenant dis-moi, {val3} ça donne combien ?",
+        "Regarde : {val1} c'est {res1}, {val2} c'est {res2}. Donc pour {val3}, tu trouves quoi ?",
+        "OK simple : {val1} → {res1}, {val2} → {res2}. Alors {val3}, ça fait ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Repère {val1} → {res1} et {val2} → {res2}\nÉtape 2 : Calcule le coefficient k = {res1}/{val1}\nÉtape 3 : Applique k à {val3}",
+        "1) Tableau : {val1} donne {res1}, {val2} donne {res2}\n2) Vérifie la proportionnalité\n3) Utilise le produit en croix pour {val3}",
+        "Procédure :\n→ Données : {val1} → {res1}, {val2} → {res2}\n→ Méthode : produit en croix\n→ Calcule pour {val3}"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu sais utiliser un tableau de proportionnalité. Applique la même méthode : {val1} → {res1}, {val2} → {res2}. Déduis la valeur pour {val3}.",
+        "Comme dans l'exercice précédent, utilise le coefficient : {val1} donne {res1}, {val2} donne {res2}. Trouve le résultat pour {val3}.",
+        "Rappelle-toi la méthode du produit en croix. Ici : {val1}/{res1} = {val2}/{res2}. Applique-la pour {val3}."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Première relation ?\nR : {val1} → {res1}.\nQ : Deuxième relation ?\nR : {val2} → {res2}.\nQ : Valeur pour {val3} ?",
+        "Question : {val1} donne combien ?\nRéponse : {res1}.\nQuestion : {val2} donne combien ?\nRéponse : {res2}.\nQuestion : Donc {val3} donne ?",
+        "Q : Coefficient k ?\nR : k = {res1}/{val1}.\nQ : Pour {val2} ?\nR : {val2} × k = {res2}.\nQ : Pour {val3} ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "val1": "Première valeur de départ (entier)",
+    "res1": "Résultat correspondant à val1 (entier)",
+    "val2": "Deuxième valeur de départ (entier)",
+    "res2": "Résultat correspondant à val2 (entier)",
+    "val3": "Valeur pour laquelle il faut trouver le résultat (entier)"
+  }
+}

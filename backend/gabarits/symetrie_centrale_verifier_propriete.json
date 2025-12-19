@@ -1,0 +1,98 @@
+{
+  "chapitre": "Symétrie centrale",
+  "type_exercice": "verifier_propriete",
+  "description": "Gabarits pour exercices où l'élève doit vérifier si deux points sont symétriques par rapport à un centre",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "{pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}). Centre {pointO}({centreX}, {centreY}). Symétriques ?",
+        "Points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Centre {pointO}({centreX}, {centreY}). Vérifier symétrie.",
+        "{pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), centre {pointO}({centreX}, {centreY}). Symétriques ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont-ils symétriques par rapport au centre {pointO}({centreX}, {centreY}) ?",
+        "Vérifie si {pointA} de coordonnées ({coordA_x}, {coordA_y}) et {pointB} de coordonnées ({coordB_x}, {coordB_y}) sont symétriques relativement au point {pointO}({centreX}, {centreY}).",
+        "On donne {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Démontre si ces deux points sont symétriques par rapport au centre {pointO}({centreX}, {centreY})."
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Étant donnés les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}), établis si {pointO}({centreX}, {centreY}) est le milieu du segment [{pointA}{pointB}].",
+        "Vérifie analytiquement si {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont images réciproques par la symétrie centrale de centre {pointO}({centreX}, {centreY}).",
+        "Démontre rigoureusement si les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) satisfont la condition : {pointO}({centreX}, {centreY}) milieu de [{pointA}{pointB}]."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Sarah a placé trois points : {pointA} en ({coordA_x}, {coordA_y}), {pointB} en ({coordB_x}, {coordB_y}) et {pointO} en ({centreX}, {centreY}). Elle se demande si {pointA} et {pointB} sont symétriques par rapport à {pointO}. Qu'en penses-tu ?",
+        "Léo affirme que {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont symétriques par rapport au centre {pointO}({centreX}, {centreY}). A-t-il raison ?",
+        "Nina a tracé {pointA} en ({coordA_x}, {coordA_y}), {pointB} en ({coordB_x}, {coordB_y}) et {pointO} en ({centreX}, {centreY}). Ces points forment-ils une symétrie centrale ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Pour vérifier s'ils sont symétriques par rapport à {pointO}({centreX}, {centreY}), calcule le milieu de [{pointA}{pointB}]. Est-ce {pointO} ?",
+        "Commence par calculer les coordonnées du milieu du segment [{pointA}{pointB}]. {pointA} est en ({coordA_x}, {coordA_y}) et {pointB} en ({coordB_x}, {coordB_y}). Compare avec {pointO}({centreX}, {centreY}).",
+        "Méthode : trouve le milieu de [{pointA}{pointB}] où {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Si c'est {pointO}({centreX}, {centreY}), alors symétrie validée."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Défi ! {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), centre {pointO}({centreX}, {centreY}). Symétrie centrale : vrai ou faux ?",
+        "Challenge : vérifie en 1 minute si {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont symétriques par rapport à {pointO}({centreX}, {centreY}).",
+        "Mission : {pointO}({centreX}, {centreY}) est-il le milieu de [{pointA}({coordA_x}, {coordA_y}){pointB}({coordB_x}, {coordB_y})] ?"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Bon alors, t'as {pointA} en ({coordA_x}, {coordA_y}), {pointB} en ({coordB_x}, {coordB_y}), et {pointO} en ({centreX}, {centreY}). Symétrie centrale ou pas ?",
+        "Regarde : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), centre {pointO}({centreX}, {centreY}). Alors, ça marche ?",
+        "Dis-moi, avec {pointA} en ({coordA_x}, {coordA_y}), {pointB} en ({coordB_x}, {coordB_y}) et {pointO} en ({centreX}, {centreY}), on a une symétrie centrale ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Note les coordonnées : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {pointO}({centreX}, {centreY})\nÉtape 2 : Calcule le milieu de [{pointA}{pointB}]\nÉtape 3 : Compare avec {pointO}",
+        "1) Repère {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {pointO}({centreX}, {centreY})\n2) Calcule le milieu M de [{pointA}{pointB}]\n3) Vérifie si M = {pointO}",
+        "Procédure :\n→ Données : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {pointO}({centreX}, {centreY})\n→ Calcul du milieu\n→ Validation"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu sais qu'en symétrie centrale, le centre est le milieu du segment. Vérifie si {pointO}({centreX}, {centreY}) est le milieu de [{pointA}({coordA_x}, {coordA_y}){pointB}({coordB_x}, {coordB_y})].",
+        "Rappelle-toi la propriété du milieu en symétrie centrale. Applique-la avec {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}) et {pointO}({centreX}, {centreY}).",
+        "Comme dans les exercices précédents, utilise la formule du milieu. {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {pointO}({centreX}, {centreY}). Conclus."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Coordonnées de {pointA} ?\nR : ({coordA_x}, {coordA_y}).\nQ : Coordonnées de {pointB} ?\nR : ({coordB_x}, {coordB_y}).\nQ : Centre ?\nR : {pointO}({centreX}, {centreY}).\nQ : Symétrie validée ?",
+        "Question : Position de {pointA} ?\nRéponse : ({coordA_x}, {coordA_y}).\nQuestion : Position de {pointB} ?\nRéponse : ({coordB_x}, {coordB_y}).\nQuestion : {pointO} est-il le milieu ?",
+        "Q : {pointA} = ?\nR : ({coordA_x}, {coordA_y}).\nQ : {pointB} = ?\nR : ({coordB_x}, {coordB_y}).\nQ : {pointO} = ?\nR : ({centreX}, {centreY}).\nQ : Symétrie vérifiée ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "pointA": "Nom du premier point (ex: M, A, D)",
+    "pointB": "Nom du second point (ex: N, B, E)",
+    "pointO": "Nom du centre (ex: O, I, K)",
+    "coordA_x": "Coordonnée x du premier point (entier)",
+    "coordA_y": "Coordonnée y du premier point (entier)",
+    "coordB_x": "Coordonnée x du second point (entier)",
+    "coordB_y": "Coordonnée y du second point (entier)",
+    "centreX": "Coordonnée x du centre (entier)",
+    "centreY": "Coordonnée y du centre (entier)"
+  }
+}

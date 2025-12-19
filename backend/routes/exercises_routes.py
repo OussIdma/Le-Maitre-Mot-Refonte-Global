@@ -760,6 +760,212 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         request.niveau = curriculum_chapter.niveau
         request.chapitre = curriculum_chapter.chapitre_backend
         
+        # ============================================================================
+        # P0: PIPELINE EXPLICITE - Routage selon pipeline du chapitre
+        # ============================================================================
+        # Si le chapitre a un pipeline défini, l'utiliser explicitement.
+        # Sinon, fallback sur l'ancien comportement (détection automatique).
+        
+        pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
+        
+        if pipeline_mode:
+            logger.info(f"[PIPELINE] Chapitre {request.code_officiel} → pipeline={pipeline_mode} (explicite)")
+            
+            from server import db
+            from backend.services.curriculum_sync_service import get_curriculum_sync_service
+            from backend.services.exercise_persistence_service import get_exercise_persistence_service
+            from backend.services.tests_dyn_handler import format_dynamic_exercise
+            
+            sync_service = get_curriculum_sync_service(db)
+            exercise_service = get_exercise_persistence_service(db)
+            
+            # Normaliser le code_officiel pour la recherche
+            chapter_code_for_db = request.code_officiel.upper().replace("-", "_")
+            
+            if pipeline_mode == "TEMPLATE":
+                # Pipeline dynamique uniquement
+                try:
+                    has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
+                    if not has_exercises:
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                                "error": "template_pipeline_no_exercises",
+                                "message": (
+                                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                                    f"mais aucun exercice dynamique n'existe en DB pour ce chapitre."
+                                ),
+                                "chapter_code": request.code_officiel,
+                                "pipeline": "TEMPLATE",
+                                "hint": "Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                            }
+                        )
+                    
+                    exercises = await exercise_service.get_exercises(
+                        chapter_code=chapter_code_for_db,
+                        offer=request.offer if hasattr(request, 'offer') else None,
+                        difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+                    )
+                    dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                    
+                    if len(dynamic_exercises) == 0:
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                                "error": "template_pipeline_no_dynamic_exercises",
+                                "message": (
+                                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                                    f"mais aucun exercice dynamique (is_dynamic=true) n'existe en DB pour ce chapitre."
+                                ),
+                                "chapter_code": request.code_officiel,
+                                "pipeline": "TEMPLATE",
+                                "hint": "Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                            }
+                        )
+                    
+                    # Sélectionner un exercice dynamique aléatoire (avec seed pour reproductibilité)
+                    import random
+                    if request.seed is not None:
+                        random.seed(request.seed)
+                    
+                    selected_exercise = random.choice(dynamic_exercises)
+                    
+                    # Générer l'exercice dynamique
+                    timestamp = int(time.time() * 1000)
+                    dyn_exercise = format_dynamic_exercise(
+                        exercise_template=selected_exercise,
+                        timestamp=timestamp,
+                        seed=request.seed
+                    )
+                    
+                    logger.info(
+                        f"[PIPELINE] ✅ Exercice dynamique généré (TEMPLATE): "
+                        f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}, "
+                        f"generator_key={selected_exercise.get('generator_key')}"
+                    )
+                    
+                    return dyn_exercise
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        f"[PIPELINE] Erreur pipeline TEMPLATE pour {chapter_code_for_db}: {e}"
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "error_code": "TEMPLATE_PIPELINE_ERROR",
+                            "error": "template_pipeline_error",
+                            "message": f"Erreur lors de la génération avec pipeline TEMPLATE: {str(e)}"
+                        }
+                    )
+            
+            elif pipeline_mode == "MIXED":
+                # Priorité dynamique si exercices DB, sinon statique
+                try:
+                    has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
+                    if has_exercises:
+                        exercises = await exercise_service.get_exercises(
+                            chapter_code=chapter_code_for_db,
+                            offer=request.offer if hasattr(request, 'offer') else None,
+                            difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+                        )
+                        dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                        
+                        if len(dynamic_exercises) > 0:
+                            # Priorité dynamique
+                            import random
+                            if request.seed is not None:
+                                random.seed(request.seed)
+                            
+                            selected_exercise = random.choice(dynamic_exercises)
+                            timestamp = int(time.time() * 1000)
+                            dyn_exercise = format_dynamic_exercise(
+                                exercise_template=selected_exercise,
+                                timestamp=timestamp,
+                                seed=request.seed
+                            )
+                            
+                            logger.info(
+                                f"[PIPELINE] ✅ Exercice dynamique généré (MIXED, priorité dynamique): "
+                                f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
+                            )
+                            
+                            return dyn_exercise
+                    
+                    # Fallback sur pipeline statique
+                    logger.info(
+                        f"[PIPELINE] Pipeline MIXED pour {chapter_code_for_db}: pas d'exercices dynamiques, "
+                        f"utilisation du pipeline STATIQUE."
+                    )
+                    # Continue vers pipeline statique (code ci-dessous)
+                except Exception as e:
+                    logger.warning(
+                        f"[PIPELINE] Erreur vérification exercices dynamiques (MIXED) pour {chapter_code_for_db}: {e}. "
+                        f"Fallback sur pipeline STATIQUE."
+                    )
+                    # Continue vers pipeline statique (code ci-dessous)
+            
+            elif pipeline_mode == "SPEC":
+                # Pipeline statique uniquement - continue vers le code ci-dessous
+                logger.info(f"[PIPELINE] Pipeline SPEC pour {chapter_code_for_db}: utilisation du pipeline STATIQUE.")
+                # Continue vers pipeline statique (code ci-dessous)
+        
+        else:
+            # Fallback temporaire : pipeline absent, utiliser l'ancien comportement
+            logger.warning(
+                f"[PIPELINE] Chapitre {request.code_officiel} n'a pas de pipeline défini. "
+                f"Fallback sur détection automatique (comportement legacy)."
+            )
+            
+            # Ancien comportement : vérification exercices dynamiques en DB
+            from server import db
+            from backend.services.curriculum_sync_service import get_curriculum_sync_service
+            from backend.services.exercise_persistence_service import get_exercise_persistence_service
+            from backend.services.tests_dyn_handler import format_dynamic_exercise
+            
+            sync_service = get_curriculum_sync_service(db)
+            exercise_service = get_exercise_persistence_service(db)
+            
+            chapter_code_for_db = request.code_officiel.upper().replace("-", "_")
+            
+            try:
+                has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
+                if has_exercises:
+                    exercises = await exercise_service.get_exercises(
+                        chapter_code=chapter_code_for_db,
+                        offer=request.offer if hasattr(request, 'offer') else None,
+                        difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+                    )
+                    dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                    
+                    if len(dynamic_exercises) > 0:
+                        import random
+                        if request.seed is not None:
+                            random.seed(request.seed)
+                        
+                        selected_exercise = random.choice(dynamic_exercises)
+                        timestamp = int(time.time() * 1000)
+                        dyn_exercise = format_dynamic_exercise(
+                            exercise_template=selected_exercise,
+                            timestamp=timestamp,
+                            seed=request.seed
+                        )
+                        
+                        logger.info(
+                            f"[PIPELINE] ✅ Exercice dynamique généré (fallback legacy): "
+                            f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
+                        )
+                        
+                        return dyn_exercise
+            except Exception as e:
+                logger.warning(
+                    f"[PIPELINE] Erreur vérification exercices dynamiques (fallback) pour {chapter_code_for_db}: {e}. "
+                    f"Fallback sur pipeline STATIQUE."
+                )
+        
         # Convertir les types d'exercices du référentiel en enum
         # IMPORTANT:
         # - En mode gratuit, filtrer les générateurs premium
@@ -801,28 +1007,52 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         f"(ignorés): {invalid_types}"
                     )
                 
+                # P0: Validation BLOQUANTE pour pipeline SPEC
                 # Si TOUS les types configurés sont inconnus, lever une erreur claire
                 # plutôt que de retomber silencieusement sur le mapping legacy.
                 if filtered_types and not valid_types:
-                    from fastapi import HTTPException
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "error_code": "INVALID_CURRICULUM_EXERCISE_TYPES",
-                            "error": "invalid_exercise_types",
-                            "message": (
-                                f"Les exercise_types configurés pour le chapitre "
-                                f"'{request.code_officiel}' ne correspondent à aucun "
-                                f"MathExerciseType connu: {filtered_types}."
-                            ),
-                            "chapter_code": request.code_officiel,
-                            "exercise_types_configured": filtered_types,
-                            "hint": (
-                                "Ajoutez ces types dans MathExerciseType ou corrigez "
-                                "le référentiel curriculum_6e."
-                            ),
-                        },
-                    )
+                    # Vérifier si le pipeline est SPEC (validation bloquante)
+                    pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
+                    if pipeline_mode == "SPEC":
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "SPEC_PIPELINE_INVALID_EXERCISE_TYPES",
+                                "error": "spec_pipeline_invalid_exercise_types",
+                                "message": (
+                                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='SPEC' "
+                                    f"mais tous les exercise_types configurés ne correspondent à aucun "
+                                    f"MathExerciseType connu: {filtered_types}."
+                                ),
+                                "chapter_code": request.code_officiel,
+                                "pipeline": "SPEC",
+                                "exercise_types_configured": filtered_types,
+                                "hint": (
+                                    "Ajoutez ces types dans MathExerciseType, corrigez le référentiel curriculum_6e, "
+                                    "ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
+                                ),
+                            },
+                        )
+                    else:
+                        # Comportement legacy pour compatibilité
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "INVALID_CURRICULUM_EXERCISE_TYPES",
+                                "error": "invalid_exercise_types",
+                                "message": (
+                                    f"Les exercise_types configurés pour le chapitre "
+                                    f"'{request.code_officiel}' ne correspondent à aucun "
+                                    f"MathExerciseType connu: {filtered_types}."
+                                ),
+                                "chapter_code": request.code_officiel,
+                                "exercise_types_configured": filtered_types,
+                                "hint": (
+                                    "Ajoutez ces types dans MathExerciseType ou corrigez "
+                                    "le référentiel curriculum_6e."
+                                ),
+                            },
+                        )
                 
                 logger.info(
                     f"Types d'exercices filtrés pour {request.code_officiel} "
@@ -939,6 +1169,23 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             )
         else:
             # Mode legacy : utiliser le mapping par chapitre
+            # Vérifier si le chapitre a un pipeline TEMPLATE (ne doit jamais passer par MathGenerationService)
+            if curriculum_chapter and hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline == "TEMPLATE":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                        "error": "template_pipeline_no_exercises",
+                        "message": (
+                            f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                            f"mais aucun exercice dynamique n'existe en DB pour ce chapitre."
+                        ),
+                        "chapter_code": request.code_officiel,
+                        "pipeline": "TEMPLATE",
+                        "hint": "Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                    }
+                )
+            
             specs = _math_service.generate_math_exercise_specs(
                 niveau=request.niveau,
                 chapitre=request.chapitre,

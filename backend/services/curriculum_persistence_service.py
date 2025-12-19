@@ -8,7 +8,7 @@ Maintient la synchronisation entre MongoDB et le fichier JSON local.
 import json
 import os
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
@@ -60,6 +60,10 @@ class ChapterCreateRequest(BaseModel):
     statut: str = Field(default="beta", description="Statut: prod, beta, hidden")
     tags: List[str] = Field(default_factory=list, description="Tags pour filtrage")
     contexts: List[str] = Field(default_factory=list, description="Contextes disponibles")
+    pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
+        default="SPEC",
+        description="Pipeline de génération: SPEC (statique), TEMPLATE (dynamique), MIXED (les deux)"
+    )
     
     @field_validator('code_officiel', mode='before')
     @classmethod
@@ -80,6 +84,10 @@ class ChapterUpdateRequest(BaseModel):
     statut: Optional[str] = None
     tags: Optional[List[str]] = None
     contexts: Optional[List[str]] = None
+    pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
+        default=None,
+        description="Pipeline de génération: SPEC (statique), TEMPLATE (dynamique), MIXED (les deux)"
+    )
 
 
 class CurriculumPersistenceService:
@@ -196,7 +204,7 @@ class CurriculumPersistenceService:
             Le chapitre créé
             
         Raises:
-            ValueError: Si le code_officiel existe déjà
+            ValueError: Si le code_officiel existe déjà ou validation échoue
         """
         await self.initialize()
         
@@ -204,6 +212,55 @@ class CurriculumPersistenceService:
         existing = await self.collection.find_one({"code_officiel": request.code_officiel})
         if existing:
             raise ValueError(f"Le code officiel '{request.code_officiel}' existe déjà")
+        
+        # P0: Validations BLOQUANTES
+        pipeline_mode = request.pipeline or "SPEC"
+        
+        # Validation 1: TEMPLATE sans exercice dynamique → ERREUR
+        if pipeline_mode == "TEMPLATE":
+            from backend.services.curriculum_sync_service import get_curriculum_sync_service
+            sync_service = get_curriculum_sync_service(self.db)
+            chapter_code_upper = request.code_officiel.upper().replace("-", "_")
+            
+            has_exercises = await sync_service.has_exercises_in_db(chapter_code_upper)
+            if not has_exercises:
+                raise ValueError(
+                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                    f"mais aucun exercice dynamique n'existe en DB pour ce chapitre. "
+                    f"Créez au moins un exercice dynamique ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                )
+            
+            # Vérifier qu'il y a au moins un exercice dynamique
+            from backend.services.exercise_persistence_service import get_exercise_persistence_service
+            exercise_service = get_exercise_persistence_service(self.db)
+            exercises = await exercise_service.get_exercises(chapter_code=chapter_code_upper)
+            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+            
+            if len(dynamic_exercises) == 0:
+                raise ValueError(
+                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                    f"mais aucun exercice dynamique (is_dynamic=true) n'existe en DB. "
+                    f"Créez au moins un exercice dynamique ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                )
+        
+        # Validation 2: SPEC avec exercise_types invalides → ERREUR
+        if pipeline_mode == "SPEC" and request.exercise_types:
+            from backend.models.math_models import MathExerciseType
+            
+            invalid_types = []
+            for et in request.exercise_types:
+                if not hasattr(MathExerciseType, et):
+                    invalid_types.append(et)
+            
+            if len(invalid_types) == len(request.exercise_types) and len(invalid_types) > 0:
+                # Tous les types sont invalides
+                raise ValueError(
+                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='SPEC' "
+                    f"mais tous les exercise_types configurés ne correspondent à aucun "
+                    f"MathExerciseType connu: {invalid_types}. "
+                    f"Ajoutez ces types dans MathExerciseType, corrigez le référentiel, "
+                    f"ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
+                )
         
         # Construire le document
         chapter = {
@@ -255,6 +312,59 @@ class CurriculumPersistenceService:
             # Rien à mettre à jour
             del existing["_id"]
             return existing
+        
+        # P0: Validations BLOQUANTES
+        # Déterminer le pipeline (nouveau ou existant)
+        pipeline_mode = update_data.get("pipeline") or existing.get("pipeline") or "SPEC"
+        
+        # Déterminer les exercise_types (nouveaux ou existants)
+        exercise_types = update_data.get("exercise_types") or existing.get("exercise_types", [])
+        
+        # Validation 1: TEMPLATE sans exercice dynamique → ERREUR
+        if pipeline_mode == "TEMPLATE":
+            from backend.services.curriculum_sync_service import get_curriculum_sync_service
+            sync_service = get_curriculum_sync_service(self.db)
+            chapter_code_upper = code_officiel.upper().replace("-", "_")
+            
+            has_exercises = await sync_service.has_exercises_in_db(chapter_code_upper)
+            if not has_exercises:
+                raise ValueError(
+                    f"Le chapitre '{code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                    f"mais aucun exercice dynamique n'existe en DB pour ce chapitre. "
+                    f"Créez au moins un exercice dynamique ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                )
+            
+            # Vérifier qu'il y a au moins un exercice dynamique
+            from backend.services.exercise_persistence_service import get_exercise_persistence_service
+            exercise_service = get_exercise_persistence_service(self.db)
+            exercises = await exercise_service.get_exercises(chapter_code=chapter_code_upper)
+            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+            
+            if len(dynamic_exercises) == 0:
+                raise ValueError(
+                    f"Le chapitre '{code_officiel}' est configuré avec pipeline='TEMPLATE' "
+                    f"mais aucun exercice dynamique (is_dynamic=true) n'existe en DB. "
+                    f"Créez au moins un exercice dynamique ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                )
+        
+        # Validation 2: SPEC avec exercise_types invalides → ERREUR
+        if pipeline_mode == "SPEC" and exercise_types:
+            from backend.models.math_models import MathExerciseType
+            
+            invalid_types = []
+            for et in exercise_types:
+                if not hasattr(MathExerciseType, et):
+                    invalid_types.append(et)
+            
+            if len(invalid_types) == len(exercise_types) and len(invalid_types) > 0:
+                # Tous les types sont invalides
+                raise ValueError(
+                    f"Le chapitre '{code_officiel}' est configuré avec pipeline='SPEC' "
+                    f"mais tous les exercise_types configurés ne correspondent à aucun "
+                    f"MathExerciseType connu: {invalid_types}. "
+                    f"Ajoutez ces types dans MathExerciseType, corrigez le référentiel, "
+                    f"ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
+                )
         
         update_data["updated_at"] = datetime.now(timezone.utc)
         
@@ -335,14 +445,61 @@ class CurriculumPersistenceService:
     async def get_available_generators(self) -> List[str]:
         """
         Récupère la liste de tous les générateurs disponibles.
-        Utile pour le formulaire d'édition.
+        
+        **Source de vérité enrichie** :
+        - Générateurs statiques : MathExerciseType (source principale)
+        - Générateurs dynamiques : exercise_types extraits depuis GeneratorFactory
+          via le mapping GENERATOR_TO_EXERCISE_TYPE (utilise les exercise_types du curriculum,
+          pas ceux des métadonnées)
+        
+        Utile pour le formulaire d'édition dans l'admin.
         """
+        generators = set()
+        
+        # 1. Générateurs statiques (MathExerciseType)
         try:
             from models.math_models import MathExerciseType
-            return [e.name for e in MathExerciseType]
+            for e in MathExerciseType:
+                generators.add(e.name)
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération des générateurs: {e}")
-            return []
+            logger.warning(f"Erreur lors de la récupération des générateurs statiques: {e}")
+        
+        # 2. Générateurs dynamiques (GeneratorFactory)
+        # IMPORTANT: Utiliser le mapping GENERATOR_TO_EXERCISE_TYPE qui mappe vers
+        # les exercise_types du curriculum (ex: AGRANDISSEMENT_REDUCTION pour THALES_V2),
+        # pas ceux des métadonnées (ex: THALES)
+        try:
+            from backend.generators.factory import GeneratorFactory
+            from backend.services.curriculum_sync_service import GENERATOR_TO_EXERCISE_TYPE
+            
+            # Récupérer tous les générateurs Factory
+            factory_generators = GeneratorFactory.list_all()
+            
+            for gen_info in factory_generators:
+                generator_key = gen_info.get("key")
+                if generator_key:
+                    # Utiliser le mapping direct (curriculum) plutôt que les métadonnées
+                    exercise_type = GENERATOR_TO_EXERCISE_TYPE.get(generator_key)
+                    if exercise_type:
+                        generators.add(exercise_type)
+                        logger.debug(
+                            f"[AVAILABLE_GENERATORS] Générateur dynamique {generator_key} → "
+                            f"exercise_type (curriculum): {exercise_type}"
+                        )
+                    else:
+                        # Fallback: utiliser les métadonnées si pas de mapping
+                        meta_exercise_type = gen_info.get("exercise_type")
+                        if meta_exercise_type:
+                            generators.add(meta_exercise_type)
+                            logger.debug(
+                                f"[AVAILABLE_GENERATORS] Générateur dynamique {generator_key} → "
+                                f"exercise_type (métadonnées): {meta_exercise_type}"
+                            )
+        except Exception as e:
+            logger.warning(f"Erreur lors de la récupération des générateurs dynamiques: {e}")
+        
+        # Retourner la liste triée
+        return sorted(list(generators))
     
     async def get_available_domaines(self) -> List[str]:
         """

@@ -40,6 +40,7 @@ class AdminChapterResponse(BaseModel):
     domaine: str
     libelle: str
     generateurs: List[str]
+    pipeline: str = "SPEC"
     has_diagramme: bool
     statut: str
     chapitre_backend: str
@@ -150,6 +151,7 @@ def chapter_to_response(chapter: dict) -> AdminChapterResponse:
         domaine=chapter.get("domaine", ""),
         libelle=chapter.get("libelle", ""),
         generateurs=exercise_types,
+        pipeline=chapter.get("pipeline", "SPEC"),
         has_diagramme=has_diagram_generator(exercise_types),
         statut=chapter.get("statut", "beta"),
         chapitre_backend=chapter.get("chapitre_backend", ""),
@@ -209,6 +211,7 @@ async def get_curriculum_6e(admin_check: bool = Depends(check_admin_enabled)):
                 domaine=chapter.domaine,
                 libelle=chapter.libelle,
                 generateurs=chapter.exercise_types,
+                pipeline=chapter.pipeline or "SPEC",
                 has_diagramme=has_diagram_generator(chapter.exercise_types),
                 statut=chapter.statut,
                 chapitre_backend=chapter.chapitre_backend,
@@ -311,6 +314,7 @@ async def get_chapter_by_code(
         domaine=chapter.domaine,
         libelle=chapter.libelle,
         generateurs=chapter.exercise_types,
+        pipeline=chapter.pipeline or "SPEC",
         has_diagramme=has_diagram_generator(chapter.exercise_types),
         statut=chapter.statut,
         chapitre_backend=chapter.chapitre_backend,

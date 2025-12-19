@@ -11,8 +11,8 @@ Architecture:
 
 import os
 import logging
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field, validator
 
@@ -185,20 +185,31 @@ class ExercisePersistenceService:
     # Chapitres pilotes avec exercices figés
     PILOT_CHAPTERS = ["6e_GM07", "6e_GM08", "6e_TESTS_DYN"]
     
+    # Cache TTL pour get_stats (5 minutes)
+    STATS_CACHE_TTL = timedelta(minutes=5)
+    
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
         self.collection = db[EXERCISES_COLLECTION]
         self._initialized = {}
+        # Cache stats par instance (singleton, mais sécurité)
+        self._stats_cache: Dict[str, Tuple[Dict[str, Any], datetime]] = {}
     
     async def initialize_chapter(self, chapter_code: str) -> None:
         """
         Initialise la collection pour un chapitre si nécessaire.
         Charge les exercices depuis le fichier Python existant.
+        
+        Cache : Utilise self._initialized pour éviter requêtes DB répétées.
         """
         chapter_upper = chapter_code.upper().replace("-", "_")
         
+        # Cache check AVANT requête DB
         if chapter_upper in self._initialized:
+            logger.debug(f"[CACHE HIT] Chapter {chapter_upper} déjà initialisé")
             return
+        
+        logger.info(f"[CACHE MISS] Initialisation {chapter_upper}")
         
         # Compter les exercices existants pour ce chapitre
         count = await self.collection.count_documents({"chapter_code": chapter_upper})
@@ -207,11 +218,15 @@ class ExercisePersistenceService:
             # Charger depuis le fichier Python existant
             await self._load_from_python_file(chapter_upper)
         
-        # Créer les index
-        await self.collection.create_index([("chapter_code", 1), ("id", 1)], unique=True)
-        await self.collection.create_index("chapter_code")
-        await self.collection.create_index("difficulty")
-        await self.collection.create_index("offer")
+        # Créer les index (idempotent, mais coûteux → éviter si possible)
+        try:
+            await self.collection.create_index([("chapter_code", 1), ("id", 1)], unique=True)
+            await self.collection.create_index("chapter_code")
+            await self.collection.create_index("difficulty")
+            await self.collection.create_index("offer")
+        except Exception as e:
+            # Index peut déjà exister → OK
+            logger.debug(f"Index peut déjà exister pour {chapter_upper}: {e}")
         
         self._initialized[chapter_upper] = True
         logger.info(f"Exercices service initialisé pour {chapter_upper} avec {count} exercices")
@@ -278,8 +293,14 @@ class ExercisePersistenceService:
                 await self.collection.insert_many(docs)
                 logger.info(f"Chargé {len(docs)} exercices pour {chapter_code}")
         
+        except ImportError as e:
+            error_msg = f"Impossible d'importer le module pour {chapter_code}: {e}"
+            logger.error(f"Erreur import module {chapter_code}: {e}")
+            raise ValueError(error_msg)
         except Exception as e:
+            error_msg = f"Erreur lors du chargement des exercices {chapter_code}: {e}"
             logger.error(f"Erreur chargement exercices {chapter_code}: {e}")
+            raise ValueError(error_msg)
     
     async def _sync_to_python_file(self, chapter_code: str) -> None:
         """
@@ -748,13 +769,30 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         return False
     
     async def get_stats(self, chapter_code: str) -> Dict[str, Any]:
-        """Statistiques sur les exercices d'un chapitre"""
+        """
+        Statistiques sur les exercices d'un chapitre.
+        
+        Cache TTL 5 minutes pour éviter agrégations MongoDB répétées.
+        """
         chapter_upper = chapter_code.upper().replace("-", "_")
+        
+        # Check cache TTL
+        cache_key = f"{chapter_upper}_stats"
+        now = datetime.now(timezone.utc)
+        
+        if cache_key in self._stats_cache:
+            cached_stats, cached_time = self._stats_cache[cache_key]
+            if now - cached_time < self.STATS_CACHE_TTL:
+                logger.debug(f"[CACHE HIT] Stats pour {chapter_upper}")
+                return cached_stats
+        
+        logger.info(f"[CACHE MISS] Calcul stats pour {chapter_upper}")
+        
         await self.initialize_chapter(chapter_upper)
         
         total = await self.collection.count_documents({"chapter_code": chapter_upper})
         
-        # Agrégations
+        # Agrégations MongoDB (coûteuses)
         by_offer = {}
         by_difficulty = {}
         by_family = {}
@@ -783,13 +821,18 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         for item in family_agg:
             by_family[item["_id"]] = item["count"]
         
-        return {
+        stats = {
             "chapter_code": chapter_upper,
             "total": total,
             "by_offer": by_offer,
             "by_difficulty": by_difficulty,
             "by_family": by_family
         }
+        
+        # Mettre en cache
+        self._stats_cache[cache_key] = (stats, now)
+        
+        return stats
     
     def _validate_exercise_data(self, request: ExerciseCreateRequest) -> None:
         """Valide les données d'un exercice"""
