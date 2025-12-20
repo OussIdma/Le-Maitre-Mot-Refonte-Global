@@ -16,6 +16,8 @@ from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field, validator
 
+from backend.generators.factory import GeneratorFactory
+
 logger = logging.getLogger(__name__)
 
 # Collection MongoDB pour les exercices
@@ -626,6 +628,14 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         # Valider les données
         self._validate_exercise_data(request)
         
+        # Déterminer exercise_type pour les dynamiques (source de vérité GeneratorFactory)
+        exercise_type_resolved = request.exercise_type.upper() if request.exercise_type else None
+        if request.is_dynamic and request.generator_key:
+            gen_type = GeneratorFactory.get_exercise_type(request.generator_key)
+            if not gen_type:
+                raise ValueError(f"generator_key inconnu ou sans exercise_type: {request.generator_key}")
+            exercise_type_resolved = gen_type
+        
         # Trouver le prochain ID
         max_doc = await self.collection.find_one(
             {"chapter_code": chapter_upper},
@@ -639,7 +649,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             "id": next_id,
             "title": request.title,
             "family": request.family.upper() if request.family else None,
-            "exercise_type": request.exercise_type.upper() if request.exercise_type else None,
+            "exercise_type": exercise_type_resolved,
             "difficulty": request.difficulty.lower(),
             "offer": request.offer.lower(),
             "enonce_html": request.enonce_html or "",
@@ -670,6 +680,12 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         # Invalidate stats cache
         self._invalidate_stats_cache(chapter_upper)
+        # Invalidate catalog cache (6e)
+        try:
+            from curriculum.loader import invalidate_catalog_cache
+            invalidate_catalog_cache("6e")
+        except Exception as e:
+            logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
         
         logger.info(f"Exercice créé: {chapter_upper} #{next_id} (dynamic={request.is_dynamic})")
         
@@ -723,6 +739,14 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             update_data["is_dynamic"] = request.is_dynamic
         if request.generator_key is not None:
             update_data["generator_key"] = request.generator_key
+        # Synchroniser exercise_type si dynamique et generator_key présent (nouveau ou existant)
+        if (update_data.get("is_dynamic", existing.get("is_dynamic")) and
+            update_data.get("generator_key", existing.get("generator_key"))):
+            gen_key = update_data.get("generator_key", existing.get("generator_key"))
+            gen_type = GeneratorFactory.get_exercise_type(gen_key)
+            if not gen_type:
+                raise ValueError(f"generator_key inconnu ou sans exercise_type: {gen_key}")
+            update_data["exercise_type"] = gen_type
         if request.template_variants is not None:
             update_data["template_variants"] = [
                 variant.dict() for variant in request.template_variants
@@ -747,6 +771,13 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         # Invalidate stats cache
         self._invalidate_stats_cache(chapter_upper)
+        
+        # Invalider le cache catalogue pour refléter l'ajout/modif
+        try:
+            from curriculum.loader import invalidate_catalog_cache
+            invalidate_catalog_cache("6e")
+        except Exception as e:
+            logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
         
         logger.info(f"Exercice mis à jour: {chapter_upper} #{exercise_id}")
         

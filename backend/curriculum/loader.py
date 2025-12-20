@@ -19,6 +19,7 @@ import logging
 from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
 from functools import lru_cache
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ class CurriculumIndex(BaseModel):
 
 # Singleton pour l'index du curriculum
 _curriculum_index: Optional[CurriculumIndex] = None
+# Cache catalogue (par niveau) avec TTL simple
+_catalog_cache: Dict[str, Dict] = {}
+_catalog_cache_timestamp: Dict[str, float] = {}
+CATALOG_CACHE_TTL_SECONDS = 300
 
 
 def _load_curriculum_from_json(filepath: str) -> List[CurriculumChapter]:
@@ -190,6 +195,21 @@ def load_curriculum_6e() -> CurriculumIndex:
     logger.info(f"Curriculum 6e chargé: {len(chapters)} chapitres indexés")
     
     return _curriculum_index
+
+
+def invalidate_catalog_cache(level: Optional[str] = None) -> None:
+    """
+    Invalide le cache catalogue pour un niveau (ou tous).
+    """
+    global _catalog_cache, _catalog_cache_timestamp
+    if level:
+        _catalog_cache.pop(level, None)
+        _catalog_cache_timestamp.pop(level, None)
+        logger.debug(f"[CATALOG] Cache invalidé pour {level}")
+    else:
+        _catalog_cache.clear()
+        _catalog_cache_timestamp.clear()
+        logger.debug("[CATALOG] Cache invalidé pour tous les niveaux")
 
 
 def get_curriculum_index() -> CurriculumIndex:
@@ -374,6 +394,11 @@ async def get_catalog(level: str = "6e", db=None) -> Dict:
         Dictionnaire du catalogue pour le frontend
     """
     try:
+        # Cache simple avec TTL
+        now = time.time()
+        if level in _catalog_cache and now - _catalog_cache_timestamp.get(level, 0) < CATALOG_CACHE_TTL_SECONDS:
+            return _catalog_cache[level]
+        
         if level != "6e":
             return {
                 "level": level,
@@ -507,13 +532,19 @@ async def get_catalog(level: str = "6e", db=None) -> Dict:
                 "total_generators": generators_count
             })
         
-        return {
+        result = {
             "level": level,
             "domains": domains,
             "macro_groups": macro_groups,
             "total_chapters": len(index.by_official_code),
             "total_macro_groups": len(macro_groups)
         }
+        
+        # Mise en cache
+        _catalog_cache[level] = result
+        _catalog_cache_timestamp[level] = now
+        
+        return result
     except Exception as e:
         logger.error(f"[CATALOG] Erreur critique lors de la génération du catalogue: {e}", exc_info=True)
         # Retourner un catalogue minimal plutôt que de planter

@@ -758,7 +758,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         
         # Extraire les informations du référentiel
         request.niveau = curriculum_chapter.niveau
-        request.chapitre = curriculum_chapter.chapitre_backend
+        # Toujours utiliser le libellé/officiel comme chapitre lisible, ne pas basculer sur un alias backend
+        request.chapitre = curriculum_chapter.libelle or curriculum_chapter.code_officiel
         
         # ============================================================================
         # P0: PIPELINE EXPLICITE - Routage selon pipeline du chapitre
@@ -875,6 +876,27 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
                         static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                         
+                        # Aucun exercice pour les filtres -> message explicite plutôt que fallback legacy
+                        if len(dynamic_exercises) == 0 and len(static_exercises) == 0:
+                            raise HTTPException(
+                                status_code=422,
+                                detail={
+                                    "error_code": "NO_EXERCISE_AVAILABLE",
+                                    "error": "no_exercise_available",
+                                    "message": (
+                                        f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
+                                        f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
+                                        "Ajoutez un exercice pour ces filtres ou changez de difficulté/offre."
+                                    ),
+                                    "chapter_code": chapter_code_for_db,
+                                    "pipeline": "MIXED",
+                                    "filters": {
+                                        "offer": getattr(request, 'offer', None),
+                                        "difficulty": getattr(request, 'difficulte', None)
+                                    }
+                                }
+                            )
+                        
                         if len(dynamic_exercises) > 0:
                             # Priorité dynamique
                             import random
@@ -905,7 +927,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             static_exercise = {
                                 "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
                                 "niveau": curriculum_chapter.niveau,
-                                "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                                "chapitre": curriculum_chapter.libelle or curriculum_chapter.code_officiel,
                                 "enonce_html": selected_static.get("enonce_html") or "",
                                 "solution_html": selected_static.get("solution_html") or "",
                                 "needs_svg": selected_static.get("needs_svg") or False,
@@ -947,6 +969,25 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                     )
                     static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                    if not static_exercises:
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "NO_EXERCISE_AVAILABLE",
+                                "error": "no_exercise_available",
+                                "message": (
+                                    f"Aucun exercice statique saisi pour {chapter_code_for_db} "
+                                    f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
+                                    "Ajoutez un exercice statique ou définissez exercise_types pour la génération SPEC."
+                                ),
+                                "chapter_code": chapter_code_for_db,
+                                "pipeline": "SPEC",
+                                "filters": {
+                                    "offer": getattr(request, 'offer', None),
+                                    "difficulty": getattr(request, 'difficulte', None)
+                                }
+                            }
+                        )
                     if static_exercises:
                         import random
                         if request.seed is not None:
@@ -956,7 +997,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         static_exercise = {
                             "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
                             "niveau": curriculum_chapter.niveau,
-                            "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                            "chapitre": curriculum_chapter.libelle or curriculum_chapter.code_officiel,
                             "enonce_html": selected_static.get("enonce_html") or "",
                             "solution_html": selected_static.get("solution_html") or "",
                             "needs_svg": selected_static.get("needs_svg") or False,
@@ -1039,7 +1080,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         static_exercise = {
                             "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
                             "niveau": curriculum_chapter.niveau,
-                            "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                            "chapitre": curriculum_chapter.libelle or curriculum_chapter.code_officiel,
                             "enonce_html": selected_static.get("enonce_html") or "",
                             "solution_html": selected_static.get("solution_html") or "",
                             "needs_svg": selected_static.get("needs_svg") or False,
@@ -1057,6 +1098,26 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
                         )
                         return static_exercise
+                    
+                    # Aucun exo filtré → message explicite
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error_code": "NO_EXERCISE_AVAILABLE",
+                            "error": "no_exercise_available",
+                            "message": (
+                                f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
+                                f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
+                                "Ajoutez un exercice correspondant ou changez de difficulté/offre."
+                            ),
+                            "chapter_code": chapter_code_for_db,
+                            "pipeline": "legacy_no_pipeline",
+                            "filters": {
+                                "offer": getattr(request, 'offer', None),
+                                "difficulty": getattr(request, 'difficulte', None)
+                            }
+                        }
+                    )
             except Exception as e:
                 logger.warning(
                     f"[PIPELINE] Erreur vérification exercices dynamiques (fallback) pour {chapter_code_for_db}: {e}. "

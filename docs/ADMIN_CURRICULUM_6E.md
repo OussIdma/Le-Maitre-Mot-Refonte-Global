@@ -23,6 +23,34 @@ pédagogique sans modifier le code source.
 
 ---
 
+## 🚦 Pipelines de génération (SPEC / TEMPLATE / MIXED)
+
+Le pipeline est défini au niveau du chapitre (`pipeline`) et conditionne la source des exercices :
+- `SPEC` (statique) : génération algorithmique (MathGenerationService). Prérequis : `exercise_types` valides dans le curriculum ou exercices statiques saisis dans l’admin (utilisés en priorité).
+- `TEMPLATE` (dynamique) : génération à partir d’exercices dynamiques en DB (`is_dynamic=true`, `generator_key` connu). Prérequis : au moins un exercice dynamique pour ce chapitre.
+- `MIXED` (mixte) : priorité aux dynamiques filtrés par offre/difficulté, sinon statiques admin ; sinon 422 explicite (`NO_EXERCISE_AVAILABLE`).
+
+### Règles et messages d’erreur
+- `SPEC` sans exercise_types valides et sans statique admin → 422 `SPEC_PIPELINE_INVALID_EXERCISE_TYPES`.
+- `TEMPLATE` sans dynamique → 422 `TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES`.
+- Aucun exercice pour les filtres (dyn/stat) → 422 `NO_EXERCISE_AVAILABLE`.
+- Clé unique : `code_officiel` reste l’identifiant métier ; `chapitre_backend` n’est plus utilisé comme clé de génération (affichage/alias uniquement).
+
+### Bonnes pratiques (saisie admin)
+- Statique (SPEC) : renseigner `exercise_types` ou créer des exos statiques HTML ; laisser “Famille” vide (déprécié). “Type exercice” optionnel pilote le comportement SVG.
+- Dynamique (TEMPLATE) : au moins un exo dynamique avec `generator_key` connu ; les types sont déduits via la Factory.
+- Mixte (MIXED) : prévoir dyn + stat sur les difficultés/offres ciblées pour éviter les 422 sur certains filtres.
+- Offre/difficulté : les filtres de génération utilisent ces champs ; sans match, un 422 explicite est renvoyé.
+- Cache catalogue : `/api/v1/catalog` est mis en cache (TTL 5 min) et invalidé après CRUD d’exos admin ; les exercise_types issus de la DB sont visibles immédiatement.
+
+### Tests rapides
+- TEMPLATE sans exo dyn → 422 `TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES`.
+- MIXED sans dyn/stat sur un filtre → 422 `NO_EXERCISE_AVAILABLE`.
+- SPEC avec exercise_types invalides et aucun statique → 422 `SPEC_PIPELINE_INVALID_EXERCISE_TYPES`.
+- Catalogue : `/api/v1/catalog` montre les exercise_types enrichis DB (_debug_source curriculum+db si fusion).
+
+---
+
 ## 🌐 Accès
 
 ### URL
