@@ -58,9 +58,12 @@ class TemplateVariant(BaseModel):
 class ExerciseCreateRequest(BaseModel):
     """Modèle pour la création d'un exercice"""
 
-    family: str = Field(
-        ...,
-        description="Famille: CONVERSION, COMPARAISON, PERIMETRE, PROBLEME, DUREES, etc.",
+    title: Optional[str] = Field(
+        default=None, description="Titre lisible (optionnel, surtout pour les exercices dynamiques)"
+    )
+    family: Optional[str] = Field(
+        default=None,
+        description="Famille (déprécié): CONVERSION, COMPARAISON, PERIMETRE, PROBLEME, DUREES, etc.",
     )
     exercise_type: Optional[str] = Field(
         None, description="Type d'exercice (optionnel): LECTURE_HEURE, PLACER_AIGUILLES, etc."
@@ -131,7 +134,8 @@ class ExerciseCreateRequest(BaseModel):
 
 class ExerciseUpdateRequest(BaseModel):
     """Modèle pour la mise à jour d'un exercice"""
-    family: Optional[str] = None
+    title: Optional[str] = None
+    family: Optional[str] = None  # Déprécié
     exercise_type: Optional[str] = None
     difficulty: Optional[str] = None
     offer: Optional[str] = None
@@ -153,7 +157,8 @@ class ExerciseResponse(BaseModel):
     """Réponse pour un exercice"""
     id: int
     chapter_code: str
-    family: str
+    title: Optional[str] = None
+    family: Optional[str] = None  # Déprécié
     exercise_type: Optional[str] = None
     difficulty: str
     offer: str
@@ -187,6 +192,12 @@ class ExercisePersistenceService:
     
     # Cache TTL pour get_stats (5 minutes)
     STATS_CACHE_TTL = timedelta(minutes=5)
+    # Helper interne pour invalider le cache stats
+    def _invalidate_stats_cache(self, chapter_code: str) -> None:
+        cache_key = f"{chapter_code.upper().replace('-', '_')}_stats"
+        if cache_key in self._stats_cache:
+            self._stats_cache.pop(cache_key, None)
+            logger.debug(f"[CACHE] Stats invalidated for {cache_key}")
     
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -555,8 +566,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         stats["by_offer"][ex["offer"]] = stats["by_offer"].get(ex["offer"], 0) + 1
         stats["by_difficulty"][ex["difficulty"]] = stats["by_difficulty"].get(ex["difficulty"], 0) + 1
         
-        family = ex["family"]
-        stats["by_family"][family] = stats["by_family"].get(family, 0) + 1
+        family = ex.get("family")
+        if family:
+            stats["by_family"][family] = stats["by_family"].get(family, 0) + 1
     
     return stats
 '''
@@ -625,7 +637,8 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         doc = {
             "chapter_code": chapter_upper,
             "id": next_id,
-            "family": request.family.upper(),
+            "title": request.title,
+            "family": request.family.upper() if request.family else None,
             "exercise_type": request.exercise_type.upper() if request.exercise_type else None,
             "difficulty": request.difficulty.lower(),
             "offer": request.offer.lower(),
@@ -655,6 +668,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             await self._sync_to_python_file(chapter_upper)
             await self._reload_handler(chapter_upper)
         
+        # Invalidate stats cache
+        self._invalidate_stats_cache(chapter_upper)
+        
         logger.info(f"Exercice créé: {chapter_upper} #{next_id} (dynamic={request.is_dynamic})")
         
         del doc["_id"]
@@ -683,7 +699,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         update_data = {}
         
         if request.family is not None:
-            update_data["family"] = request.family.upper()
+            update_data["family"] = request.family.upper() if request.family else None
         if request.exercise_type is not None:
             update_data["exercise_type"] = request.exercise_type.upper() if request.exercise_type else None
         if request.difficulty is not None:
@@ -696,6 +712,8 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             update_data["solution_html"] = request.solution_html
         if request.needs_svg is not None:
             update_data["needs_svg"] = request.needs_svg
+        if request.title is not None:
+            update_data["title"] = request.title
         # Champs dynamiques
         if request.enonce_template_html is not None:
             update_data["enonce_template_html"] = request.enonce_template_html
@@ -726,6 +744,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         # Recharger le handler
         await self._reload_handler(chapter_upper)
+        
+        # Invalidate stats cache
+        self._invalidate_stats_cache(chapter_upper)
         
         logger.info(f"Exercice mis à jour: {chapter_upper} #{exercise_id}")
         
@@ -762,6 +783,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             
             # Recharger le handler
             await self._reload_handler(chapter_upper)
+            
+            # Invalidate stats cache
+            self._invalidate_stats_cache(chapter_upper)
             
             logger.info(f"Exercice supprimé: {chapter_upper} #{exercise_id}")
             return True

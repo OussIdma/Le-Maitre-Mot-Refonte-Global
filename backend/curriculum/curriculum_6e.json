@@ -267,7 +267,7 @@
       "statut": "prod",
       "tags": [],
       "contexts": [],
-      "pipeline": "TEMPLATE"
+      "pipeline": "MIXED"
     },
     {
       "niveau": "6e",

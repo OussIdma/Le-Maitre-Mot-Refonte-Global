@@ -86,3 +86,4 @@ def test_choose_template_variant_fixed_mode_invalid_id_raises():
 
 
 
+

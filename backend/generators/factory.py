@@ -96,6 +96,20 @@ class GeneratorFactory:
         }
     
     @classmethod
+    def get_exercise_type(cls, key: str) -> Optional[str]:
+        """
+        Source de vérité unique: récupère l'exercise_type déclaré dans le GeneratorMeta.
+        Applique les alias avant de résoudre la classe.
+        """
+        normalized = key.upper()
+        normalized = cls._ALIASES.get(normalized, normalized)
+        gen_class = cls._generators.get(normalized)
+        if not gen_class:
+            return None
+        meta = gen_class.get_meta()
+        return meta.exercise_type if meta else None
+    
+    @classmethod
     def create_instance(cls, key: str, seed: Optional[int] = None) -> Optional[BaseGenerator]:
         """Crée une instance d'un générateur."""
         gen_class = cls.get(key)

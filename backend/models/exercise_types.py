@@ -195,6 +195,8 @@ def get_svg_behavior(exercise_type: Optional[str], family: Optional[str] = None)
     
     # Sinon, déduire depuis family (rétro-compatibilité GM07/GM08)
     if family:
+        import logging
+        logging.getLogger(__name__).warning(f"[DEPRECATED] Using family={family} to infer svg behavior. Migrate to exercise_type.")
         family_upper = family.upper()
         
         # Mapping famille → type par défaut

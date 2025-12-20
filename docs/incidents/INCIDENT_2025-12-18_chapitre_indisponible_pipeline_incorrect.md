@@ -283,3 +283,4 @@ docker compose logs backend | grep -i "CATALOG\|GENERATE"
 - Logs explicites pour le debugging
 
 
+

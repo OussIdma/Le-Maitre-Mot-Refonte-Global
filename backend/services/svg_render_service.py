@@ -508,6 +508,8 @@ def generate_exercise_svgs(exercise: dict) -> dict:
     # =========================================================================
     svg_enonce_brief = exercise.get("svg_enonce_brief")
     svg_solution_brief = exercise.get("svg_solution_brief")
+    family = exercise.get("family")
+    exercise_type = exercise.get("exercise_type")
     
     if svg_enonce_brief or svg_solution_brief:
         # Extraire l'heure depuis le brief si possible
@@ -683,4 +685,3 @@ def _render_axis_svg(with_symmetric: bool = False) -> str:
 </svg>'''
     
     return svg
-

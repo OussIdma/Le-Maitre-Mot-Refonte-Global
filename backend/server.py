@@ -4894,8 +4894,9 @@ from backend.routes.admin_exercises_routes import router as admin_exercises_rout
 app.include_router(admin_exercises_router, tags=["Admin Exercises"])
 
 # Route catalogue curriculum (pour /generate)
-from backend.routes.curriculum_catalog_routes import router as curriculum_catalog_router
+from backend.routes.curriculum_catalog_routes import router as curriculum_catalog_router, legacy_router as curriculum_catalog_legacy_router
 app.include_router(curriculum_catalog_router, tags=["Curriculum Catalog"])
+app.include_router(curriculum_catalog_legacy_router, tags=["Curriculum Catalog"])
 
 # Routes générateurs dynamiques (P0.2 + P2 - Variables schema & Preview)
 from backend.routes.generators_routes import router as generators_router

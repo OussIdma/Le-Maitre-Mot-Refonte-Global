@@ -19,3 +19,4 @@ Tu produis des décisions, règles et prompts d'exécution pour Cursor.
 Toute décision structurante doit être formalisée dans docs/.
 
 
+

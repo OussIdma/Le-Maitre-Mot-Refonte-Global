@@ -13,6 +13,7 @@ from logger import get_logger
 logger = get_logger()
 
 router = APIRouter(prefix="/api/v1/curriculum", tags=["Curriculum Catalog"])
+legacy_router = APIRouter(prefix="/api/v1", tags=["Curriculum Catalog"])
 
 
 async def get_db():
@@ -86,3 +87,17 @@ async def get_macro_group_codes(level: str, label: str):
         "codes_officiels": codes,
         "count": len(codes)
     }
+
+
+# ---------------------------------------------------------------------------
+# Legacy alias: /api/v1/catalog (par défaut niveau 6e)
+# ---------------------------------------------------------------------------
+@legacy_router.get(
+    "/catalog",
+    summary="Alias legacy du catalogue 6e",
+    description="Retourne le catalogue pour le niveau 6e (compatibilité /api/v1/catalog)."
+)
+async def get_default_catalog(db=Depends(get_db)):
+    logger.info("Catalog: alias /api/v1/catalog → niveau 6e (legacy)")
+    catalog = await get_catalog("6e", db=db)
+    return catalog

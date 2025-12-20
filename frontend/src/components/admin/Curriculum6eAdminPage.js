@@ -586,6 +586,7 @@ const Curriculum6eAdminPage = () => {
                     <TableHead className="w-40">Domaine</TableHead>
                     <TableHead>Libellé</TableHead>
                     <TableHead className="w-48">Générateurs</TableHead>
+                    <TableHead className="w-20 text-center">Pipeline</TableHead>
                     <TableHead className="w-16 text-center">Schéma</TableHead>
                     <TableHead className="w-16 text-center">Statut</TableHead>
                     <TableHead className="w-24 text-center">Actions</TableHead>
@@ -647,6 +648,11 @@ const Curriculum6eAdminPage = () => {
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge className="bg-gray-100 text-gray-800 text-[11px] font-mono">
+                          {chapitre.pipeline || 'SPEC'}
+                        </Badge>
                       </TableCell>
                       
                       <TableCell className="text-center">

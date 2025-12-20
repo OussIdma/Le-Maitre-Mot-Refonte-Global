@@ -18,69 +18,25 @@ from backend.services.curriculum_persistence_service import (
 
 logger = logging.getLogger(__name__)
 
-# Mapping generator_key → exercise_type pour le curriculum
-# IMPORTANT: Ce mapping utilise les exercise_types du curriculum, pas ceux des métadonnées
-# car les métadonnées peuvent utiliser des noms différents (ex: THALES vs AGRANDISSEMENT_REDUCTION)
-# 
-# Note: Les exercise_types doivent correspondre à ceux utilisés dans curriculum_6e.json
-# pour éviter les incohérences entre le curriculum et les exercices en DB.
-GENERATOR_TO_EXERCISE_TYPE = {
-    # Générateurs dynamiques (Factory)
-    "SYMETRIE_AXIALE_V2": "SYMETRIE_AXIALE",
-    "SYMETRIE_AXIALE": "SYMETRIE_AXIALE",
-    "THALES_V1": "AGRANDISSEMENT_REDUCTION",  # Utilisé dans curriculum_6e.json pour 6e_TESTS_DYN
-    "THALES_V2": "AGRANDISSEMENT_REDUCTION",  # Utilisé dans curriculum_6e.json pour 6e_TESTS_DYN
-    "THALES": "AGRANDISSEMENT_REDUCTION",     # Alias legacy
-    # Ajouter d'autres mappings si nécessaire
-}
-
-
 def _get_exercise_type_from_generator(generator_key: str) -> Optional[str]:
     """
-    Extrait l'exercise_type depuis le mapping curriculum (priorité) ou les métadonnées.
-    
-    **Priorité** :
-    1. Mapping curriculum (GENERATOR_TO_EXERCISE_TYPE) : utilise les exercise_types du curriculum
-    2. Métadonnées GeneratorFactory : fallback si pas de mapping
-    
-    Args:
-        generator_key: Clé du générateur (ex: "SYMETRIE_AXIALE_V2")
-    
-    Returns:
-        exercise_type ou None si introuvable
+    Source unique: utilise GeneratorFactory.get_exercise_type (alias + meta).
     """
-    # PRIORITÉ 1: Mapping curriculum (utilise les exercise_types du curriculum)
-    exercise_type = GENERATOR_TO_EXERCISE_TYPE.get(generator_key)
-    if exercise_type:
-        logger.debug(
-            f"[CURRICULUM_SYNC] exercise_type extrait depuis mapping curriculum "
-            f"pour {generator_key}: {exercise_type}"
-        )
-        return exercise_type
-    
-    # PRIORITÉ 2: Métadonnées GeneratorFactory (fallback)
     try:
         from backend.generators.factory import GeneratorFactory
-        
-        gen_class = GeneratorFactory.get(generator_key)
-        if gen_class:
-            meta = gen_class.get_meta()
-            if meta and meta.exercise_type:
-                logger.debug(
-                    f"[CURRICULUM_SYNC] exercise_type extrait depuis métadonnées "
-                    f"pour {generator_key}: {meta.exercise_type}"
-                )
-                return meta.exercise_type.upper()
+        exercise_type = GeneratorFactory.get_exercise_type(generator_key)
+        if exercise_type:
+            logger.debug(
+                f"[CURRICULUM_SYNC] exercise_type extrait depuis Factory pour {generator_key}: {exercise_type}"
+            )
+            return exercise_type.upper()
     except Exception as e:
         logger.debug(
-            f"[CURRICULUM_SYNC] Impossible d'extraire exercise_type depuis métadonnées "
-            f"pour {generator_key}: {e}"
+            f"[CURRICULUM_SYNC] Impossible d'extraire exercise_type via Factory pour {generator_key}: {e}"
         )
-    
-    # Dernier fallback : utiliser le generator_key tel quel (normalisé)
+    # Fallback: generator_key normalisé
     logger.warning(
-        f"[CURRICULUM_SYNC] Aucun mapping trouvé pour {generator_key}, "
-        f"utilisation du generator_key tel quel"
+        f"[CURRICULUM_SYNC] Aucun exercise_type pour {generator_key}, fallback sur generator_key"
     )
     return generator_key.upper()
 

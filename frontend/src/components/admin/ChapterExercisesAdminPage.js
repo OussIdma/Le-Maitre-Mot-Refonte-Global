@@ -83,6 +83,7 @@ const ChapterExercisesAdminPage = () => {
   
   // P1: Pipeline du chapitre (chargé depuis le curriculum)
   const [chapterPipeline, setChapterPipeline] = useState(null);
+  const [chapterMeta, setChapterMeta] = useState(null);
   
   // Types d'exercices disponibles (chargés depuis l'API)
   const [exerciseTypes, setExerciseTypes] = useState([]);
@@ -96,7 +97,8 @@ const ChapterExercisesAdminPage = () => {
   const [modalMode, setModalMode] = useState('create');
   const [editingExercise, setEditingExercise] = useState(null);
   const [formData, setFormData] = useState({
-    family: 'CONVERSION',
+    title: '',
+    family: 'none',
     exercise_type: '',
     difficulty: 'facile',
     offer: 'free',
@@ -139,7 +141,7 @@ const ChapterExercisesAdminPage = () => {
   // Schéma du générateur sélectionné (P0.2)
   const [generatorSchema, setGeneratorSchema] = useState(null);
   
-  // Familles disponibles (étendues pour dynamique)
+  // Familles disponibles (déprécié - legacy)
   const families = ['CONVERSION', 'COMPARAISON', 'PERIMETRE', 'PROBLEME', 'DUREES', 'LECTURE_HORLOGE', 'CALCUL_DUREE', 'AGRANDISSEMENT_REDUCTION'];
   
   // Charger les types d'exercices et générateurs
@@ -190,6 +192,7 @@ const ChapterExercisesAdminPage = () => {
           const chapter = data.chapitres?.find(ch => ch.code_officiel === chapterCode);
           if (chapter) {
             setChapterPipeline(chapter.pipeline || 'SPEC');
+            setChapterMeta(chapter);
           }
         }
       } catch (err) {
@@ -225,6 +228,9 @@ const ChapterExercisesAdminPage = () => {
       const data = await response.json();
       setExercises(data.exercises || []);
       setStats(data.stats || null);
+      if (!chapterPipeline && data.pipeline) {
+        setChapterPipeline(data.pipeline);
+      }
       
     } catch (err) {
       setError(err.message);
@@ -367,7 +373,7 @@ const ChapterExercisesAdminPage = () => {
     setModalMode('create');
     setEditingExercise(null);
     setFormData({
-      family: 'CONVERSION',
+      family: 'none',
       exercise_type: '',
       difficulty: 'facile',
       offer: 'free',
@@ -377,6 +383,7 @@ const ChapterExercisesAdminPage = () => {
       svg_enonce_brief: '',
       svg_solution_brief: '',
       is_dynamic: false,
+      title: '',
       generator_key: '',
       enonce_template_html: '',
       solution_template_html: '',
@@ -447,6 +454,7 @@ const ChapterExercisesAdminPage = () => {
       svg_enonce_brief: exercise.svg_enonce_brief || '',
       svg_solution_brief: exercise.svg_solution_brief || '',
       is_dynamic: exercise.is_dynamic || false,
+      title: exercise.title || '',
       generator_key: exercise.generator_key || '',
       enonce_template_html: exercise.enonce_template_html || '',
       solution_template_html: exercise.solution_template_html || '',
@@ -651,6 +659,16 @@ const ChapterExercisesAdminPage = () => {
     const text = html.replace(/<[^>]*>/g, '');
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
+
+  const getExercisePreview = (ex) => {
+    if (ex.title) return ex.title;
+    if (ex.is_dynamic) {
+      const snippet = truncateHtml(ex.enonce_template_html || '', 80);
+      const gen = ex.generator_key ? `Générateur: ${ex.generator_key}` : 'Dynamique';
+      return snippet ? `${gen} • ${snippet}` : gen;
+    }
+    return truncateHtml(ex.enonce_html || '', 80);
+  };
   
   // Ouvrir la page élève avec le chapitre pré-sélectionné
   const handleOpenStudentView = () => {
@@ -782,6 +800,26 @@ const ChapterExercisesAdminPage = () => {
             </AlertDescription>
           </Alert>
         )}
+
+        {/* Alerte pipeline / disponibilité */}
+        {(() => {
+          const hasDynamic = exercises.some(ex => ex.is_dynamic);
+          const hasStatic = exercises.some(ex => !ex.is_dynamic);
+          const templateMissingDyn = chapterPipeline === 'TEMPLATE' && !hasDynamic;
+          const specMissingStaticsAndTypes = chapterPipeline === 'SPEC' && !hasStatic && !(chapterMeta?.exercise_types?.length);
+          const mixedEmpty = chapterPipeline === 'MIXED' && !hasDynamic && !hasStatic;
+          if (!templateMissingDyn && !specMissingStaticsAndTypes && !mixedEmpty) return null;
+          return (
+            <Alert className="mb-4 border-yellow-500 bg-yellow-50">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800 text-sm">
+                {templateMissingDyn && "Pipeline TEMPLATE : aucun exercice dynamique n'est présent pour ce chapitre. Ajoutez un exo dynamique ou passez en MIXED/SPEC."}
+                {specMissingStaticsAndTypes && "Pipeline SPEC : aucun exercice statique ici et aucun exercise_type dans le référentiel. Ajoutez un exo statique ou configurez exercise_types côté curriculum."}
+                {mixedEmpty && "Pipeline MIXED : aucun exercice dynamique ni statique pour l’instant. Ajoutez-en au moins un."}
+              </AlertDescription>
+            </Alert>
+          );
+        })()}
         
         {/* Stats */}
         {stats && (
@@ -879,7 +917,8 @@ const ChapterExercisesAdminPage = () => {
                     <TableHead className="w-32">Famille</TableHead>
                     <TableHead className="w-24">Difficulté</TableHead>
                     <TableHead className="w-20">Offre</TableHead>
-                    <TableHead>Énoncé (aperçu)</TableHead>
+                    <TableHead className="w-32">Pipeline / Usage</TableHead>
+                    <TableHead>Énoncé / Aperçu</TableHead>
                     <TableHead className="w-16 text-center">SVG</TableHead>
                     <TableHead className="w-32 text-center">Actions</TableHead>
                   </TableRow>
@@ -912,8 +951,38 @@ const ChapterExercisesAdminPage = () => {
                         </Badge>
                       </TableCell>
                       
+                      <TableCell>
+                        <div className="flex flex-col text-xs text-gray-700">
+                          <span className="font-mono">
+                            Chapitre: {chapterPipeline || 'N/A'}
+                          </span>
+                          {exercise.is_dynamic ? (
+                            <span className="text-green-700">
+                              {chapterPipeline === 'SPEC' && 'Ignoré (pipeline statique)'}
+                              {chapterPipeline === 'TEMPLATE' && 'Utilisé (dynamique)'}
+                              {chapterPipeline === 'MIXED' && 'Utilisé (priorité dynamique)'}
+                              {!chapterPipeline && 'Dynamique'}
+                            </span>
+                          ) : (
+                            <span className="text-blue-700">
+                              {chapterPipeline === 'SPEC' && 'Utilisé (statique)'}
+                              {chapterPipeline === 'TEMPLATE' && 'Ignoré (pipeline dynamique)'}
+                              {chapterPipeline === 'MIXED' && 'Utilisé si aucun dynamique'}
+                              {!chapterPipeline && 'Statique'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      
                       <TableCell className="text-sm text-gray-600">
-                        {truncateHtml(exercise.enonce_html)}
+                        <div className="flex flex-col">
+                          <span>{getExercisePreview(exercise)}</span>
+                          {exercise.is_dynamic && exercise.generator_key && (
+                            <span className="text-xs text-gray-500">
+                              Générateur: {exercise.generator_key}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       
                       <TableCell className="text-center">
@@ -988,23 +1057,27 @@ const ChapterExercisesAdminPage = () => {
           </DialogHeader>
           
           <div className="grid gap-4 py-4">
-            {/* Famille, Difficulté, Offer sur une ligne */}
+            {/* Famille (déprécié), Difficulté, Offer sur une ligne */}
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label className="text-sm">Famille *</Label>
+                <Label className="text-sm flex items-center gap-2">
+                  Famille <span className="text-xs text-gray-400">(déprécié)</span>
+                </Label>
                 <Select 
                   value={formData.family} 
                   onValueChange={(v) => setFormData(p => ({...p, family: v}))}
+                  disabled
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {families.map(f => (
-                      <SelectItem key={f} value={f}>{f}</SelectItem>
-                    ))}
+                <SelectItem value="none">-- Aucune --</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Champ conservé pour compatibilité legacy (GM07/GM08). Laissez vide pour les nouveaux exercices.
+                </p>
               </div>
               
               <div>
@@ -1077,6 +1150,19 @@ const ChapterExercisesAdminPage = () => {
                     et génèrent des variantes infinies.
                   </div>
                   
+                  {/* Sélecteur de générateur */}
+                  <div>
+                    <Label className="text-sm">Titre (facultatif)</Label>
+                    <Input
+                      placeholder="Ex: Symétrie d'un triangle par rapport à (d)"
+                      value={formData.title}
+                      onChange={(e) => setFormData(p => ({...p, title: e.target.value}))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Sera affiché dans la liste des exercices. N'affecte pas la génération.
+                    </p>
+                  </div>
+
                   {/* Sélecteur de générateur */}
                   <div>
                     <Label className="text-sm">Générateur *</Label>
@@ -1305,37 +1391,35 @@ const ChapterExercisesAdminPage = () => {
               )}
             </div>
             
-            {/* Type d'exercice (optionnel) - seulement si non dynamique */}
-            {!formData.is_dynamic && (
-              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
-                <Label className="text-sm">
-                  Type exercice (optionnel)
-                  {chapterPipeline === 'TEMPLATE' && (
-                    <span className="text-xs text-gray-400 ml-1">(ignoré pour pipeline TEMPLATE)</span>
-                  )}
-                </Label>
-                <Select 
-                  value={formData.exercise_type || ''} 
-                  onValueChange={(v) => setFormData(p => ({...p, exercise_type: v === 'none' ? '' : v}))}
-                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-- Aucun (auto) --</SelectItem>
-                    {exerciseTypes.map(t => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label} - {t.description}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Le type pilote automatiquement le comportement des figures (énoncé / solution).
-                </p>
-              </div>
-            )}
+            {/* Type d'exercice (statique / legacy) */}
+            <div className={chapterPipeline === 'TEMPLATE' || formData.is_dynamic ? 'opacity-60' : ''}>
+              <Label className="text-sm">
+                Type exercice (statique)
+                {(chapterPipeline === 'TEMPLATE' || formData.is_dynamic) && (
+                  <span className="text-xs text-gray-400 ml-1">(déduit du generator_key pour les dynamiques)</span>
+                )}
+              </Label>
+              <Select 
+                value={formData.exercise_type || ''} 
+                onValueChange={(v) => setFormData(p => ({...p, exercise_type: v === 'none' ? '' : v}))}
+                disabled={chapterPipeline === 'TEMPLATE' || formData.is_dynamic} // éviter collision avec generator_key
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner un type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- Aucun (auto) --</SelectItem>
+                  {exerciseTypes.map(t => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label} - {t.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Utilisé pour les exercices statiques (SPEC ou fallback MIXED). Les dynamiques déduisent le type via leur generator_key (Factory).
+              </p>
+            </div>
             
             {/* Énoncé - seulement si non dynamique */}
             {!formData.is_dynamic && (

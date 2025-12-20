@@ -873,6 +873,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                         )
                         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                         
                         if len(dynamic_exercises) > 0:
                             # Priorité dynamique
@@ -894,6 +895,33 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             )
                             
                             return dyn_exercise
+                        
+                        if len(static_exercises) > 0:
+                            import random
+                            if request.seed is not None:
+                                random.seed(request.seed)
+                            selected_static = random.choice(static_exercises)
+                            timestamp = int(time.time() * 1000)
+                            static_exercise = {
+                                "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                                "niveau": curriculum_chapter.niveau,
+                                "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                                "enonce_html": selected_static.get("enonce_html") or "",
+                                "solution_html": selected_static.get("solution_html") or "",
+                                "needs_svg": selected_static.get("needs_svg") or False,
+                                "pdf_token": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                                "metadata": {
+                                    "offer": selected_static.get("offer"),
+                                    "difficulty": selected_static.get("difficulty"),
+                                    "source": "admin_exercises_static",
+                                    "is_fallback": False
+                                }
+                            }
+                            logger.info(
+                                f"[PIPELINE] ✅ Exercice statique (admin) généré (MIXED fallback statique): "
+                                f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
+                            )
+                            return static_exercise
                     
                     # Fallback sur pipeline statique
                     logger.info(
@@ -911,6 +939,46 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             elif pipeline_mode == "SPEC":
                 # Pipeline statique uniquement - continue vers le code ci-dessous
                 logger.info(f"[PIPELINE] Pipeline SPEC pour {chapter_code_for_db}: utilisation du pipeline STATIQUE.")
+                try:
+                    # Utiliser en priorité les exercices statiques saisis en admin
+                    exercises = await exercise_service.get_exercises(
+                        chapter_code=chapter_code_for_db,
+                        offer=request.offer if hasattr(request, 'offer') else None,
+                        difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+                    )
+                    static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                    if static_exercises:
+                        import random
+                        if request.seed is not None:
+                            random.seed(request.seed)
+                        selected_static = random.choice(static_exercises)
+                        timestamp = int(time.time() * 1000)
+                        static_exercise = {
+                            "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                            "niveau": curriculum_chapter.niveau,
+                            "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                            "enonce_html": selected_static.get("enonce_html") or "",
+                            "solution_html": selected_static.get("solution_html") or "",
+                            "needs_svg": selected_static.get("needs_svg") or False,
+                            "exercise_type": selected_static.get("exercise_type"),
+                            "pdf_token": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                            "metadata": {
+                                "offer": selected_static.get("offer"),
+                                "difficulty": selected_static.get("difficulty"),
+                                "source": "admin_exercises_static",
+                                "is_fallback": False
+                            }
+                        }
+                        logger.info(
+                            f"[PIPELINE] ✅ Exercice statique (admin) généré (SPEC): "
+                            f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
+                        )
+                        return static_exercise
+                except Exception as e:
+                    logger.warning(
+                        f"[PIPELINE] Erreur récupération exercices statiques (SPEC) pour {chapter_code_for_db}: {e}. "
+                        f"Fallback sur pipeline STATIQUE legacy."
+                    )
                 # Continue vers pipeline statique (code ci-dessous)
         
         else:
@@ -940,6 +1008,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                     )
                     dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                    static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                     
                     if len(dynamic_exercises) > 0:
                         import random
@@ -960,6 +1029,34 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         )
                         
                         return dyn_exercise
+                    
+                    if len(static_exercises) > 0:
+                        import random
+                        if request.seed is not None:
+                            random.seed(request.seed)
+                        selected_static = random.choice(static_exercises)
+                        timestamp = int(time.time() * 1000)
+                        static_exercise = {
+                            "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                            "niveau": curriculum_chapter.niveau,
+                            "chapitre": curriculum_chapter.chapitre_backend or curriculum_chapter.libelle,
+                            "enonce_html": selected_static.get("enonce_html") or "",
+                            "solution_html": selected_static.get("solution_html") or "",
+                            "needs_svg": selected_static.get("needs_svg") or False,
+                            "exercise_type": selected_static.get("exercise_type"),
+                            "pdf_token": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
+                            "metadata": {
+                                "offer": selected_static.get("offer"),
+                                "difficulty": selected_static.get("difficulty"),
+                                "source": "admin_exercises_static",
+                                "is_fallback": False
+                            }
+                        }
+                        logger.info(
+                            f"[PIPELINE] ✅ Exercice statique (admin) généré (fallback legacy): "
+                            f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
+                        )
+                        return static_exercise
             except Exception as e:
                 logger.warning(
                     f"[PIPELINE] Erreur vérification exercices dynamiques (fallback) pour {chapter_code_for_db}: {e}. "

@@ -27,3 +27,4 @@ La réduction de l'ambiguïté est prioritaire sur toute autre considération.
 - Comportement changeant sans raison visible.
 
 
+

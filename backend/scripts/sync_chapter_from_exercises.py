@@ -23,17 +23,6 @@ from backend.services.curriculum_persistence_service import (
 )
 
 
-# Mapping generator_key → exercise_type
-GENERATOR_TO_EXERCISE_TYPE = {
-    "SYMETRIE_AXIALE_V2": "SYMETRIE_AXIALE",
-    "SYMETRIE_AXIALE": "SYMETRIE_AXIALE",
-    "THALES_V1": "THALES",
-    "THALES_V2": "THALES",
-    "THALES": "THALES",
-    # Ajouter d'autres mappings si nécessaire
-}
-
-
 async def extract_exercise_types_from_chapter(
     db,
     chapter_code: str
@@ -65,11 +54,12 @@ async def extract_exercise_types_from_chapter(
         generator_key = ex.get("generator_key")
         if generator_key:
             # Mapper generator_key → exercise_type
-            exercise_type = GENERATOR_TO_EXERCISE_TYPE.get(
-                generator_key,
-                generator_key  # Fallback : utiliser le generator_key tel quel
-            )
-            exercise_types.add(exercise_type)
+            try:
+                from backend.generators.factory import GeneratorFactory
+                exercise_type = GeneratorFactory.get_exercise_type(generator_key) or generator_key
+                exercise_types.add(exercise_type)
+            except Exception:
+                exercise_types.add(generator_key)
     
     return exercise_types
 

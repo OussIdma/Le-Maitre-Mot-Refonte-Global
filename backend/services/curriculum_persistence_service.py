@@ -464,13 +464,9 @@ class CurriculumPersistenceService:
         except Exception as e:
             logger.warning(f"Erreur lors de la récupération des générateurs statiques: {e}")
         
-        # 2. Générateurs dynamiques (GeneratorFactory)
-        # IMPORTANT: Utiliser le mapping GENERATOR_TO_EXERCISE_TYPE qui mappe vers
-        # les exercise_types du curriculum (ex: AGRANDISSEMENT_REDUCTION pour THALES_V2),
-        # pas ceux des métadonnées (ex: THALES)
+        # 2. Générateurs dynamiques (GeneratorFactory) - source unique via meta.exercise_type
         try:
             from backend.generators.factory import GeneratorFactory
-            from backend.services.curriculum_sync_service import GENERATOR_TO_EXERCISE_TYPE
             
             # Récupérer tous les générateurs Factory
             factory_generators = GeneratorFactory.list_all()
@@ -478,23 +474,13 @@ class CurriculumPersistenceService:
             for gen_info in factory_generators:
                 generator_key = gen_info.get("key")
                 if generator_key:
-                    # Utiliser le mapping direct (curriculum) plutôt que les métadonnées
-                    exercise_type = GENERATOR_TO_EXERCISE_TYPE.get(generator_key)
+                    exercise_type = gen_info.get("exercise_type")
                     if exercise_type:
                         generators.add(exercise_type)
                         logger.debug(
                             f"[AVAILABLE_GENERATORS] Générateur dynamique {generator_key} → "
-                            f"exercise_type (curriculum): {exercise_type}"
+                            f"exercise_type: {exercise_type}"
                         )
-                    else:
-                        # Fallback: utiliser les métadonnées si pas de mapping
-                        meta_exercise_type = gen_info.get("exercise_type")
-                        if meta_exercise_type:
-                            generators.add(meta_exercise_type)
-                            logger.debug(
-                                f"[AVAILABLE_GENERATORS] Générateur dynamique {generator_key} → "
-                                f"exercise_type (métadonnées): {meta_exercise_type}"
-                            )
         except Exception as e:
             logger.warning(f"Erreur lors de la récupération des générateurs dynamiques: {e}")
         
