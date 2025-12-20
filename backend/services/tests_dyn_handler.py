@@ -99,7 +99,8 @@ def format_dynamic_exercise(
     - Si des placeholders {{...}} restent après rendu, lève une HTTPException
       422 UNRESOLVED_PLACEHOLDERS pour éviter d'envoyer un énoncé cassé.
     """
-    exercise_id = f"ex_6e_tests_dyn_{exercise_template['id']}_{timestamp}"
+    chapter_code = (exercise_template.get("chapter_code") or "6E_TESTS_DYN").upper()
+    exercise_id = f"ex_{chapter_code.lower()}_{exercise_template['id']}_{timestamp}"
     is_premium = exercise_template["offer"] == "pro"
 
     # Récupérer le générateur
@@ -408,7 +409,7 @@ def format_dynamic_exercise(
     return {
         "id_exercice": exercise_id,
         "niveau": "6e",
-        "chapitre": "Tests Dynamiques - Agrandissements/Réductions",
+        "chapitre": chapter_code,
         "enonce_html": enonce_html,
         "solution_html": solution_html,
         "figure_svg": gen_result.get("figure_svg_enonce"),
@@ -417,12 +418,12 @@ def format_dynamic_exercise(
         "svg": gen_result.get("figure_svg_enonce"),
         "pdf_token": exercise_id,
         "metadata": {
-            "code_officiel": "6e_TESTS_DYN",
+            "code_officiel": chapter_code,
             "difficulte": difficulty,
             "difficulty": difficulty,
             "is_premium": is_premium,
             "offer": "pro" if is_premium else "free",
-            "generator_code": f"6e_TESTS_DYN_{generator_key}",
+            "generator_code": f"{chapter_code}_{generator_key}",
             "family": exercise_template["family"],
             "exercise_type": exercise_template.get("exercise_type"),
             "exercise_id": exercise_template["id"],

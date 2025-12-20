@@ -876,33 +876,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
                         static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                         
-                        # Aucun exercice pour les filtres -> message explicite plutôt que fallback legacy
+                        # Si aucun exercice avec filtres, retenter sans filtres (dégradé)
                         if len(dynamic_exercises) == 0 and len(static_exercises) == 0:
-                            raise HTTPException(
-                                status_code=422,
-                                detail={
-                                    "error_code": "NO_EXERCISE_AVAILABLE",
-                                    "error": "no_exercise_available",
-                                    "message": (
-                                        f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
-                                        f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
-                                        "Ajoutez un exercice pour ces filtres ou changez de difficulté/offre."
-                                    ),
-                                    "chapter_code": chapter_code_for_db,
-                                    "pipeline": "MIXED",
-                                    "filters": {
-                                        "offer": getattr(request, 'offer', None),
-                                        "difficulty": getattr(request, 'difficulte', None)
-                                    }
-                                }
+                            exercises = await exercise_service.get_exercises(
+                                chapter_code=chapter_code_for_db,
+                                offer=None,
+                                difficulty=None
                             )
-                        
+                            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                            static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                        # 1) Dyn filtré
                         if len(dynamic_exercises) > 0:
-                            # Priorité dynamique
                             import random
                             if request.seed is not None:
                                 random.seed(request.seed)
-                            
                             selected_exercise = random.choice(dynamic_exercises)
                             timestamp = int(time.time() * 1000)
                             dyn_exercise = format_dynamic_exercise(
@@ -910,14 +897,33 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 timestamp=timestamp,
                                 seed=request.seed
                             )
-                            
                             logger.info(
                                 f"[PIPELINE] ✅ Exercice dynamique généré (MIXED, priorité dynamique): "
                                 f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
                             )
-                            
                             return dyn_exercise
                         
+                        # 2) Dyn sans filtre (dégradé)
+                        dynamic_all = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                        if dynamic_all:
+                            import random
+                            if request.seed is not None:
+                                random.seed(request.seed)
+                            selected_exercise = random.choice(dynamic_all)
+                            timestamp = int(time.time() * 1000)
+                            dyn_exercise = format_dynamic_exercise(
+                                exercise_template=selected_exercise,
+                                timestamp=timestamp,
+                                seed=request.seed
+                            )
+                            dyn_exercise.setdefault("metadata", {}).update({"fallback_filters": True})
+                            logger.info(
+                                f"[PIPELINE] ✅ Exercice dynamique généré (MIXED dégradé, sans filtre offer/difficulty): "
+                                f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
+                            )
+                            return dyn_exercise
+                        
+                        # 3) Statiques filtrés
                         if len(static_exercises) > 0:
                             import random
                             if request.seed is not None:
@@ -944,6 +950,26 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
                             )
                             return static_exercise
+                        
+                        # 4) Aucun exo → 422 explicite
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "NO_EXERCISE_AVAILABLE",
+                                "error": "no_exercise_available",
+                                "message": (
+                                    f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
+                                    f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
+                                    "Ajoutez un exercice pour ces filtres ou changez de difficulté/offre."
+                                ),
+                                "chapter_code": chapter_code_for_db,
+                                "pipeline": "MIXED",
+                                "filters": {
+                                    "offer": getattr(request, 'offer', None),
+                                    "difficulty": getattr(request, 'difficulte', None)
+                                }
+                            }
+                        )
                     
                     # Fallback sur pipeline statique
                     logger.info(
@@ -1358,6 +1384,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         
         logger.info(f"Exercice généré: type={spec.type_exercice}, has_figure={spec.figure_geometrique is not None}")
         
+    except HTTPException:
+        # Propager les erreurs structurées déjà construites
+        raise
+    except ValueError as e:
+        logger.error(f"Validation génération exercice: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "CHAPTER_OR_TYPE_INVALID",
+                "error": "chapter_not_mapped",
+                "message": str(e),
+                "hint": "Ajoutez le chapitre dans MathGenerationService._get_exercise_types_for_chapter ou configurez un pipeline dynamique/statique avec des exercices disponibles."
+            }
+        )
     except Exception as e:
         logger.error(f"Erreur lors de la génération de l'exercice: {e}", exc_info=True)
         raise HTTPException(

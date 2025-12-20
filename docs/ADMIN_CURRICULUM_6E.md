@@ -34,7 +34,7 @@ Le pipeline est défini au niveau du chapitre (`pipeline`) et conditionne la sou
 - `SPEC` sans exercise_types valides et sans statique admin → 422 `SPEC_PIPELINE_INVALID_EXERCISE_TYPES`.
 - `TEMPLATE` sans dynamique → 422 `TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES`.
 - Aucun exercice pour les filtres (dyn/stat) → 422 `NO_EXERCISE_AVAILABLE`.
-- Clé unique : `code_officiel` reste l’identifiant métier ; `chapitre_backend` n’est plus utilisé comme clé de génération (affichage/alias uniquement).
+- Clé unique : `code_officiel` reste l’identifiant métier pour tous les chapitres (officiels ou tests). Pas de notion “non-officiel” distincte : utilisez un code_officiel au format 6e_XXX et un domaine “Tests” pour les chapitres internes. `chapitre_backend` n’est qu’un alias d’affichage.
 
 ### Bonnes pratiques (saisie admin)
 - Statique (SPEC) : renseigner `exercise_types` ou créer des exos statiques HTML ; laisser “Famille” vide (déprécié). “Type exercice” optionnel pilote le comportement SVG.
@@ -42,6 +42,28 @@ Le pipeline est défini au niveau du chapitre (`pipeline`) et conditionne la sou
 - Mixte (MIXED) : prévoir dyn + stat sur les difficultés/offres ciblées pour éviter les 422 sur certains filtres.
 - Offre/difficulté : les filtres de génération utilisent ces champs ; sans match, un 422 explicite est renvoyé.
 - Cache catalogue : `/api/v1/catalog` est mis en cache (TTL 5 min) et invalidé après CRUD d’exos admin ; les exercise_types issus de la DB sont visibles immédiatement.
+
+### Comment créer un chapitre (statique / dynamique / mixte)
+
+**Statique (SPEC)**
+- Admin Curriculum : pipeline = SPEC, exercise_types renseignés (en majuscules, valides MathExerciseType).
+- Admin Exercices : optionnellement ajouter des exos statiques HTML (utilisés en priorité).
+- Règle : si aucun statique et exercise_types invalides → 422 `SPEC_PIPELINE_INVALID_EXERCISE_TYPES`.
+
+**Dynamique (TEMPLATE)**
+- Admin Curriculum : pipeline = TEMPLATE.
+- Admin Exercices : au moins un exo avec `is_dynamic=true` et `generator_key` connu (Factory).
+- Règle : si aucun exo dynamique pour le chapitre → 422 `TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES`.
+- L’exercice_type est déduit automatiquement du generator_key (collision refusée côté backend).
+
+**Mixte (MIXED)**
+- Admin Curriculum : pipeline = MIXED.
+- Admin Exercices : prévoir dynamiques et/ou statiques selon offre/difficulté ciblées.
+- Priorité : dyn (filtres) → dyn (sans filtres dégradé) → statiques → sinon 422 `NO_EXERCISE_AVAILABLE`.
+
+**Chapitres de test**
+- Même format que les officiels : `code_officiel` unique (ex. `6e_TESTS_DYN`), domaine “Tests”.
+- Pipeline explicite requis ; ils apparaissent dans le catalogue si statut prod/beta.
 
 ### Tests rapides
 - TEMPLATE sans exo dyn → 422 `TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES`.

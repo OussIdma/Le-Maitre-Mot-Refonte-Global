@@ -634,6 +634,13 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             gen_type = GeneratorFactory.get_exercise_type(request.generator_key)
             if not gen_type:
                 raise ValueError(f"generator_key inconnu ou sans exercise_type: {request.generator_key}")
+            # Verrou collision : si un exercise_type est fourni et diffère, on refuse
+            if exercise_type_resolved and exercise_type_resolved != gen_type:
+                raise ValueError(
+                    f"collision exercise_type/generator_key: exercise_type='{exercise_type_resolved}' "
+                    f"mais {request.generator_key} correspond à '{gen_type}'. "
+                    "Retirez l'exercise_type manuel ou choisissez le generator_key adéquat."
+                )
             exercise_type_resolved = gen_type
         
         # Trouver le prochain ID
@@ -672,6 +679,8 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         }
         
         await self.collection.insert_one(doc)
+        if request.family:
+            logger.warning(f"[DEPRECATED] Champ family utilisé lors de la création (chapter={chapter_upper}, family={request.family.upper()}). Migrer vers exercise_type.")
         
         # Synchroniser avec le fichier Python (seulement pour GM07/GM08)
         if chapter_upper in ["6E_GM07", "6E_GM08"]:
@@ -716,6 +725,8 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         if request.family is not None:
             update_data["family"] = request.family.upper() if request.family else None
+            if request.family:
+                logger.warning(f"[DEPRECATED] Champ family utilisé en update (chapter={chapter_upper}, family={request.family.upper()}). Migrer vers exercise_type.")
         if request.exercise_type is not None:
             update_data["exercise_type"] = request.exercise_type.upper() if request.exercise_type else None
         if request.difficulty is not None:
@@ -746,6 +757,15 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             gen_type = GeneratorFactory.get_exercise_type(gen_key)
             if not gen_type:
                 raise ValueError(f"generator_key inconnu ou sans exercise_type: {gen_key}")
+            # Verrou collision : si un exercise_type est fourni et diffère, on refuse
+            if request.exercise_type is not None:
+                requested_type = request.exercise_type.upper() if request.exercise_type else None
+                if requested_type and requested_type != gen_type:
+                    raise ValueError(
+                        f"collision exercise_type/generator_key: exercise_type='{requested_type}' "
+                        f"mais {gen_key} correspond à '{gen_type}'. "
+                        "Retirez l'exercise_type manuel ou choisissez le generator_key adéquat."
+                    )
             update_data["exercise_type"] = gen_type
         if request.template_variants is not None:
             update_data["template_variants"] = [
@@ -817,6 +837,13 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             
             # Invalidate stats cache
             self._invalidate_stats_cache(chapter_upper)
+            
+            # Invalider le cache catalogue (6e) pour refléter la suppression
+            try:
+                from curriculum.loader import invalidate_catalog_cache
+                invalidate_catalog_cache("6e")
+            except Exception as e:
+                logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
             
             logger.info(f"Exercice supprimé: {chapter_upper} #{exercise_id}")
             return True

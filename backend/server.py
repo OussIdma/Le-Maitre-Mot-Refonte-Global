@@ -2956,6 +2956,16 @@ async def get_catalog():
         }
     }
 
+# Alias v1 pour compatibilité (éviter 404 sur /api/v1/catalog)
+@api_router.get("/v1/catalog")
+async def get_catalog_v1():
+    return await get_catalog()
+
+# Alias v1 pour compatibilité (health)
+@api_router.get("/v1/health")
+async def health_check_v1():
+    return await health_check()
+
 @api_router.get("/roadmap")
 async def get_roadmap():
     """Get the public roadmap showing all subjects and their release timeline"""

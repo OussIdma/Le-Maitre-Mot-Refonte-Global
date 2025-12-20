@@ -11,6 +11,7 @@ Il conserve la compatibilité arrière tout en ajoutant:
 - Validation des paramètres
 """
 
+import random
 from typing import Dict, Any, List, Optional
 from backend.generators.base_generator import (
     BaseGenerator,
@@ -129,14 +130,24 @@ class ThalesV2Generator(BaseGenerator):
             difficulty=params.get("difficulty", "moyen")
         )
         
-        # Forcer le type de figure si spécifié
-        if params.get("figure_type"):
-            # On override le random pour forcer le type
-            original_choice = legacy_gen._rng.choice
-            legacy_gen._rng.choice = lambda x: params["figure_type"] if x == ThalesV1Config.FIGURE_TYPES else original_choice(x)
+        # Préparer un RNG dédié (déterministe) pour éviter les effets de bord globaux.
+        rng = random.Random(self._seed)
         
-        # Générer avec le système legacy
-        result = legacy_gen.generate()
+        # Monkeypatch limité de random.choice pour forcer le figure_type si demandé,
+        # tout en conservant le comportement déterministe du RNG local.
+        original_choice = random.choice
+        def patched_choice(seq):
+            if params.get("figure_type") and seq == ThalesV1Config.FIGURE_TYPES:
+                return params["figure_type"]
+            return rng.choice(seq)
+        
+        random.choice = patched_choice
+        try:
+            # Générer avec le système legacy
+            result = legacy_gen.generate()
+        finally:
+            # Restaure le random global pour éviter les fuites d'état
+            random.choice = original_choice
         
         # Adapter au nouveau format
         return {

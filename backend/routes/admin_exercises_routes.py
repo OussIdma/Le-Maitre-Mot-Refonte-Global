@@ -16,7 +16,9 @@ from backend.services.exercise_persistence_service import (
     get_exercise_persistence_service
 )
 from backend.services.curriculum_sync_service import get_curriculum_sync_service
+from curriculum.loader import get_chapter_by_official_code
 from logger import get_logger
+from typing import Literal
 
 logger = get_logger()
 
@@ -41,6 +43,15 @@ class ExerciseCRUDResponse(BaseModel):
     success: bool
     message: str
     exercise: Optional[dict] = None
+
+
+class ExerciseImportPayload(BaseModel):
+    """Payload pour importer une liste d'exercices dans un chapitre."""
+    pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
+        default=None,
+        description="Pipeline attendu pour validation (optionnel)."
+    )
+    exercises: List[dict] = Field(default_factory=list, description="Exercices à importer")
 
 
 # =============================================================================
@@ -204,6 +215,128 @@ async def create_exercise(
     except Exception as e:
         logger.error(f"Erreur création exercice: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/chapters/{chapter_code}/exercises-export",
+    summary="Exporter les exercices d'un chapitre",
+    description="Export JSON des exercices d'un chapitre. Paramètre pipeline optionnel (TEMPLATE pour dyn uniquement, SPEC pour statiques)."
+)
+async def export_exercises(
+    chapter_code: str,
+    pipeline: Optional[Literal["SPEC", "TEMPLATE"]] = None,
+    service=Depends(get_exercise_service)
+):
+    try:
+        normalized_code = chapter_code.upper()
+        chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
+
+        exercises = await service.get_exercises(chapter_code=normalized_code)
+        if pipeline == "TEMPLATE":
+            exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+        elif pipeline == "SPEC":
+            exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+
+        return {
+            "code_officiel": normalized_code,
+            "pipeline": chapter.pipeline if chapter else None,
+            "domaine": chapter.domaine if chapter else None,
+            "libelle": chapter.libelle if chapter else normalized_code,
+            "exercises": exercises,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur export exercices {chapter_code}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/chapters/{chapter_code}/exercises/import",
+    summary="Importer des exercices dans un chapitre",
+    description="Importe une liste d'exercices (JSON) pour un chapitre existant. Valide pipeline/pipeline attendu et generator_key."
+)
+async def import_exercises(
+    chapter_code: str,
+    payload: ExerciseImportPayload,
+    service=Depends(get_exercise_service),
+    sync_service=Depends(get_curriculum_sync_service_dep)
+):
+    logger.info(f"Admin: Import exercices dans {chapter_code} (count={len(payload.exercises)})")
+    normalized_code = chapter_code.upper()
+    chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
+    if not chapter:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "INVALID_CHAPTER",
+                "error": "invalid_chapter",
+                "message": f"Le chapitre '{chapter_code}' n'existe pas dans le curriculum.",
+            },
+        )
+
+    # Validation pipeline (pré)
+    expected_pipeline = payload.pipeline or chapter.pipeline
+    dynamic_count = sum(1 for ex in payload.exercises if ex.get("is_dynamic"))
+    static_count = sum(1 for ex in payload.exercises if not ex.get("is_dynamic"))
+    if expected_pipeline == "TEMPLATE" and dynamic_count == 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                "error": "template_pipeline_no_exercises",
+                "message": (
+                    f"Le pipeline TEMPLATE requiert au moins un exercice dynamique. Aucun exercice dynamique dans le payload pour '{chapter_code}'."
+                ),
+            },
+        )
+    if expected_pipeline == "SPEC" and static_count == 0 and not chapter.exercise_types:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "SPEC_PIPELINE_INVALID_EXERCISE_TYPES",
+                "error": "spec_pipeline_invalid",
+                "message": (
+                    f"Le pipeline SPEC requiert des exercise_types valides ou des exercices statiques. "
+                    f"Aucun statique dans le payload et pas d'exercise_types pour '{chapter_code}'."
+                ),
+            },
+        )
+
+    created = []
+    errors = []
+    for ex in payload.exercises:
+        try:
+            req = ExerciseCreateRequest(**ex)
+            created_ex = await service.create_exercise(normalized_code, req)
+            created.append(created_ex)
+        except Exception as e:
+            logger.warning(f"Import exercice KO ({chapter_code}): {e}")
+            errors.append(str(e))
+
+    # Sync curriculum (enrichissement exercise_types)
+    try:
+        await sync_service.sync_chapter_to_curriculum(normalized_code)
+    except Exception as sync_error:
+        logger.warning(f"[AUTO-SYNC] Échec sync curriculum après import {chapter_code}: {sync_error}")
+
+    if errors and not created:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "IMPORT_FAILED",
+                "error": "import_failed",
+                "message": f"Aucun exercice importé pour {chapter_code}",
+                "errors": errors,
+            },
+        )
+
+    return {
+        "success": True,
+        "chapter_code": chapter_code.upper(),
+        "imported": len(created),
+        "errors": errors,
+    }
 
 
 @router.put(

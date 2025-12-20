@@ -271,6 +271,21 @@
     },
     {
       "niveau": "6e",
+      "code_officiel": "6e_MIXED_QA",
+      "domaine": "Tests",
+      "libelle": "MIXED QA",
+      "chapitre_backend": "",
+      "exercise_types": [],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [],
+      "contexts": [],
+      "pipeline": "MIXED"
+    },
+    {
+      "niveau": "6e",
       "code_officiel": "6e_AA_TEST_STAT",
       "domaine": "Géométrie",
       "libelle": "6e_AA_TEST_STAT",

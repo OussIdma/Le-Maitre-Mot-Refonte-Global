@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Card, 
   CardContent, 
@@ -137,6 +137,10 @@ const ChapterExercisesAdminPage = () => {
   
   // Preview dynamique (P2)
   const [dynamicPreviewOpen, setDynamicPreviewOpen] = useState(false);
+
+  // Import/export
+  const fileInputRef = useRef(null);
+  const [exportPipeline, setExportPipeline] = useState('ALL');
   
   // Schéma du générateur sélectionné (P0.2)
   const [generatorSchema, setGeneratorSchema] = useState(null);
@@ -242,7 +246,7 @@ const ChapterExercisesAdminPage = () => {
   useEffect(() => {
     fetchExercises();
   }, [fetchExercises]);
-  
+
   // Effacer les messages
   useEffect(() => {
     if (operationMessage) {
@@ -250,6 +254,72 @@ const ChapterExercisesAdminPage = () => {
       return () => clearTimeout(timer);
     }
   }, [operationMessage]);
+
+  // Infos pipeline / disponibilité
+  const dynamicCount = exercises.filter(ex => ex.is_dynamic).length;
+  const staticCount = exercises.filter(ex => !ex.is_dynamic).length;
+  const pipelineMessage = (() => {
+    if (chapterPipeline === 'TEMPLATE') {
+      return "Pipeline dynamique : seuls les exercices dynamiques seront générés. «Disponible» = au moins 1 exercice dynamique pour les filtres choisis.";
+    }
+    if (chapterPipeline === 'SPEC') {
+      return "Pipeline statique : seuls les exercices statiques seront générés. Les exercices dynamiques sont ignorés.";
+    }
+    if (chapterPipeline === 'MIXED') {
+      return "Pipeline mixte : priorité aux dynamiques ; les statiques ne servent qu'en fallback si aucun dynamique ne matche l'offre/la difficulté.";
+    }
+    return null;
+  })();
+
+  // Export JSON
+  const handleExport = async (pipelineFilter) => {
+    try {
+      const params = pipelineFilter && pipelineFilter !== 'ALL' ? `?pipeline=${pipelineFilter}` : '';
+      const res = await fetch(`${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises-export${params}`);
+      if (!res.ok) {
+        throw new Error(`Export échoué (${res.status})`);
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${chapterCode}_exercises${pipelineFilter && pipelineFilter !== 'ALL' ? `_${pipelineFilter}` : ''}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setOperationMessage({ type: 'success', text: 'Export JSON réalisé.' });
+    } catch (e) {
+      setOperationMessage({ type: 'error', text: `Export impossible: ${e.message}` });
+    }
+  };
+
+  // Import JSON
+  const handleImportClick = () => {
+    if (fileInputRef.current) fileInputRef.current.value = null;
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await fetch(`${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail?.message || `Import échoué (${res.status})`);
+      }
+      setOperationMessage({ type: 'success', text: 'Import JSON terminé.' });
+      fetchExercises();
+    } catch (e) {
+      setOperationMessage({ type: 'error', text: `Import impossible: ${e.message}` });
+    }
+  };
   
   // Couleurs
   const getDifficultyColor = (difficulty) => {
@@ -750,6 +820,32 @@ const ChapterExercisesAdminPage = () => {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Export / Import */}
+              <div className="hidden sm:flex items-center gap-2">
+                <Select value={exportPipeline} onValueChange={setExportPipeline}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Export: Tous</SelectItem>
+                    <SelectItem value="TEMPLATE">Export: Dynamiques</SelectItem>
+                    <SelectItem value="SPEC">Export: Statiques</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => handleExport(exportPipeline)}>
+                  Exporter
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleImportClick}>
+                  Importer
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+              </div>
               {/* Bouton Ouvrir côté élève */}
               <Button 
                 variant="outline" 
@@ -797,6 +893,25 @@ const ChapterExercisesAdminPage = () => {
                   Réessayer
                 </Button>
               )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Bandeau pipeline / disponibilité */}
+        {chapterPipeline && (
+          <Alert className="mb-4 border-blue-500 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800 text-sm">
+              <div className="flex flex-wrap gap-3 items-center">
+                <Badge variant="outline" className="font-mono text-xs">
+                  Pipeline&nbsp;{chapterPipeline}
+                </Badge>
+                <span>Disponible = génère réellement dans ce pipeline.</span>
+                <span className="text-xs text-gray-600">
+                  Dynamiques : {dynamicCount} • Statiques : {staticCount}
+                </span>
+              </div>
+              <div className="mt-1">{pipelineMessage}</div>
             </AlertDescription>
           </Alert>
         )}
@@ -1165,7 +1280,10 @@ const ChapterExercisesAdminPage = () => {
 
                   {/* Sélecteur de générateur */}
                   <div>
-                    <Label className="text-sm">Générateur *</Label>
+                    <Label className="text-sm">
+                      Générateur *
+                      <span className="text-xs text-gray-500 ml-1">(déduit aussi l'exercise_type)</span>
+                    </Label>
                     <Select 
                       value={formData.generator_key || 'THALES_V1'} 
                       onValueChange={(v) => {
@@ -1191,6 +1309,9 @@ const ChapterExercisesAdminPage = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      L’exercise_type est fixé par le generator_key (Factory). Si un type manuel diffère, la sauvegarde sera refusée côté backend.
+                    </p>
                   </div>
                   
                   {/* Panneau des variables disponibles (P0.2) */}

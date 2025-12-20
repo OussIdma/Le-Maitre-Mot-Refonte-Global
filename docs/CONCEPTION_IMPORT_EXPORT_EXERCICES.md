@@ -71,6 +71,14 @@ Permettre l'édition en masse des exercices (énoncés, solutions, variants) via
 - `variables_schema` (JSON)
 - `template_variants[]` (tableau de variants)
 
+### 4. Pipelines (chapitre) et validations post-import
+- Champ `pipeline` obligatoire dans le fichier d’import (SPEC | TEMPLATE | MIXED).
+- Validation post-import :
+  - TEMPLATE : doit avoir ≥1 exercice dynamique (is_dynamic=true) pour le chapitre, sinon import refusé.
+  - SPEC : doit avoir des `exercise_types` valides dans le curriculum, ou au moins un exercice statique saisi ; sinon import refusé.
+  - MIXED : accepte dyn + stat ; s’il n’y a aucun exo pour les filtres offer/difficulty à l’usage, l’API renverra un 422 explicite (NO_EXERCISE_AVAILABLE).
+  - Mapping generator_key → exercise_type : source unique = GeneratorFactory (résolution automatique côté backend).
+
 ---
 
 ## 🔧 Solutions proposées
@@ -625,7 +633,6 @@ exercise_id	variant_id	variant_label	weight	enonce_template_html	solution_templa
 - Structure exercices : `backend/services/exercise_persistence_service.py`
 - Validation placeholders : `backend/services/tests_dyn_handler.py` (lignes 48-57)
 - Modèles Pydantic : `backend/services/exercise_persistence_service.py` (lignes 32-178)
-
 
 
 

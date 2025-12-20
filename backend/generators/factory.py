@@ -31,6 +31,10 @@ class GeneratorFactory:
     _ALIASES: Dict[str, str] = {
         # Ancienne clé générique pour la symétrie axiale → nouveau générateur Factory
         "SYMETRIE_AXIALE": "SYMETRIE_AXIALE_V2",
+        # Alias Thalès (saisie avec espace ou sans suffixe)
+        "THALES": "THALES_V2",
+        "THALES V1": "THALES_V2",
+        "THALES_V1": "THALES_V2",
     }
 
     @classmethod
