@@ -17,6 +17,9 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field, validator
 
 from backend.generators.factory import GeneratorFactory
+from backend.services.template_renderer import get_template_variables
+from fastapi import HTTPException
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,15 @@ EXERCISES_COLLECTION = "admin_exercises"
 
 # Chemin vers le dossier data
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+
+
+def _extract_placeholders(template_str: Optional[str]) -> set:
+    """Extrait les placeholders {{variable}} d'un template."""
+    if not template_str:
+        return set()
+    pattern = r'\{\{\s*(\w+)\s*\}\}'
+    matches = re.findall(pattern, template_str)
+    return set(matches)
 
 
 # =============================================================================
@@ -628,6 +640,16 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         # Valider les données
         self._validate_exercise_data(request)
         
+        # Validation des placeholders pour exercices dynamiques
+        if request.is_dynamic and request.generator_key:
+            self._validate_template_placeholders(
+                generator_key=request.generator_key,
+                enonce_template_html=request.enonce_template_html,
+                solution_template_html=request.solution_template_html,
+                template_variants=request.template_variants,
+                exercise_params=request.variables or {}
+            )
+        
         # Déterminer exercise_type pour les dynamiques (source de vérité GeneratorFactory)
         exercise_type_resolved = request.exercise_type.upper() if request.exercise_type else None
         if request.is_dynamic and request.generator_key:
@@ -750,7 +772,24 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             update_data["is_dynamic"] = request.is_dynamic
         if request.generator_key is not None:
             update_data["generator_key"] = request.generator_key
-        # Sauvegarder variables même si c'est un objet vide (pour permettre de réinitialiser)
+        
+        # Validation des placeholders pour exercices dynamiques (si template ou generator_key modifié)
+        is_dynamic = update_data.get("is_dynamic", existing.get("is_dynamic", False))
+        generator_key = update_data.get("generator_key", existing.get("generator_key"))
+        enonce_template = update_data.get("enonce_template_html", existing.get("enonce_template_html"))
+        solution_template = update_data.get("solution_template_html", existing.get("solution_template_html"))
+        template_variants = update_data.get("template_variants", existing.get("template_variants"))
+        exercise_params = update_data.get("variables", existing.get("variables", {}))
+        
+        if is_dynamic and generator_key and (enonce_template or solution_template or template_variants):
+            self._validate_template_placeholders(
+                generator_key=generator_key,
+                enonce_template_html=enonce_template,
+                solution_template_html=solution_template,
+                template_variants=template_variants,
+                exercise_params=exercise_params or {}
+            )
+        
         # Sauvegarder variables même si c'est un objet vide (pour permettre de réinitialiser)
         # Note: request.variables peut être None (non fourni), {} (vide), ou un dict avec des valeurs
         if hasattr(request, 'variables') and request.variables is not None:
@@ -999,6 +1038,120 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             # Vérifier pas de LaTeX
             if "$" in request.enonce_html or "$" in request.solution_html:
                 raise ValueError("Le contenu ne doit pas contenir de LaTeX ($). Utilisez du HTML pur.")
+    
+    def _validate_template_placeholders(
+        self,
+        generator_key: str,
+        enonce_template_html: Optional[str],
+        solution_template_html: Optional[str],
+        template_variants: Optional[List[Dict[str, Any]]],
+        exercise_params: Dict[str, Any]
+    ) -> None:
+        """
+        Valide que tous les placeholders des templates peuvent être résolus par le générateur.
+        Teste pour chaque difficulté (facile, moyen, difficile).
+        
+        Lève HTTPException(422) avec error_code="ADMIN_TEMPLATE_MISMATCH" si mismatch.
+        """
+        # Extraire tous les placeholders attendus
+        placeholders_expected = set()
+        
+        # Templates principaux
+        if enonce_template_html:
+            placeholders_expected.update(_extract_placeholders(enonce_template_html))
+        if solution_template_html:
+            placeholders_expected.update(_extract_placeholders(solution_template_html))
+        
+        # Templates variants
+        if template_variants:
+            for variant in template_variants:
+                if isinstance(variant, dict):
+                    if variant.get("enonce_template_html"):
+                        placeholders_expected.update(_extract_placeholders(variant["enonce_template_html"]))
+                    if variant.get("solution_template_html"):
+                        placeholders_expected.update(_extract_placeholders(variant["solution_template_html"]))
+        
+        if not placeholders_expected:
+            # Pas de placeholders à valider
+            return
+        
+        # Récupérer le générateur
+        gen_class = GeneratorFactory.get(generator_key)
+        if not gen_class:
+            # Le générateur sera validé ailleurs, on skip ici
+            return
+        
+        # Tester pour chaque difficulté
+        difficulties = ["facile", "moyen", "difficile"]
+        all_mismatches = []
+        
+        for difficulty in difficulties:
+            try:
+                # Préparer les paramètres de génération
+                gen_params = exercise_params.copy()
+                gen_params["difficulty"] = difficulty
+                
+                # Générer un exercice de test
+                generator = gen_class(seed=42)  # Seed fixe pour reproductibilité
+                result = generator.generate(gen_params)
+                
+                # Récupérer les clés fournies
+                keys_provided = set(result.get("variables", {}).keys())
+                
+                # Comparer
+                missing = sorted(placeholders_expected - keys_provided)
+                extra = sorted(keys_provided - placeholders_expected)
+                
+                if missing:
+                    all_mismatches.append({
+                        "difficulty": difficulty,
+                        "missing": missing,
+                        "extra": extra,
+                        "placeholders_expected": sorted(placeholders_expected),
+                        "keys_provided": sorted(keys_provided)
+                    })
+            except Exception as e:
+                # Si la génération échoue, on considère comme mismatch
+                logger.warning(f"Erreur lors de la validation placeholder pour {generator_key} (difficulty={difficulty}): {e}")
+                all_mismatches.append({
+                    "difficulty": difficulty,
+                    "missing": sorted(placeholders_expected),
+                    "extra": [],
+                    "error": str(e)
+                })
+        
+        # Si des mismatches sont détectés, lever une erreur
+        if all_mismatches:
+            # Construire le message d'erreur
+            missing_summary = set()
+            for mismatch in all_mismatches:
+                missing_summary.update(mismatch["missing"])
+            
+            missing_list = ", ".join(sorted(missing_summary)[:5])
+            if len(missing_summary) > 5:
+                missing_list += f" et {len(missing_summary) - 5} autre(s)"
+            
+            hint = (
+                f"Les placeholders suivants ne peuvent pas être résolus par le générateur '{generator_key}': {missing_list}. "
+                f"Vérifiez que le générateur fournit toutes les variables nécessaires pour les templates. "
+                f"Difficultés affectées: {', '.join([m['difficulty'] for m in all_mismatches])}."
+            )
+            
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "ADMIN_TEMPLATE_MISMATCH",
+                    "error": "admin_template_mismatch",
+                    "message": f"Les templates contiennent des placeholders qui ne peuvent pas être résolus par le générateur '{generator_key}'.",
+                    "hint": hint,
+                    "context": {
+                        "generator_key": generator_key,
+                        "mismatches": all_mismatches,
+                        "missing_summary": sorted(missing_summary),
+                        "placeholders_expected": sorted(placeholders_expected)
+                    }
+                }
+            )
     
     async def _reload_handler(self, chapter_code: str) -> None:
         """Recharge le handler en mémoire après modification"""

@@ -104,7 +104,7 @@ def format_dynamic_exercise(
       (rectangle / triangle / carré)
     - Garde déterminisme via le seed (aucun random global ajouté ici)
     - Si des placeholders {{...}} restent après rendu, lève une HTTPException
-      422 UNRESOLVED_PLACEHOLDERS pour éviter d'envoyer un énoncé cassé.
+      422 PLACEHOLDER_UNRESOLVED pour éviter d'envoyer un énoncé cassé.
     """
     handler_start = time.time()
     chapter_code = (exercise_template.get("chapter_code") or "6E_TESTS_DYN").upper()
@@ -645,30 +645,39 @@ def format_dynamic_exercise(
             **ctx
         )
         
-        details = {
-            "unknown_placeholders": unresolved,
-            "placeholders_expected": sorted(expected_placeholders),
-            "keys_provided": sorted(provided_keys),
-            "template_id": exercise_template.get("id"),
-            "generator_key": generator_key,
-            "figure_type": figure_type,
-            "exercise_id": exercise_id,
-        }
+        # Construire le message hint explicatif
+        missing_list = ", ".join(unresolved[:5])  # Limiter à 5 pour la lisibilité
+        if len(unresolved) > 5:
+            missing_list += f" et {len(unresolved) - 5} autre(s)"
+        
+        hint = (
+            f"Les placeholders suivants n'ont pas pu être résolus : {missing_list}. "
+            f"Vérifiez que le générateur '{generator_key}' fournit toutes les variables nécessaires pour le template. "
+            f"Placeholders attendus : {len(expected_placeholders)}, fournis : {len(provided_keys)}."
+        )
 
         logger.error(
-            f"[TESTS_DYN] UNRESOLVED_PLACEHOLDERS pour ex {exercise_id} "
+            f"[TESTS_DYN] PLACEHOLDER_UNRESOLVED pour ex {exercise_id} "
             f"(template {exercise_template.get('id')}, generator={generator_key}, figure_type={figure_type}) - "
             f"restants: {unresolved} | attendus: {sorted(expected_placeholders)} | clés: {sorted(provided_keys)}"
         )
 
-        # Remonter une erreur structurée JSON-safe, interceptée par FastAPI
+        # Remonter une erreur structurée JSON-safe avec format standardisé
         raise HTTPException(
             status_code=422,
             detail={
-                "error_code": "UNRESOLVED_PLACEHOLDERS",
-                "error": "UNRESOLVED_PLACEHOLDERS",
-                "message": "Un ou plusieurs placeholders n'ont pas été résolus pour 6e_TESTS_DYN.",
-                "details": details,
+                "error_code": "PLACEHOLDER_UNRESOLVED",
+                "error": "placeholder_unresolved",
+                "message": f"Un ou plusieurs placeholders n'ont pas été résolus pour {chapter_code}.",
+                "hint": hint,
+                "context": {
+                    "chapter_code": chapter_code,
+                    "missing": unresolved,
+                    "template_id": exercise_template.get("id"),
+                    "generator_key": generator_key,
+                    "expected_placeholders": sorted(expected_placeholders),
+                    "provided_keys": sorted(provided_keys)
+                }
             },
         )
     

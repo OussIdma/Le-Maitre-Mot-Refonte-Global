@@ -429,7 +429,39 @@ const ExerciseGeneratorPage = () => {
           } else if (errorCode === "VARIANT_ID_NOT_FOUND") {
             errorMessage = "Variant d'exercice introuvable";
             hint = hint || `Le variant demandé n'existe pas pour cet exercice.`;
-          }
+      } else if (errorCode === "PLACEHOLDER_UNRESOLVED") {
+        errorMessage = "Placeholders non résolus";
+        const missing = detail.context?.missing || [];
+        const missingList = missing.slice(0, 3).join(", ");
+        const moreCount = missing.length > 3 ? ` et ${missing.length - 3} autre(s)` : "";
+        hint = hint || `Les placeholders suivants n'ont pas pu être résolus : ${missingList}${moreCount}. Voir la console pour les détails complets.`;
+        
+        // Logger les détails complets dans la console
+        console.error("🔴 PLACEHOLDER_UNRESOLVED - Détails complets:", {
+          error_code: errorCode,
+          chapter_code: detail.context?.chapter_code,
+          template_id: detail.context?.template_id,
+          generator_key: detail.context?.generator_key,
+          missing_placeholders: missing,
+          expected_placeholders: detail.context?.expected_placeholders,
+          provided_keys: detail.context?.provided_keys
+        });
+      } else if (errorCode === "ADMIN_TEMPLATE_MISMATCH") {
+        errorMessage = "Placeholders incompatibles avec le générateur";
+        const missingSummary = detail.context?.missing_summary || [];
+        const missingList = missingSummary.slice(0, 3).join(", ");
+        const moreCount = missingSummary.length > 3 ? ` et ${missingSummary.length - 3} autre(s)` : "";
+        hint = hint || `Les placeholders suivants ne peuvent pas être résolus par le générateur : ${missingList}${moreCount}. Vérifiez que le générateur fournit toutes les variables nécessaires.`;
+        
+        // Logger les détails complets dans la console
+        console.error("🔴 ADMIN_TEMPLATE_MISMATCH - Détails complets:", {
+          error_code: errorCode,
+          generator_key: detail.context?.generator_key,
+          missing_summary: missingSummary,
+          mismatches: detail.context?.mismatches,
+          placeholders_expected: detail.context?.placeholders_expected
+        });
+      }
           
           // Afficher toast avec message spécifique
           toast({
@@ -448,7 +480,7 @@ const ExerciseGeneratorPage = () => {
             errorMessage = data.detail;
           } else if (data.detail && data.detail.message) {
             errorMessage = data.detail.message;
-          } else {
+      } else {
             errorMessage = "Chapitre invalide ou non disponible";
           }
         }

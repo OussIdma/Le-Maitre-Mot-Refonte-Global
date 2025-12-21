@@ -381,6 +381,12 @@ class SimplificationFractionsV2Generator(BaseGenerator):
         elif variant_id == "C":
             variables.update(self._build_variables_variant_c(n, d, n_red, d_red, pgcd))
         
+        # TOUJOURS fournir les variables diagnostic (même pour variants A/B)
+        # Ces variables sont nécessaires pour les templates qui peuvent les utiliser
+        if variant_id != "C":
+            # Pour variants A/B, fournir des valeurs déterministes basées sur la fraction
+            variables.update(self._build_variables_diagnostic_deterministic(n, d, n_red, d_red, pgcd))
+        
         # Ajouter les variables communes V2
         variables.update({
             "variant_id": variant_id,
@@ -583,6 +589,56 @@ class SimplificationFractionsV2Generator(BaseGenerator):
             f"donc la simplification est {'correcte' if diagnostic_is_correct else 'incorrecte'}."
         )
         
+        if diagnostic_is_correct:
+            diagnostic_explanation = (
+                f"La simplification {wrong_simplification} est correcte. "
+                f"On a bien divisé le numérateur et le dénominateur par le PGCD."
+            )
+        else:
+            diagnostic_explanation = (
+                f"La simplification {wrong_simplification} est incorrecte. "
+                f"On doit diviser le numérateur ET le dénominateur par le PGCD, "
+                f"pas seulement l'un des deux. La bonne simplification est {n_red}/{d_red}."
+            )
+        
+        return {
+            "wrong_simplification": wrong_simplification,
+            "diagnostic_is_correct": diagnostic_is_correct,
+            "diagnostic_explanation": diagnostic_explanation,
+            "check_equivalence_str": check_equivalence_str
+        }
+    
+    def _build_variables_diagnostic_deterministic(
+        self,
+        n: int,
+        d: int,
+        n_red: int,
+        d_red: int,
+        pgcd: int
+    ) -> Dict[str, Any]:
+        """
+        Construit les variables diagnostic de manière déterministe pour variants A/B.
+        Ces variables sont toujours fournies pour éviter les erreurs PLACEHOLDER_UNRESOLVED.
+        """
+        # Générer une simplification incorrecte plausible (toujours la même logique)
+        # Erreur type : diviser seulement le numérateur
+        wrong_n = n // pgcd
+        wrong_d = d  # Dénominateur non divisé
+        
+        wrong_simplification = f"{wrong_n}/{wrong_d}"
+        
+        # Vérifier si la simplification est correcte (normalement non pour A/B)
+        diagnostic_is_correct = (wrong_n == n_red and wrong_d == d_red)
+        
+        # Produit en croix pour vérifier l'équivalence
+        check_equivalence_str = (
+            f"{n} × {wrong_d} = {n * wrong_d} et "
+            f"{d} × {wrong_n} = {d * wrong_n}. "
+            f"Les produits sont {'égaux' if n * wrong_d == d * wrong_n else 'différents'}, "
+            f"donc la simplification est {'correcte' if diagnostic_is_correct else 'incorrecte'}."
+        )
+        
+        # Explication pédagogique déterministe
         if diagnostic_is_correct:
             diagnostic_explanation = (
                 f"La simplification {wrong_simplification} est correcte. "
