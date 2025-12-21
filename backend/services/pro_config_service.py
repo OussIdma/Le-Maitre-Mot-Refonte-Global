@@ -17,7 +17,8 @@ if not mongo_url:
     raise ValueError("MONGO_URL environment variable is required")
 
 client = AsyncIOMotorClient(mongo_url)
-db = client.mathalea_db
+db_name = os.environ.get('DB_NAME', 'le_maitre_mot_db')
+db = client[db_name]
 
 # Utiliser la collection user_templates de l'ancien système (migration sans rupture)
 user_templates_collection = db.user_templates

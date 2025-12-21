@@ -192,3 +192,4 @@ docker compose logs backend | grep -i "curriculum_sync"
 
 
 
+

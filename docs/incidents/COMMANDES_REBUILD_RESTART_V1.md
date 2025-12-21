@@ -152,3 +152,4 @@ docker compose exec backend python3 -m py_compile backend/tests/test_simplificat
 
 **Une fois validé** : Les corrections P0 sont en production et prêtes pour les tests fonctionnels.
 
+

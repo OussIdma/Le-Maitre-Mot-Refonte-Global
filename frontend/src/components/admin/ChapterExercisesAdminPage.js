@@ -338,12 +338,18 @@ const ChapterExercisesAdminPage = () => {
   };
 
   // Helpers variants dynamiques
+  // Vérifier si l'exercice est dynamique ET a des variants OU est un générateur premium qui devrait avoir des variants
+  const isPremiumGenerator = formData.generator_key === 'SIMPLIFICATION_FRACTIONS_V2';
   const hasTemplateVariants =
     Array.isArray(formData.template_variants) &&
     formData.template_variants.length > 0;
+  
+  // Pour les générateurs premium, afficher la section même si variants vides (pour permettre l'ajout)
+  const shouldShowVariantsSection = formData.is_dynamic && (hasTemplateVariants || isPremiumGenerator);
 
   // Dès que des template_variants existent, ils sont la source de vérité pour l'UI
-  const isVariantMode = hasTemplateVariants;
+  // Pour les générateurs premium, activer le mode variant même si la liste est vide (pour permettre l'ajout)
+  const isVariantMode = hasTemplateVariants || (isPremiumGenerator && formData.is_dynamic);
 
   const effectiveVariants = hasTemplateVariants
     ? formData.template_variants
@@ -506,7 +512,56 @@ const ChapterExercisesAdminPage = () => {
 </ol>`
       };
     }
+    if (generatorKey === 'SIMPLIFICATION_FRACTIONS_V2') {
+      // Templates Variant A (Standard) par défaut
+      return {
+        enonce: "<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>",
+        solution: `<ol>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      };
+    }
     return { enonce: '', solution: '' };
+  };
+  
+  // Templates pour les variants A/B/C de SIMPLIFICATION_FRACTIONS_V2
+  const getSimplificationFractionsV2Templates = () => {
+    return {
+      A: {
+        enonce: "<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>",
+        solution: `<ol>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      },
+      B: {
+        enonce: `<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>
+{{hint_display}}`,
+        solution: `<ol>
+  <li><strong>Méthode :</strong> {{method_explanation}}</li>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      },
+      C: {
+        enonce: `<p><strong>Analyse cette simplification :</strong></p>
+<p>Fraction initiale : <strong>{{fraction}}</strong></p>
+<p>Simplification proposée : <strong>{{wrong_simplification}}</strong></p>
+<p><em>Cette simplification est-elle correcte ?</em></p>`,
+        solution: `<ol>
+  <li><strong>Vérification :</strong> {{check_equivalence_str}}</li>
+  <li><strong>Conclusion :</strong> {{diagnostic_explanation}}</li>
+  <li><strong>Simplification correcte :</strong> {{fraction_reduite}}</li>
+</ol>`
+      }
+    };
   };
   
   // Ouvrir modal édition
@@ -529,7 +584,85 @@ const ChapterExercisesAdminPage = () => {
       enonce_template_html: exercise.enonce_template_html || '',
       solution_template_html: exercise.solution_template_html || '',
       variables: exercise.variables || {},
-      template_variants: exercise.template_variants || []
+      template_variants: (() => {
+        // Si template_variants existe et est un tableau non vide
+        if (Array.isArray(exercise.template_variants) && exercise.template_variants.length > 0) {
+          // Pour les générateurs premium, s'assurer que tous les variants A/B/C sont présents avec leurs templates
+          if (exercise.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && exercise.is_dynamic) {
+            const variantTemplates = getSimplificationFractionsV2Templates();
+            const existingVariants = exercise.template_variants;
+            const variantMap = {};
+            existingVariants.forEach(v => {
+              const key = v.variant_id || v.id;
+              if (key) variantMap[key] = v;
+            });
+            
+            // S'assurer que A, B, C existent avec leurs templates par défaut si absents ou vides
+            return ['A', 'B', 'C'].map(variantId => {
+              const existing = variantMap[variantId];
+              if (existing) {
+                // Variant existe : utiliser les templates existants, ou les templates par défaut si vides
+                return {
+                  ...existing,
+                  id: existing.id || variantId,
+                  variant_id: existing.variant_id || variantId,
+                  label: existing.label || (variantId === 'A' ? 'Direct' : variantId === 'B' ? 'Guidé' : 'Diagnostic'),
+                  weight: existing.weight || 1,
+                  enonce_template_html: existing.enonce_template_html?.trim() || variantTemplates[variantId].enonce,
+                  solution_template_html: existing.solution_template_html?.trim() || variantTemplates[variantId].solution
+                };
+              } else {
+                // Variant absent : créer avec templates par défaut
+                return {
+                  id: variantId,
+                  variant_id: variantId,
+                  label: variantId === 'A' ? 'Direct' : variantId === 'B' ? 'Guidé' : 'Diagnostic',
+                  weight: 1,
+                  enonce_template_html: variantTemplates[variantId].enonce,
+                  solution_template_html: variantTemplates[variantId].solution
+                };
+              }
+            });
+          }
+          // Pour les autres générateurs, retourner tel quel
+          return exercise.template_variants;
+        }
+        // Si c'est un générateur premium mais variants vides en DB, initialiser A/B/C
+        if (exercise.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && exercise.is_dynamic) {
+          const variantTemplates = getSimplificationFractionsV2Templates();
+          return [
+            { 
+              id: 'A', 
+              variant_id: 'A', 
+              label: 'Direct', 
+              weight: 1, 
+              enonce_template_html: exercise.enonce_template_html || variantTemplates.A.enonce, 
+              solution_template_html: exercise.solution_template_html || variantTemplates.A.solution 
+            },
+            { 
+              id: 'B', 
+              variant_id: 'B', 
+              label: 'Guidé', 
+              weight: 1, 
+              enonce_template_html: variantTemplates.B.enonce, 
+              solution_template_html: variantTemplates.B.solution 
+            },
+            { 
+              id: 'C', 
+              variant_id: 'C', 
+              label: 'Diagnostic', 
+              weight: 1, 
+              enonce_template_html: variantTemplates.C.enonce, 
+              solution_template_html: variantTemplates.C.solution 
+            }
+          ];
+        }
+        // Sinon, tableau vide ou conversion si c'est un objet unique
+        if (exercise.template_variants && !Array.isArray(exercise.template_variants)) {
+          return [exercise.template_variants];
+        }
+        return [];
+      })()
     });
     setActiveVariantIndex(0);
     setFormErrors({});
@@ -644,6 +777,15 @@ const ChapterExercisesAdminPage = () => {
         }
       }
       
+      // S'assurer que template_variants est toujours un tableau (même vide) pour les exercices dynamiques
+      // Le backend doit recevoir template_variants pour pouvoir le sauvegarder
+      if (payload.is_dynamic) {
+        if (!Array.isArray(payload.template_variants)) {
+          payload.template_variants = [];
+        }
+      }
+      
+      // Si template_variants non vide, mettre à jour les templates legacy (miroir)
       if (payload.is_dynamic && Array.isArray(payload.template_variants) && payload.template_variants.length > 0) {
         const first = payload.template_variants[0];
         payload.enonce_template_html = first.enonce_template_html || '';
@@ -1296,12 +1438,51 @@ const ChapterExercisesAdminPage = () => {
                       value={formData.generator_key || 'THALES_V1'} 
                       onValueChange={(v) => {
                         const templates = getDynamicTemplates(v);
-                        setFormData(p => ({
-                          ...p, 
-                          generator_key: v,
-                          enonce_template_html: templates.enonce,
-                          solution_template_html: templates.solution
-                        }));
+                        setFormData(p => {
+                          // Pour les générateurs premium (SIMPLIFICATION_FRACTIONS_V2), initialiser les variants A/B/C si absents
+                          const isPremiumGen = v === 'SIMPLIFICATION_FRACTIONS_V2';
+                          const shouldInitVariants = isPremiumGen && 
+                            (!Array.isArray(p.template_variants) || p.template_variants.length === 0);
+                          const baseUpdate = {
+                            ...p, 
+                            generator_key: v,
+                            enonce_template_html: templates.enonce,
+                            solution_template_html: templates.solution
+                          };
+                          
+                          // Initialiser les variants A/B/C pour les générateurs premium avec les bons templates
+                          if (shouldInitVariants) {
+                            const variantTemplates = getSimplificationFractionsV2Templates();
+                            baseUpdate.template_variants = [
+                              { 
+                                id: 'A', 
+                                variant_id: 'A', 
+                                label: 'Direct', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.A.enonce, 
+                                solution_template_html: variantTemplates.A.solution 
+                              },
+                              { 
+                                id: 'B', 
+                                variant_id: 'B', 
+                                label: 'Guidé', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.B.enonce, 
+                                solution_template_html: variantTemplates.B.solution 
+                              },
+                              { 
+                                id: 'C', 
+                                variant_id: 'C', 
+                                label: 'Diagnostic', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.C.enonce, 
+                                solution_template_html: variantTemplates.C.solution 
+                              }
+                            ];
+                          }
+                          
+                          return baseUpdate;
+                        });
                       }}
                     >
                       <SelectTrigger>
@@ -1357,19 +1538,58 @@ const ChapterExercisesAdminPage = () => {
                     <GeneratorVariablesPanel 
                       generatorKey={formData.generator_key}
                       onTemplatesLoaded={(templates) => {
-                        // Ne mettre à jour que si les templates sont vides
-                        if (!formData.enonce_template_html && !formData.solution_template_html) {
-                          setFormData(p => ({
-                            ...p,
-                            enonce_template_html: templates.enonce,
-                            solution_template_html: templates.solution
-                          }));
-                        }
+                        setFormData(p => {
+                          // Pour les générateurs premium, initialiser les variants si absents
+                          if (p.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && 
+                              (!Array.isArray(p.template_variants) || p.template_variants.length === 0)) {
+                            const variantTemplates = getSimplificationFractionsV2Templates();
+                            return {
+                              ...p,
+                              template_variants: [
+                                { 
+                                  id: 'A', 
+                                  variant_id: 'A', 
+                                  label: 'Direct', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.A.enonce, 
+                                  solution_template_html: variantTemplates.A.solution 
+                                },
+                                { 
+                                  id: 'B', 
+                                  variant_id: 'B', 
+                                  label: 'Guidé', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.B.enonce, 
+                                  solution_template_html: variantTemplates.B.solution 
+                                },
+                                { 
+                                  id: 'C', 
+                                  variant_id: 'C', 
+                                  label: 'Diagnostic', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.C.enonce, 
+                                  solution_template_html: variantTemplates.C.solution 
+                                }
+                              ]
+                            };
+                          } else {
+                            // Mode legacy : mettre à jour les templates uniques
+                            if (!p.enonce_template_html && !p.solution_template_html) {
+                              return {
+                                ...p,
+                                enonce_template_html: templates.enonce,
+                                solution_template_html: templates.solution
+                              };
+                            }
+                          }
+                          return p;
+                        });
                       }}
                     />
                   )}
                   
-                  {/* Bloc Variants d'énoncés */}
+                  {/* Bloc Variants d'énoncés - Affiché pour tous les exercices dynamiques, mais contenu conditionnel */}
+                  {shouldShowVariantsSection && (
                   <div className="border border-purple-200 rounded-lg p-3 bg-white space-y-3">
                     <div className="flex items-center justify-between">
                       <Label className="text-sm text-purple-800">
@@ -1479,7 +1699,18 @@ const ChapterExercisesAdminPage = () => {
                         Certains variants contiennent des erreurs, merci de corriger les champs en rouge.
                       </p>
                     )}
+                    
+                    {!hasTemplateVariants && isPremiumGenerator && (
+                      <Alert className="border-blue-500 bg-blue-50">
+                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                        <AlertDescription className="text-blue-800 text-xs">
+                          💡 Ce générateur premium supporte les variants A/B/C (Direct/Guidé/Diagnostic). 
+                          Cliquez sur "Ajouter" pour créer les variants.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
+                  )}
                   
                   {/* Template énoncé */}
                   <div>

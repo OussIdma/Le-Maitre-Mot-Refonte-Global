@@ -136,3 +136,4 @@ Mise à jour complète de la documentation pour **industrialiser** l'ajout de g�
 **Document créé le :** 2025-01-XX  
 **Statut :** ✅ Validé
 
+

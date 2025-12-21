@@ -7,7 +7,7 @@ services:
     volumes:
       - mongo_data:/data/db
     environment:
-      MONGO_INITDB_DATABASE: mathalea_db
+      MONGO_INITDB_DATABASE: le_maitre_mot_db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -28,7 +28,7 @@ services:
       - backend_uploads:/app/backend/uploads
     environment:
       - MONGO_URL=mongodb://mongo:27017
-      - DB_NAME=mathalea_db
+      - DB_NAME=le_maitre_mot_db
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - PYTHONPATH=/app
     depends_on:

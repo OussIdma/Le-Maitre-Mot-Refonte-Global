@@ -251,3 +251,4 @@ Tous les événements importants incluent `outcome` :
 - `error` : erreur/exception
 - `in_progress` : en cours
 
+

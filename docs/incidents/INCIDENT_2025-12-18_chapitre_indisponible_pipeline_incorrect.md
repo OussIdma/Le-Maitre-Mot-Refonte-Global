@@ -284,3 +284,4 @@ docker compose logs backend | grep -i "CATALOG\|GENERATE"
 
 
 
+

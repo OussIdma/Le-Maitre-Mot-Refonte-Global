@@ -47,7 +47,8 @@ if not mongo_url:
     raise ValueError("MONGO_URL environment variable is required")
 
 client = AsyncIOMotorClient(mongo_url)
-db = client.mathalea_db  # Use same DB as catalogue routes
+db_name = os.environ.get('DB_NAME', 'le_maitre_mot_db')
+db = client[db_name]  # Use unified DB
 
 # Collections dédiées (ne perturbent pas les collections existantes)
 competences_collection = db.competences

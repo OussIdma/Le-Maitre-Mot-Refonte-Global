@@ -127,6 +127,9 @@ def format_dynamic_exercise(
         'difficulty': difficulty,
         'seed': seed,
     })
+    # Nettoyer les clés réservées du contexte pour éviter des erreurs de logging
+    ctx.pop("exc_info", None)
+    ctx.pop("stack_info", None)
     set_request_context(**ctx)
     
     # Log début handler
@@ -150,14 +153,31 @@ def format_dynamic_exercise(
     gen_start = time.time()
     factory_gen = GeneratorFactory.get(generator_key)
     if factory_gen:
-        gen_result = GeneratorFactory.generate(
-            key=generator_key,
-            exercise_params=exercise_params,
-            overrides=overrides,
-            seed=seed,
-        )
-        variables = gen_result.get("variables", {})
-        results = gen_result.get("results", {})
+        try:
+            gen_result = GeneratorFactory.generate(
+                key=generator_key,
+                exercise_params=exercise_params,
+                overrides=overrides,
+                seed=seed,
+            )
+            variables = gen_result.get("variables", {})
+            results = gen_result.get("results", {})
+        except ValueError as e:
+            obs_logger.error(
+                "event=generate_exception",
+                event="generate_exception",
+                outcome="error",
+                reason="params_invalid",
+                **ctx
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "GENERATOR_PARAMS_INVALID",
+                    "error": "generator_params_invalid",
+                    "message": str(e),
+                }
+            )
     else:
         gen_result = generate_dynamic_exercise(
             generator_key=generator_key,
@@ -237,16 +257,11 @@ def format_dynamic_exercise(
     if figure_type:
         all_vars["figure_type"] = figure_type
 
-    # Log de contexte pour diagnostiquer les cas carrés / placeholders résiduels
-    ctx.update({
-        'figure_type': figure_type,
-    })
     obs_logger.debug(
         "event=render_prepare",
         event="render_prepare",
         outcome="in_progress",
         figure_type_raw=raw_figure_type,
-        figure_type=figure_type,
         available_keys_count=len(all_vars),
         **ctx
     )
@@ -433,12 +448,16 @@ def format_dynamic_exercise(
         # - Les champs legacy "enonce_template_html"/"solution_template_html" ne sont plus
         #   utilisés pour le rendu (uniquement miroir/compat éventuel côté admin/DB).
         # On construit une liste d'objets avec les attributs attendus par choose_template_variant
+        # IMPORTANT: Le champ 'id' est utilisé pour la sélection fixed, il doit correspondre à variant_id
         variant_objs: List[SimpleNamespace] = []
         for v in template_variants:
             if isinstance(v, dict):
+                # Utiliser variant_id comme id si présent, sinon id
+                variant_id = v.get("variant_id") or v.get("id")
                 variant_objs.append(
                     SimpleNamespace(
-                        id=v.get("id"),
+                        id=variant_id,  # Utilisé pour la sélection fixed
+                        variant_id=variant_id,  # Pour traçabilité
                         enonce_template_html=v.get("enonce_template_html", ""),
                         solution_template_html=v.get("solution_template_html", ""),
                         weight=v.get("weight", 1),
@@ -448,15 +467,114 @@ def format_dynamic_exercise(
                 # Si déjà un objet avec les bons attributs, on le garde tel quel
                 variant_objs.append(v)  # type: ignore[arg-type]
 
-        chosen_variant = choose_template_variant(
-            variants=variant_objs,
-            seed=seed,
-            exercise_id=stable_key,
-        )
-        
-        # Log variant sélectionné
-        variant_id = getattr(chosen_variant, 'variant_id', None) if chosen_variant else None
-        ctx.update({'variant_id': variant_id})
+        # Sélection déterministe si variant_id présent dans exercise_params
+        variant_id_from_params = exercise_params.get("variant_id")
+        if variant_id_from_params:
+            # Sélection déterministe via mode="fixed"
+            try:
+                chosen_variant = choose_template_variant(
+                    variants=variant_objs,
+                    seed=seed,
+                    exercise_id=stable_key,
+                    mode="fixed",
+                    fixed_variant_id=variant_id_from_params
+                )
+                variant_id = variant_id_from_params  # Utiliser celui fourni
+                obs_logger.info(
+                    "event=variant_fixed_selected",
+                    event="variant_fixed_selected",
+                    outcome="success",
+                    variant_id=variant_id,
+                    variants_count=len(variant_objs),
+                    **ctx
+                )
+            except ValueError as e:
+                # Variant non trouvé → erreur explicite
+                obs_logger.error(
+                    "event=variant_fixed_error",
+                    event="variant_fixed_error",
+                    outcome="error",
+                    reason="variant_id_not_found",
+                    variant_id_requested=variant_id_from_params,
+                    available_variant_ids=[getattr(v, 'id', None) for v in variant_objs],
+                    **ctx
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "VARIANT_ID_NOT_FOUND",
+                        "error": "variant_id_not_found",
+                        "message": f"Le variant_id '{variant_id_from_params}' n'a pas été trouvé dans les template_variants.",
+                        "variant_id_requested": variant_id_from_params,
+                        "available_variant_ids": [getattr(v, 'id', None) for v in variant_objs],
+                        "exercise_template_id": exercise_template.get("id"),
+                    }
+                )
+        else:
+            # Fallback déterministe quand variant_id absent (compatibilité legacy)
+            # Sélectionner le premier variant disponible de manière déterministe
+            if not variant_objs:
+                # Aucun variant disponible → erreur explicite
+                obs_logger.error(
+                    "event=variant_no_variants_available",
+                    event="variant_no_variants_available",
+                    outcome="error",
+                    reason="no_variants_in_template",
+                    **ctx
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "NO_VARIANTS_AVAILABLE",
+                        "error": "no_variants_available",
+                        "message": "Aucun template_variant disponible pour cet exercice.",
+                        "exercise_template_id": exercise_template.get("id"),
+                    }
+                )
+            
+            # Sélectionner le premier variant de manière déterministe (mode="fixed")
+            available_variant_ids = [getattr(v, 'id', None) for v in variant_objs]
+            fallback_variant_id = available_variant_ids[0] if available_variant_ids else None
+            
+            if fallback_variant_id:
+                chosen_variant = choose_template_variant(
+                    variants=variant_objs,
+                    seed=seed,
+                    exercise_id=stable_key,
+                    mode="fixed",
+                    fixed_variant_id=fallback_variant_id
+                )
+                variant_id = getattr(chosen_variant, 'variant_id', None) or fallback_variant_id
+                obs_logger.info(
+                    "event=variant_fallback_selected",
+                    event="variant_fallback_selected",
+                    outcome="success",
+                    reason="variant_id_absent",
+                    variant_id=variant_id,
+                    fallback_variant_id=fallback_variant_id,
+                    variants_count=len(variant_objs),
+                    **ctx
+                )
+            else:
+                # Cas de sécurité : aucun variant_id disponible
+                obs_logger.error(
+                    "event=variant_no_id_available",
+                    event="variant_no_id_available",
+                    outcome="error",
+                    reason="no_variant_id_in_variants",
+                    **ctx
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "NO_VARIANT_ID_AVAILABLE",
+                        "error": "no_variant_id_available",
+                        "message": "Aucun variant_id disponible dans les template_variants.",
+                        "exercise_template_id": exercise_template.get("id"),
+                    }
+                )
+
+        # Log variant sélectionné (après sélection fixe ou fallback)
         obs_logger.info(
             "event=variant_selected",
             event="variant_selected",

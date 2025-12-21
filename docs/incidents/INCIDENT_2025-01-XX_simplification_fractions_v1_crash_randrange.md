@@ -186,3 +186,4 @@ python3 -m py_compile backend/generators/simplification_fractions_v1.py
 - Fichier source : `backend/generators/simplification_fractions_v1.py`
 - Tests : `backend/tests/test_simplification_fractions_v1.py`
 
+

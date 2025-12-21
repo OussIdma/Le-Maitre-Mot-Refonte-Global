@@ -180,6 +180,9 @@ class ObservabilityLogger:
             'log_tag': self.tag,
             **kwargs
         }
+        # Nettoyage des clés réservées pour éviter les collisions
+        extra.pop('exc_info', None)
+        extra.pop('stack_info', None)
         
         # Exception handling (éviter doublons)
         exc_info = kwargs.pop('exc_info', False)

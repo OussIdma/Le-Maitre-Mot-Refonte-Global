@@ -569,14 +569,14 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     """
     request_start = time.time()
     ensure_request_id()
-    set_request_context({
-        'chapter_code': getattr(request, 'code_officiel', None),
-        'niveau': getattr(request, 'niveau', None),
-        'chapitre': getattr(request, 'chapitre', None),
-        'difficulty': getattr(request, 'difficulte', None),
-        'offer': getattr(request, 'offer', None),
-        'seed': getattr(request, 'seed', None),
-    })
+    set_request_context(
+        chapter_code=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        chapitre=getattr(request, 'chapitre', None),
+        difficulty=getattr(request, 'difficulte', None),
+        offer=getattr(request, 'offer', None),
+        seed=getattr(request, 'seed', None),
+    )
     obs_logger.info(
         "event=request_in",
         event="request_in",
@@ -824,7 +824,6 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     outcome="in_progress",
                     chosen_path="TEMPLATE",
                     chapter=chapter_code_for_db,
-                    pipeline="TEMPLATE",
                     **ctx
                 )
                 try:
@@ -946,12 +945,12 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     outcome="in_progress",
                     chosen_path="MIXED",
                     chapter=chapter_code_for_db,
-                    pipeline="MIXED",
                     **ctx
                 )
                 try:
                     has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
                     if has_exercises:
+                        # Récupérer les exercices avec filtres
                         exercises = await exercise_service.get_exercises(
                             chapter_code=chapter_code_for_db,
                             offer=request.offer if hasattr(request, 'offer') else None,
@@ -960,8 +959,34 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
                         static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                         
+                        # Log du pool filtré pour diagnostic
+                        obs_logger.debug(
+                            "event=mixed_pool_filtered",
+                            event="mixed_pool_filtered",
+                            outcome="in_progress",
+                            filters_applied={
+                                "offer": request.offer if hasattr(request, 'offer') else None,
+                                "difficulty": request.difficulte if hasattr(request, 'difficulte') else None
+                            },
+                            dynamic_count=len(dynamic_exercises),
+                            static_count=len(static_exercises),
+                            total_count=len(exercises),
+                            **ctx
+                        )
+                        
                         # Si aucun exercice avec filtres, retenter sans filtres (dégradé)
                         if len(dynamic_exercises) == 0 and len(static_exercises) == 0:
+                            obs_logger.warning(
+                                "event=mixed_no_filtered_exercises",
+                                event="mixed_no_filtered_exercises",
+                                outcome="warning",
+                                reason="no_exercises_with_filters",
+                                filters_applied={
+                                    "offer": request.offer if hasattr(request, 'offer') else None,
+                                    "difficulty": request.difficulte if hasattr(request, 'difficulte') else None
+                                },
+                                **ctx
+                            )
                             exercises = await exercise_service.get_exercises(
                                 chapter_code=chapter_code_for_db,
                                 offer=None,
@@ -1072,12 +1097,47 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             )
                             return static_exercise
                         
-                        # 4) Aucun exo → 422 explicite
+                        # 4) Aucun exo → 422 explicite avec logs détaillés
+                        # Récupérer les statistiques pour diagnostic
+                        all_exercises = await exercise_service.get_exercises(
+                            chapter_code=chapter_code_for_db,
+                            offer=None,
+                            difficulty=None
+                        )
+                        all_dynamic = [ex for ex in all_exercises if ex.get("is_dynamic") is True]
+                        all_static = [ex for ex in all_exercises if ex.get("is_dynamic") is not True]
+                        
+                        # Compter par difficulty/offer pour diagnostic
+                        by_difficulty = {}
+                        by_offer = {}
+                        for ex in all_exercises:
+                            diff = ex.get("difficulty", "unknown")
+                            off = ex.get("offer", "unknown")
+                            by_difficulty[diff] = by_difficulty.get(diff, 0) + 1
+                            by_offer[off] = by_offer.get(off, 0) + 1
+                        
+                        obs_logger.error(
+                            "event=mixed_no_exercises",
+                            event="mixed_no_exercises",
+                            outcome="error",
+                            reason="list_empty",
+                            filters_applied={
+                                "offer": request.offer if hasattr(request, 'offer') else None,
+                                "difficulty": request.difficulte if hasattr(request, 'difficulte') else None
+                            },
+                            total_exercises_in_db=len(all_exercises),
+                            total_dynamic_in_db=len(all_dynamic),
+                            total_static_in_db=len(all_static),
+                            by_difficulty=by_difficulty,
+                            by_offer=by_offer,
+                            **ctx
+                        )
+                        
                         raise HTTPException(
                             status_code=422,
                             detail={
-                                "error_code": "NO_EXERCISE_AVAILABLE",
-                                "error": "no_exercise_available",
+                                "error_code": "MIXED_PIPELINE_NO_EXERCISES_OR_TYPES",
+                                "error": "mixed_pipeline_no_exercises_or_types",
                                 "message": (
                                     f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
                                     f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
@@ -1088,6 +1148,13 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 "filters": {
                                     "offer": getattr(request, 'offer', None),
                                     "difficulty": getattr(request, 'difficulte', None)
+                                },
+                                "diagnostic": {
+                                    "total_exercises_in_db": len(all_exercises),
+                                    "total_dynamic": len(all_dynamic),
+                                    "total_static": len(all_static),
+                                    "by_difficulty": by_difficulty,
+                                    "by_offer": by_offer
                                 }
                             }
                         )
@@ -1133,7 +1200,6 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     outcome="in_progress",
                     chosen_path="SPEC",
                     chapter=chapter_code_for_db,
-                    pipeline="SPEC",
                     **ctx
                 )
                 logger.info(f"[PIPELINE] Pipeline SPEC pour {chapter_code_for_db}: utilisation du pipeline STATIQUE.")

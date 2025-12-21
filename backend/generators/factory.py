@@ -155,6 +155,8 @@ class GeneratorFactory:
             'generator_key': key,
             'seed': seed,
         })
+        ctx.pop("exc_info", None)
+        ctx.pop("stack_info", None)
         
         # Log début génération
         obs_logger.info(
@@ -195,6 +197,8 @@ class GeneratorFactory:
             # Validation
             valid, result = gen_class.validate_params(merged)
             if not valid:
+                ctx.pop("exc_info", None)
+                ctx.pop("stack_info", None)
                 obs_logger.error(
                     "event=params_invalid",
                     event="params_invalid",

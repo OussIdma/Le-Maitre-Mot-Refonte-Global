@@ -36,7 +36,8 @@ class ExerciseTemplateService:
             raise ValueError("MONGO_URL environment variable is required")
         
         self.client = AsyncIOMotorClient(mongo_url)
-        self.db = self.client.mathalea_db  # Use same DB as catalogue and routes
+        db_name = os.environ.get('DB_NAME', 'le_maitre_mot_db')
+        self.db = self.client[db_name]  # Use unified DB
         self.exercise_types_collection = self.db.exercise_types
     
     async def generate_exercise(

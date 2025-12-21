@@ -187,3 +187,4 @@
 **Document créé le :** 2025-01-XX  
 **Statut :** ✅ Référence pour support/QA
 
+

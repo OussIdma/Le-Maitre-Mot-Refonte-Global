@@ -137,3 +137,4 @@ curl -X POST http://localhost:8000/api/v1/exercises/generate \
 **Document créé le :** 2025-12-21  
 **Statut :** ✅ Résolu
 
+

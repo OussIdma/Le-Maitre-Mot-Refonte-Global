@@ -342,3 +342,4 @@ Ce document décrit **concrètement** ce que fait chaque paramètre du générat
 **Dernière mise à jour :** 2025-01-XX  
 **Version :** 1.0.0
 
+

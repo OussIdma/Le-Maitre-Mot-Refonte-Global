@@ -186,3 +186,4 @@ docker compose restart backend
 docker compose logs backend --tail 50 --follow
 ```
 
+

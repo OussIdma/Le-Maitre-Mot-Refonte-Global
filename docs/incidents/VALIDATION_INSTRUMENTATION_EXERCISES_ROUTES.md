@@ -322,3 +322,4 @@ L'instrumentation est validée si :
 **Document créé le :** 2025-01-XX  
 **Statut :** ✅ Checklist prête pour validation manuelle
 
+

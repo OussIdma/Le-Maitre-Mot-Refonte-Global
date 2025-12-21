@@ -268,3 +268,4 @@ Si `template_variants` fourni dans un exercice spec-based :
 
 
 
+

@@ -811,3 +811,4 @@ class MonGenerator(BaseGenerator):
 **Dernière mise à jour :** 2025-01-XX  
 **Statut :** ✅ Validé
 
+

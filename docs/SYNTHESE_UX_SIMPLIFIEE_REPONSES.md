@@ -362,3 +362,4 @@ Un générateur est éligible à l'UX simplifiée si :
 **Document créé le :** 2025-01-XX  
 **Statut :** ✅ Synthèse prête pour validation
 
+

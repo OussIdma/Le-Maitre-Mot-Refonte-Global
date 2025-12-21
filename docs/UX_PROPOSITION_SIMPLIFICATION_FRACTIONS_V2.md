@@ -492,3 +492,4 @@ Système affiche : Tous les paramètres en read-only ou éditables
 **Document créé le :** 2025-01-XX  
 **Statut :** ✅ Proposition prête pour validation
 
+
