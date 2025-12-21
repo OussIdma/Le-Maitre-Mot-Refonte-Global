@@ -20,6 +20,22 @@ IMPORTANT: Tout le contenu est en HTML PUR.
 
 from typing import List, Dict, Any, Optional
 import random
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
+
+obs_logger = get_obs_logger('PIPELINE')
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
+
+obs_logger = get_obs_logger('PIPELINE')
 
 
 # =============================================================================
@@ -373,7 +389,8 @@ def get_random_gm08_exercise(
     if seed is not None:
         random.seed(seed)
     
-    return random.choice(available)
+    ctx = get_request_context()
+    return safe_random_choice(available, ctx, obs_logger)
 
 
 def get_gm08_batch(

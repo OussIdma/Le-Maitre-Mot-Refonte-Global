@@ -222,18 +222,50 @@ class SymetrieAxialeV2Generator(BaseGenerator):
             y_range = range(1, 10)
         
         if figure_type == "point":
-            x = self._rng.choice(list(x_range))
-            y = self._rng.choice(list(y_range))
+            ctx = get_request_context()
+            ctx.update({'generator_key': 'SYMETRIE_AXIALE_V2'})
+            x_list = list(x_range)
+            y_list = list(y_range)
+            if not x_list or not y_list:
+                self._obs_logger.warning(
+                    "event=pool_empty_prevented",
+                    event="pool_empty",
+                    outcome="error",
+                    reason="list_empty",
+                    pool_size=len(x_list) if x_list else len(y_list),
+                    pool_type="coordinate_range",
+                    **ctx
+                )
+                raise ValueError(f"Range vide: x_range={x_range}, y_range={y_range}")
+            x = safe_random_choice(x_list, ctx, self._obs_logger)
+            y = safe_random_choice(y_list, ctx, self._obs_logger)
             return {
                 "type": "point",
                 "points": [{"x": x, "y": y, "label": "A"}]
             }
         
         elif figure_type == "segment":
-            x1 = self._rng.choice(list(x_range))
-            y1 = self._rng.choice(list(y_range))
-            x2 = self._rng.choice([x for x in x_range if x != x1] or [x1 + 1])
-            y2 = self._rng.choice([y for y in y_range if y != y1] or [y1 + 1])
+            ctx = get_request_context()
+            ctx.update({'generator_key': 'SYMETRIE_AXIALE_V2'})
+            x_list = list(x_range)
+            y_list = list(y_range)
+            if not x_list or not y_list:
+                self._obs_logger.warning(
+                    "event=pool_empty_prevented",
+                    event="pool_empty",
+                    outcome="error",
+                    reason="list_empty",
+                    pool_size=len(x_list) if x_list else len(y_list),
+                    pool_type="coordinate_range",
+                    **ctx
+                )
+                raise ValueError(f"Range vide: x_range={x_range}, y_range={y_range}")
+            x1 = safe_random_choice(x_list, ctx, self._obs_logger)
+            y1 = safe_random_choice(y_list, ctx, self._obs_logger)
+            x2_candidates = [x for x in x_range if x != x1] or [x1 + 1]
+            y2_candidates = [y for y in y_range if y != y1] or [y1 + 1]
+            x2 = safe_random_choice(x2_candidates, ctx, self._obs_logger)
+            y2 = safe_random_choice(y2_candidates, ctx, self._obs_logger)
             return {
                 "type": "segment",
                 "points": [
@@ -243,9 +275,24 @@ class SymetrieAxialeV2Generator(BaseGenerator):
             }
         
         elif figure_type == "triangle":
-            x1 = self._rng.choice(list(x_range))
-            y1 = self._rng.choice(list(y_range))
-            x2 = x1 + self._rng.choice([1, 2])
+            ctx = get_request_context()
+            ctx.update({'generator_key': 'SYMETRIE_AXIALE_V2'})
+            x_list = list(x_range)
+            y_list = list(y_range)
+            if not x_list or not y_list:
+                self._obs_logger.warning(
+                    "event=pool_empty_prevented",
+                    event="pool_empty",
+                    outcome="error",
+                    reason="list_empty",
+                    pool_size=len(x_list) if x_list else len(y_list),
+                    pool_type="coordinate_range",
+                    **ctx
+                )
+                raise ValueError(f"Range vide: x_range={x_range}, y_range={y_range}")
+            x1 = safe_random_choice(x_list, ctx, self._obs_logger)
+            y1 = safe_random_choice(y_list, ctx, self._obs_logger)
+            x2 = x1 + safe_random_choice([1, 2], ctx, self._obs_logger)
             y2 = y1 + self._rng.choice([-2, -1, 1, 2])
             x3 = x1 + self._rng.choice([0, 1])
             y3 = y1 + self._rng.choice([1, 2, 3])

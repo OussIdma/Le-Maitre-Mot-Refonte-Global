@@ -15,6 +15,12 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import random
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
 
 
 class ParamType(str, Enum):
@@ -133,6 +139,7 @@ class BaseGenerator(ABC):
     def __init__(self, seed: Optional[int] = None):
         self._seed = seed
         self._rng = random.Random(seed)
+        self._obs_logger = get_obs_logger('GENERATOR')
     
     @property
     def seed(self) -> Optional[int]:

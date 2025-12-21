@@ -12,8 +12,15 @@ from backend.models.math_models import (
     MathExerciseSpec, MathExerciseType, DifficultyLevel, 
     GeometricFigure
 )
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
 
 logger = logging.getLogger(__name__)
+obs_logger = get_obs_logger('PIPELINE')
 
 class MathGenerationService:
     """Service de génération d'exercices mathématiques structurés"""
@@ -47,9 +54,14 @@ class MathGenerationService:
         exercise_types = self._map_chapter_to_types(chapitre, niveau)
         
         specs = []
+        ctx = get_request_context()
+        ctx.update({
+            'niveau': niveau,
+            'chapitre': chapitre,
+        })
         for i in range(nb_exercices):
-            # Choisir un type d'exercice
-            exercise_type = random.choice(exercise_types)
+            # Choisir un type d'exercice avec prévention pool vide
+            exercise_type = safe_random_choice(exercise_types, ctx, obs_logger)
             
             # Générer la spec selon le type
             spec = self._generate_spec_by_type(
@@ -69,22 +81,14 @@ class MathGenerationService:
         exercise_types: List[MathExerciseType],
         nb_exercices: int
     ) -> List[MathExerciseSpec]:
-        """
-        Génère des exercices avec des types explicitement spécifiés.
+        """Point d'entrée avec types d'exercices spécifiés"""
         
-        Cette méthode est utilisée par le mode code_officiel qui spécifie
-        directement les types d'exercices depuis le référentiel curriculum.
+        ctx = get_request_context()
+        ctx.update({
+            'niveau': niveau,
+            'chapitre': chapitre,
+        })
         
-        Args:
-            niveau: Niveau scolaire (ex: "6e")
-            chapitre: Nom du chapitre backend pour le contexte
-            difficulte: Niveau de difficulté (facile, moyen, difficile)
-            exercise_types: Liste des MathExerciseType à utiliser
-            nb_exercices: Nombre d'exercices à générer
-            
-        Returns:
-            Liste des specs d'exercices générés
-        """
         # Reset pour chaque génération
         self.used_points_sets.clear()
         
@@ -96,8 +100,8 @@ class MathGenerationService:
         
         specs = []
         for i in range(nb_exercices):
-            # Choisir un type d'exercice parmi ceux spécifiés
-            exercise_type = random.choice(exercise_types)
+            # Choisir un type d'exercice parmi ceux spécifiés avec prévention pool vide
+            exercise_type = safe_random_choice(exercise_types, ctx, obs_logger)
             
             # Générer la spec selon le type
             spec = self._generate_spec_by_type(
@@ -235,7 +239,9 @@ class MathGenerationService:
             "Trigonométrie": [MathExerciseType.TRIGONOMETRIE],
             "Le cercle": [MathExerciseType.CERCLE],
             "Cercle": [MathExerciseType.CERCLE],
-            "Organisation et gestion de données, fonctions": [MathExerciseType.STATISTIQUES, MathExerciseType.PROPORTIONNALITE]
+            "Organisation et gestion de données, fonctions": [MathExerciseType.STATISTIQUES, MathExerciseType.PROPORTIONNALITE],
+            # ========== Chapitres de test ==========
+            # "AA TEST" : pas de mapping legacy - utilise uniquement les exercices dynamiques (pipeline MIXED)
         }
         
         # 🚨 SÉCURITÉ CRITIQUE : Lever une erreur si chapitre inconnu
@@ -433,6 +439,11 @@ class MathGenerationService:
         RÈGLE CRITIQUE : Toutes les longueurs dans l'énoncé (longueurs_connues) 
         doivent être des entiers ou décimaux simples, JAMAIS des valeurs irrationnelles.
         """
+        ctx = get_request_context()
+        ctx.update({
+            'chapitre': chapitre,
+            'difficulty': difficulte,
+        })
         
         points = self._get_next_geometry_points()
         angle_droit = points[1]  # Point de l'angle droit (milieu par défaut)
@@ -450,12 +461,12 @@ class MathGenerationService:
         
         # Choisir un triplet selon la difficulté
         if difficulte == "facile":
-            a, b, c = random.choice(triplets_faciles)
+            a, b, c = safe_random_choice(triplets_faciles, ctx, obs_logger)
         else:
-            a, b, c = random.choice(triplets_difficiles)
+            a, b, c = safe_random_choice(triplets_difficiles, ctx, obs_logger)
         
         # Décider quel côté calculer
-        calcul_type = random.choice(["hypotenuse", "cote"])
+        calcul_type = safe_random_choice(["hypotenuse", "cote"], ctx, obs_logger)
         
         if calcul_type == "hypotenuse":
             # CAS 1 : Calculer l'hypoténuse
@@ -537,6 +548,11 @@ class MathGenerationService:
     def _gen_calcul_relatifs(
         self, niveau: str, chapitre: str, difficulte: str
     ) -> MathExerciseSpec:
+        ctx = get_request_context()
+        ctx.update({
+            'chapitre': chapitre,
+            'difficulty': difficulte,
+        })
         """Génère un exercice de calculs avec nombres relatifs"""
         
         if difficulte == "facile":
@@ -551,7 +567,7 @@ class MathGenerationService:
         operations_used = []
         
         for i in range(1, len(operandes)):
-            op = random.choice(operations_list)
+            op = safe_random_choice(operations_list, ctx, obs_logger)
             operations_used.append(op)
             operand = operandes[i]
             
@@ -673,18 +689,20 @@ class MathGenerationService:
     def _gen_calcul_fractions(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
         """Génère un exercice de calculs avec fractions (6e collège)"""
         
+        ctx = get_request_context()
+        ctx.update({'chapitre': chapitre, 'difficulte': difficulte})
         if difficulte == "facile":
             # Fractions simples avec dénominateurs petits
-            num1, den1 = random.randint(1, 5), random.choice([2, 3, 4, 5])
-            num2, den2 = random.randint(1, 5), random.choice([2, 3, 4, 5])
+            num1, den1 = safe_randrange(1, 6, context=ctx, logger=obs_logger), safe_random_choice([2, 3, 4, 5], ctx, obs_logger)
+            num2, den2 = safe_randrange(1, 6, context=ctx, logger=obs_logger), safe_random_choice([2, 3, 4, 5], ctx, obs_logger)
         else:
-            num1, den1 = random.randint(1, 10), random.randint(2, 12)
-            num2, den2 = random.randint(1, 10), random.randint(2, 12)
+            num1, den1 = safe_randrange(1, 11, context=ctx, logger=obs_logger), safe_randrange(2, 13, context=ctx, logger=obs_logger)
+            num2, den2 = safe_randrange(1, 11, context=ctx, logger=obs_logger), safe_randrange(2, 13, context=ctx, logger=obs_logger)
         
         frac1 = Fraction(num1, den1)
         frac2 = Fraction(num2, den2)
         
-        operation = random.choice(["+", "-"])
+        operation = safe_random_choice(["+", "-"], ctx, obs_logger)
         
         if operation == "+":
             resultat = frac1 + frac2
@@ -733,6 +751,7 @@ class MathGenerationService:
         )
     
     def _gen_calcul_decimaux(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice de calculs avec nombres décimaux"""
         
         if difficulte == "facile":
@@ -742,7 +761,7 @@ class MathGenerationService:
             a = round(random.uniform(5, 50), 2)
             b = round(random.uniform(5, 50), 2)
         
-        operation = random.choice(["+", "-", "*"])
+        operation = safe_random_choice(["+", "-", "*"], ctx, obs_logger)
         
         if operation == "+":
             resultat = round(a + b, 2)
@@ -909,9 +928,10 @@ class MathGenerationService:
         )
     
     def _gen_perimetre_aire(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice de périmètres et aires"""
         
-        figure_type = random.choice(["rectangle", "carre", "cercle"])
+        figure_type = safe_random_choice(["rectangle", "carre", "cercle"], ctx, obs_logger)
         
         if figure_type == "rectangle":
             longueur = random.randint(8, 20)
@@ -1094,6 +1114,7 @@ class MathGenerationService:
         )
 
     def _gen_volume(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice de calcul de volumes"""
         
         solides = ["cube", "pave", "cylindre", "prisme"]
@@ -1101,7 +1122,7 @@ class MathGenerationService:
         if difficulte == "facile":
             solides = ["cube", "pave"]
         
-        solide = random.choice(solides)
+        solide = safe_random_choice(solides, ctx, obs_logger)
         
         if solide == "cube":
             arete = random.randint(3, 12)
@@ -1291,6 +1312,7 @@ class MathGenerationService:
         )
     
     def _gen_probabilites(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice de probabilités"""
         
         situations = [
@@ -1320,7 +1342,7 @@ class MathGenerationService:
             }
         ]
         
-        situation = random.choice(situations)
+        situation = safe_random_choice(situations, ctx, obs_logger)
         
         probabilite = situation["issues_favorables"] / situation["nb_issues"]
         probabilite_fraction = Fraction(situation["issues_favorables"], situation["nb_issues"])
@@ -1354,9 +1376,10 @@ class MathGenerationService:
         )
     
     def _gen_puissances(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice sur les puissances"""
         
-        type_calcul = random.choice(["calcul_simple", "produit", "quotient"])
+        type_calcul = safe_random_choice(["calcul_simple", "produit", "quotient"], ctx, obs_logger)
         
         if type_calcul == "calcul_simple":
             base = random.randint(2, 10)
@@ -1455,9 +1478,10 @@ class MathGenerationService:
             )
 
     def _gen_cercle(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice sur les cercles (périmètre, aire)"""
         
-        type_calcul = random.choice(["perimetre", "aire", "rayon_depuis_perimetre"])
+        type_calcul = safe_random_choice(["perimetre", "aire", "rayon_depuis_perimetre"], ctx, obs_logger)
         
         if type_calcul == "perimetre":
             rayon = random.randint(3, 15)
@@ -1576,6 +1600,7 @@ class MathGenerationService:
             )
     
     def _gen_thales(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice sur le théorème de Thalès"""
         
         # Obtenir 2 sets de points (3+3 = 6 points, on en utilisera 5)
@@ -1589,7 +1614,7 @@ class MathGenerationService:
         # Choisir des rapports simples
         if difficulte == "facile":
             rapports = [2, 3, 4]
-            k = random.choice(rapports)
+            k = safe_random_choice(rapports, ctx, obs_logger)
         else:
             k = random.randint(2, 5)
         
@@ -1659,6 +1684,7 @@ class MathGenerationService:
         )
     
     def _gen_trigonometrie(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Génère un exercice de trigonométrie"""
         
         points = self._get_next_geometry_points()
@@ -1671,11 +1697,11 @@ class MathGenerationService:
         }
         
         if difficulte == "facile":
-            angle = random.choice([30, 45, 60])
+            angle = safe_random_choice([30, 45, 60], ctx, obs_logger)
         else:
             angle = random.randint(25, 70)
         
-        type_calcul = random.choice(["cote_oppose", "cote_adjacent", "hypotenuse"])
+        type_calcul = safe_random_choice(["cote_oppose", "cote_adjacent", "hypotenuse"], ctx, obs_logger)
         
         if type_calcul == "cote_oppose":
             # Calculer le côté opposé avec sin
@@ -1770,13 +1796,7 @@ class MathGenerationService:
         )
     
     def _gen_symetrie_axiale(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice de symétrie axiale
-        Concepts :
-        - Trouver le symétrique d'un point par rapport à un axe
-        - Vérifier si deux points sont symétriques
-        - Propriétés : distances égales à l'axe, perpendiculaire à l'axe
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -1786,11 +1806,11 @@ class MathGenerationService:
         if difficulte == "facile":
             type_exercice = "trouver_symetrique"
             # Axe simple (vertical ou horizontal)
-            axe_type = random.choice(["vertical", "horizontal"])
+            axe_type = safe_random_choice(["vertical", "horizontal"], ctx, obs_logger)
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             # Peut inclure des axes obliques
-            axe_type = random.choice(["vertical", "horizontal", "oblique"])
+            axe_type = safe_random_choice(["vertical", "horizontal", "oblique"], ctx, obs_logger)
         
         if type_exercice == "trouver_symetrique":
             # Point original
@@ -1915,7 +1935,7 @@ class MathGenerationService:
             point_b = points[1]
             
             # Créer deux cas : symétriques ou non
-            sont_symetriques = random.choice([True, False])
+            sont_symetriques = safe_random_choice([True, False], ctx, obs_logger)
             
             if axe_type == "vertical":
                 axe_position = random.randint(4, 8)
@@ -2159,14 +2179,7 @@ class MathGenerationService:
             )
     
     def _gen_symetrie_centrale(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice de symétrie centrale (5e)
-        
-        Concepts :
-        - Trouver le symétrique d'un point par rapport à un centre
-        - Le centre est le milieu du segment [MM']
-        - Formule : M' = 2*O - M où O est le centre de symétrie
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -2176,7 +2189,7 @@ class MathGenerationService:
         if difficulte == "facile":
             type_exercice = "trouver_symetrique"
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
         
         if type_exercice == "trouver_symetrique":
             # Trouver le symétrique d'un point par rapport à un centre
@@ -2205,8 +2218,8 @@ class MathGenerationService:
             # Vérifier que l'image est dans les limites
             if image_x < 0 or image_x > 14 or image_y < 0 or image_y > 14:
                 # Recalculer avec un point plus proche du centre
-                point_x = centre_x + random.choice([-2, -1, 1, 2])
-                point_y = centre_y + random.choice([-2, -1, 1, 2])
+                point_x = centre_x + safe_random_choice([-2, -1, 1, 2], ctx, obs_logger)
+                point_y = centre_y + safe_random_choice([-2, -1, 1, 2], ctx, obs_logger)
                 image_x = 2 * centre_x - point_x
                 image_y = 2 * centre_y - point_y
             
@@ -2280,7 +2293,7 @@ class MathGenerationService:
             point_b = points[2]
             
             # Créer deux cas : symétriques ou non
-            sont_symetriques = random.choice([True, False])
+            sont_symetriques = safe_random_choice([True, False], ctx, obs_logger)
             
             # Centre
             centre_x = random.randint(5, 9)
@@ -2472,14 +2485,7 @@ class MathGenerationService:
             )    # ========== SPRINT 1 : Générateurs 6e (G03, N03, SP01) ==========
     
     def _gen_perpendiculaires_paralleles(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les perpendiculaires et parallèles (6e_G03)
-        
-        Concepts :
-        - Tracer une perpendiculaire à une droite passant par un point
-        - Tracer une parallèle à une droite passant par un point
-        - Identifier des droites perpendiculaires/parallèles
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -2488,7 +2494,7 @@ class MathGenerationService:
         if difficulte == "facile":
             type_exercice = "tracer_perpendiculaire"
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
         
         if type_exercice == "tracer_perpendiculaire":
             # Tracer une perpendiculaire à une droite passant par un point
@@ -2643,7 +2649,7 @@ class MathGenerationService:
             droite1 = f"({all_points[0]}{all_points[1]})"
             droite2 = f"({all_points[2]}{all_points[3]})"
             
-            relation = random.choice(["perpendiculaires", "parallèles", "quelconques"])
+            relation = safe_random_choice(["perpendiculaires", "parallèles", "quelconques"], ctx, obs_logger)
             
             etapes = [
                 f"Observer les droites {droite1} et {droite2}",
@@ -2714,21 +2720,14 @@ class MathGenerationService:
             )
     
     def _gen_droite_numerique(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur la droite numérique et le repérage (6e_N03)
-        
-        Concepts :
-        - Placer un nombre sur la droite graduée
-        - Lire l'abscisse d'un point
-        - Calculer la distance entre deux points
-        """
+        ctx = get_request_context()
         
         types_exercices = ["placer_nombre", "lire_abscisse", "calculer_distance"]
         
         if difficulte == "facile":
             type_exercice = "lire_abscisse"
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
         
         # Définir l'échelle de la droite selon la difficulté
         if difficulte == "facile":
@@ -2880,14 +2879,7 @@ class MathGenerationService:
         )
     
     def _gen_tableaux_donnees(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les tableaux de données (6e_SP01)
-        
-        Concepts :
-        - Lire un tableau de données
-        - Compléter un tableau
-        - Calculer des totaux
-        """
+        ctx = get_request_context()
         
         types_exercices = ["lire_tableau", "completer_tableau", "calculer_total"]
         
@@ -2896,11 +2888,11 @@ class MathGenerationService:
             nb_lignes = 2
             nb_colonnes = 3
         elif difficulte == "moyen":
-            type_exercice = random.choice(["lire_tableau", "completer_tableau"])
+            type_exercice = safe_random_choice(["lire_tableau", "completer_tableau"], ctx, obs_logger)
             nb_lignes = 3
             nb_colonnes = 4
         else:  # difficile
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             nb_lignes = 4
             nb_colonnes = 5
         
@@ -2911,7 +2903,7 @@ class MathGenerationService:
             {"nom": "temperatures", "lignes": ["Lundi", "Mardi", "Mercredi"], "colonnes": ["Matin", "Midi", "Soir"]}
         ]
         
-        theme = random.choice(themes)
+        theme = safe_random_choice(themes, ctx, obs_logger)
         
         # Générer les données selon la difficulté
         if difficulte == "facile":
@@ -3081,7 +3073,7 @@ class MathGenerationService:
         
         else:  # calculer_total
             # Calculer le total d'une ligne ou colonne
-            choix = random.choice(["ligne", "colonne"])
+            choix = safe_random_choice(["ligne", "colonne"], ctx, obs_logger)
             
             # ✅ GÉNÉRER LE TABLEAU HTML COMPLET
             tableau_html = '<table style="border-collapse: collapse; margin: 15px auto; border: 2px solid #000; font-size: 14px;">'
@@ -3182,14 +3174,7 @@ class MathGenerationService:
     # ============================================================================
     
     def _gen_points_segments_droites(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur points, segments, droites, demi-droites (6e_G01)
-        
-        Concepts :
-        - Identifier segment, droite, demi-droite
-        - Nommer correctement une figure
-        - Tracer une figure selon consignes
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -3200,11 +3185,11 @@ class MathGenerationService:
             max_coord = 10
             nb_points = 2
         elif difficulte == "moyen":
-            type_exercice = random.choice(["identifier", "nommer"])
+            type_exercice = safe_random_choice(["identifier", "nommer"], ctx, obs_logger)
             max_coord = 15
             nb_points = 3
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             max_coord = 20
             nb_points = 4
             # ✅ FIX: Obtenir un 4ème point si nécessaire
@@ -3221,7 +3206,7 @@ class MathGenerationService:
         
         # Construire énoncé selon type
         if type_exercice == "identifier":
-            figure_type = random.choice(["segment", "droite", "demi_droite"])
+            figure_type = safe_random_choice(["segment", "droite", "demi_droite"], ctx, obs_logger)
             
             if figure_type == "segment":
                 enonce = f"Sur la figure ci-dessous, la figure [{points[0]}{points[1]}] est-elle un segment, une droite ou une demi-droite ?"
@@ -3317,7 +3302,7 @@ class MathGenerationService:
             )
         
         else:  # tracer
-            figure_type = random.choice(["segment", "droite", "demi_droite"])
+            figure_type = safe_random_choice(["segment", "droite", "demi_droite"], ctx, obs_logger)
             
             if figure_type == "segment":
                 enonce = f"Tracer le segment [{points[0]}{points[1]}] reliant {points[0]}({coords[f'{points[0]}_x']}, {coords[f'{points[0]}_y']}) et {points[1]}({coords[f'{points[1]}_x']}, {coords[f'{points[1]}_y']})."
@@ -3374,14 +3359,7 @@ class MathGenerationService:
 
     
     def _gen_alignement_milieu(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur alignement et milieu d'un segment (6e_G02)
-        
-        Concepts :
-        - Vérifier si des points sont alignés
-        - Calculer les coordonnées du milieu
-        - Construire le milieu avec compas/règle
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -3391,15 +3369,15 @@ class MathGenerationService:
             type_exercice = "verifier_alignement"
             max_coord = 10
         elif difficulte == "moyen":
-            type_exercice = random.choice(["verifier_alignement", "trouver_milieu"])
+            type_exercice = safe_random_choice(["verifier_alignement", "trouver_milieu"], ctx, obs_logger)
             max_coord = 15
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             max_coord = 20
         
         if type_exercice == "verifier_alignement":
             # Générer 3 points alignés ou non
-            sont_alignes = random.choice([True, False])
+            sont_alignes = safe_random_choice([True, False], ctx, obs_logger)
             
             # Points A et B
             ax = random.randint(2, max_coord - 4)
@@ -3665,14 +3643,7 @@ class MathGenerationService:
         return str(nombre)  # Fallback pour nombres très grands
     
     def _gen_lire_ecrire_entiers(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur lire et écrire les nombres entiers (6e_N01)
-        
-        Concepts :
-        - Lire un nombre en lettres → chiffres
-        - Écrire un nombre en chiffres → lettres
-        - Décomposer un nombre
-        """
+        ctx = get_request_context()
         
         types_exercices = ["lire_nombre", "ecrire_nombre", "decomposer"]
         
@@ -3680,10 +3651,10 @@ class MathGenerationService:
             type_exercice = "lire_nombre"
             nombre = random.randint(1, 100)
         elif difficulte == "moyen":
-            type_exercice = random.choice(["lire_nombre", "ecrire_nombre"])
+            type_exercice = safe_random_choice(["lire_nombre", "ecrire_nombre"], ctx, obs_logger)
             nombre = random.randint(100, 10000)
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             nombre = random.randint(10000, 100000)
         
         if type_exercice == "lire_nombre":
@@ -3762,14 +3733,7 @@ class MathGenerationService:
 
     
     def _gen_comparer_ranger_entiers(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur comparer et ranger les nombres entiers (6e_N02)
-        
-        Concepts :
-        - Comparer deux nombres (>, <, =)
-        - Ranger plusieurs nombres
-        - Encadrer un nombre
-        """
+        ctx = get_request_context()
         
         types_exercices = ["comparer", "ranger", "encadrer"]
         
@@ -3777,10 +3741,10 @@ class MathGenerationService:
             type_exercice = "comparer"
             nombres = [random.randint(1, 100) for _ in range(2)]
         elif difficulte == "moyen":
-            type_exercice = random.choice(["comparer", "ranger"])
+            type_exercice = safe_random_choice(["comparer", "ranger"], ctx, obs_logger)
             nombres = [random.randint(100, 1000) for _ in range(random.randint(3, 4))]
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             nombres = [random.randint(1000, 10000) for _ in range(random.randint(4, 5))]
         
         if type_exercice == "comparer":
@@ -3830,7 +3794,7 @@ class MathGenerationService:
             )
         
         elif type_exercice == "ranger":
-            ordre = random.choice(["croissant", "décroissant"])
+            ordre = safe_random_choice(["croissant", "décroissant"], ctx, obs_logger)
             enonce = f"Ranger les nombres {', '.join(map(str, nombres))} dans l'ordre {ordre}."
             
             if ordre == "croissant":
@@ -3868,7 +3832,7 @@ class MathGenerationService:
             )
         
         else:  # encadrer
-            nombre = random.choice(nombres)
+            nombre = safe_random_choice(nombres, ctx, obs_logger)
             
             # Encadrer entre deux centaines ou milliers selon la difficulté
             if difficulte == "moyen":
@@ -3918,14 +3882,7 @@ class MathGenerationService:
 
     
     def _gen_addition_soustraction_entiers(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur addition et soustraction de nombres entiers (6e_N04)
-        
-        Concepts :
-        - Calculer une addition/soustraction
-        - Poser l'opération en colonnes
-        - Résoudre un problème rédigé
-        """
+        ctx = get_request_context()
         
         types_exercices = ["calculer", "poser_operation", "probleme"]
         
@@ -3938,15 +3895,15 @@ class MathGenerationService:
             if (a % 10) + (b % 10) >= 10:
                 b = b - ((a % 10) + (b % 10) - 9)
         elif difficulte == "moyen":
-            type_exercice = random.choice(["calculer", "poser_operation"])
+            type_exercice = safe_random_choice(["calculer", "poser_operation"], ctx, obs_logger)
             a = random.randint(50, 200)
             b = random.randint(50, 200)
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             a = random.randint(200, 1000)
             b = random.randint(200, 1000)
         
-        operation = random.choice(["+", "-"])
+        operation = safe_random_choice(["+", "-"], ctx, obs_logger)
         
         # Pour la soustraction, s'assurer que a > b
         if operation == "-" and a < b:
@@ -4067,7 +4024,7 @@ class MathGenerationService:
                 {"nom": "distance", "unite": "km", "contexte_add": "parcourt en plus", "contexte_sub": "parcourt en moins"}
             ]
             
-            theme = random.choice(themes)
+            theme = safe_random_choice(themes, ctx, obs_logger)
             
             if operation == "+":
                 enonce = f"Marie a {a} {theme['unite']}. Elle {theme['contexte_add']} {b} {theme['unite']}. Combien a-t-elle maintenant ?"
@@ -4120,14 +4077,7 @@ class MathGenerationService:
     # ============================================================================
     
     def _gen_triangles(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les triangles (6e_G04)
-        
-        Concepts :
-        - Classer un triangle (équilatéral, isocèle, quelconque)
-        - Construire un triangle
-        - Vérifier propriétés (somme angles = 180°, inégalité triangulaire)
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -4145,7 +4095,7 @@ class MathGenerationService:
         
         if type_exercice == "classer":
             # Générer 3 longueurs de côtés
-            type_triangle = random.choice(["equilateral", "isocele", "quelconque"])
+            type_triangle = safe_random_choice(["equilateral", "isocele", "quelconque"], ctx, obs_logger)
             
             if type_triangle == "equilateral":
                 cote = random.randint(4, 10)
@@ -4312,7 +4262,7 @@ class MathGenerationService:
         
         else:  # verifier_propriete
             # Vérifier la somme des angles ou l'inégalité triangulaire
-            propriete = random.choice(["somme_angles", "inegalite_triangulaire"])
+            propriete = safe_random_choice(["somme_angles", "inegalite_triangulaire"], ctx, obs_logger)
             
             if propriete == "somme_angles":
                 # Générer 2 angles, calculer le 3ème
@@ -4340,7 +4290,7 @@ class MathGenerationService:
                 
             else:  # inegalite_triangulaire
                 # Vérifier si 3 longueurs peuvent former un triangle
-                peut_former = random.choice([True, False])
+                peut_former = safe_random_choice([True, False], ctx, obs_logger)
                 
                 if peut_former:
                     a = random.randint(4, 10)
@@ -4415,14 +4365,7 @@ class MathGenerationService:
 
     
     def _gen_quadrilateres(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les quadrilatères usuels (6e_G05)
-        
-        Concepts :
-        - Identifier carré, rectangle, losange, parallélogramme
-        - Construire un quadrilatère
-        - Vérifier propriétés (angles, côtés parallèles)
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         # Besoin de 4 points pour un quadrilatère
@@ -4443,7 +4386,7 @@ class MathGenerationService:
         
         if type_exercice == "identifier":
             # Identifier le type de quadrilatère
-            type_quad = random.choice(["carre", "rectangle", "losange", "parallelogramme"])
+            type_quad = safe_random_choice(["carre", "rectangle", "losange", "parallelogramme"], ctx, obs_logger)
             
             if type_quad == "carre":
                 cote = random.randint(4, 8)
@@ -4541,7 +4484,7 @@ class MathGenerationService:
         
         elif type_exercice == "construire":
             # Construire un quadrilatère spécifique
-            type_quad = random.choice(["rectangle", "carre"])
+            type_quad = safe_random_choice(["rectangle", "carre"], ctx, obs_logger)
             
             if type_quad == "carre":
                 cote = random.randint(4, 8)
@@ -4626,11 +4569,11 @@ class MathGenerationService:
         
         else:  # verifier_propriete
             # Vérifier une propriété (angles droits, côtés parallèles)
-            propriete = random.choice(["angles_droits", "cotes_paralleles"])
+            propriete = safe_random_choice(["angles_droits", "cotes_paralleles"], ctx, obs_logger)
             
             if propriete == "angles_droits":
                 # Vérifier si un quadrilatère a des angles droits
-                a_angles_droits = random.choice([True, False])
+                a_angles_droits = safe_random_choice([True, False], ctx, obs_logger)
                 
                 if a_angles_droits:
                     angle_a = angle_b = angle_c = angle_d = 90
@@ -4658,7 +4601,7 @@ class MathGenerationService:
             
             else:  # cotes_paralleles
                 # Vérifier si les côtés opposés sont parallèles
-                sont_paralleles = random.choice([True, False])
+                sont_paralleles = safe_random_choice([True, False], ctx, obs_logger)
                 
                 if sont_paralleles:
                     enonce = f"Dans le quadrilatère {points[0]}{points[1]}{points[2]}{points[3]}, les côtés [{points[0]}{points[1]}] et [{points[3]}{points[2]}] sont-ils parallèles ? On sait que les deux côtés ont la même pente."
@@ -4730,14 +4673,7 @@ class MathGenerationService:
 
     
     def _gen_multiplication_entiers(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur la multiplication de nombres entiers (6e_N05)
-        
-        Concepts :
-        - Calculer une multiplication simple
-        - Poser une multiplication en colonnes
-        - Résoudre des problèmes contextuels
-        """
+        ctx = get_request_context()
         
         types_exercices = ["calculer", "poser_operation", "probleme"]
         
@@ -4746,11 +4682,11 @@ class MathGenerationService:
             a = random.randint(2, 20)
             b = random.randint(2, 10)
         elif difficulte == "moyen":
-            type_exercice = random.choice(["calculer", "poser_operation"])
+            type_exercice = safe_random_choice(["calculer", "poser_operation"], ctx, obs_logger)
             a = random.randint(50, 200)
             b = random.randint(10, 50)
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             a = random.randint(200, 1000)
             b = random.randint(10, 100)
         
@@ -4840,7 +4776,7 @@ class MathGenerationService:
                 {"nom": "distance", "contexte": "parcourt {b} fois un circuit de {a} km", "question": "Quelle distance totale a-t-elle parcourue ?"}
             ]
             
-            theme = random.choice(themes)
+            theme = safe_random_choice(themes, ctx, obs_logger)
             contexte = theme["contexte"].format(a=a, b=b)
             question = theme["question"]
             
@@ -4890,14 +4826,7 @@ class MathGenerationService:
 
     
     def _gen_division_euclidienne(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur la division euclidienne (6e_N06)
-        
-        Concepts :
-        - Calculer une division (quotient et reste)
-        - Poser une division euclidienne
-        - Résoudre des problèmes avec division
-        """
+        ctx = get_request_context()
         
         types_exercices = ["calculer", "poser_operation", "probleme"]
         
@@ -4908,13 +4837,13 @@ class MathGenerationService:
             reste = random.randint(0, diviseur - 1)
             dividende = diviseur * quotient + reste
         elif difficulte == "moyen":
-            type_exercice = random.choice(["calculer", "poser_operation"])
+            type_exercice = safe_random_choice(["calculer", "poser_operation"], ctx, obs_logger)
             diviseur = random.randint(3, 15)
             quotient = random.randint(5, 20)
             reste = random.randint(0, diviseur - 1)
             dividende = diviseur * quotient + reste
         else:
-            type_exercice = random.choice(types_exercices)
+            type_exercice = safe_random_choice(types_exercices, ctx, obs_logger)
             diviseur = random.randint(10, 50)
             quotient = random.randint(10, 50)
             reste = random.randint(0, diviseur - 1)
@@ -5002,7 +4931,7 @@ class MathGenerationService:
                 {"nom": "transport", "contexte": "doit transporter {dividende} personnes dans des voitures de {diviseur} places", "question": "Combien de voitures pleines faut-il ? Combien de places seront libres dans la dernière voiture ?"}
             ]
             
-            theme = random.choice(themes)
+            theme = safe_random_choice(themes, ctx, obs_logger)
             contexte = theme["contexte"].format(dividende=dividende, diviseur=diviseur)
             question = theme["question"]
             
@@ -5262,24 +5191,17 @@ class MathGenerationService:
     # ============================================================================
     
     def _gen_fractions_partage(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les fractions comme partage et quotient (6e_N08)
-        
-        Concepts :
-        - Partager un objet en parts égales
-        - Représenter une fraction
-        - Fraction comme quotient de division
-        """
+        ctx = get_request_context()
         
         types_exercices = ["partager", "representer", "calculer_quotient"]
         
         if difficulte == "facile":
             type_exercice = "partager"
-            denominateur = random.choice([2, 3, 4, 5, 6, 8])
+            denominateur = safe_random_choice([2, 3, 4, 5, 6, 8], ctx, obs_logger)
             numerateur = random.randint(1, denominateur - 1)
         elif difficulte == "moyen":
             type_exercice = "representer"
-            denominateur = random.choice([4, 5, 6, 8, 10, 12])
+            denominateur = safe_random_choice([4, 5, 6, 8, 10, 12], ctx, obs_logger)
             numerateur = random.randint(1, denominateur - 1)
         else:
             type_exercice = "calculer_quotient"
@@ -5289,7 +5211,7 @@ class MathGenerationService:
         if type_exercice == "partager":
             # Partager un objet (gâteau, pizza, etc.)
             objets = ["gâteau", "pizza", "tablette de chocolat", "tarte"]
-            objet = random.choice(objets)
+            objet = safe_random_choice(objets, ctx, obs_logger)
             
             enonce = f"Un {objet} est partagé en {denominateur} parts égales. Marie mange {numerateur} part{'s' if numerateur > 1 else ''}. Quelle fraction du {objet} a-t-elle mangée ?"
             
@@ -5394,14 +5316,7 @@ class MathGenerationService:
             )
     
     def _gen_fractions_simples(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les fractions simples de l'unité (6e_N09)
-        
-        Concepts :
-        - Lire des fractions simples (1/2, 1/3, 1/4)
-        - Comparer des fractions simples
-        - Calculer une partie d'un nombre
-        """
+        ctx = get_request_context()
         
         types_exercices = ["lire_fraction", "comparer", "calculer_partie"]
         
@@ -5416,7 +5331,7 @@ class MathGenerationService:
             fractions_simples = [(1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 8)]
         
         if type_exercice == "lire_fraction":
-            num, denom = random.choice(fractions_simples)
+            num, denom = safe_random_choice(fractions_simples, ctx, obs_logger)
             
             noms = {2: "demi", 3: "tiers", 4: "quart", 5: "cinquième"}
             nom_fraction = noms.get(denom, f"1/{denom}")
@@ -5451,8 +5366,8 @@ class MathGenerationService:
             )
         
         elif type_exercice == "comparer":
-            frac1 = random.choice(fractions_simples)
-            frac2 = random.choice([f for f in fractions_simples if f != frac1])
+            frac1 = safe_random_choice(fractions_simples, ctx, obs_logger)
+            frac2 = safe_random_choice([f for f in fractions_simples if f != frac1], ctx, obs_logger)
             
             num1, denom1 = frac1
             num2, denom2 = frac2
@@ -5504,7 +5419,7 @@ class MathGenerationService:
             )
         
         else:  # calculer_partie
-            num, denom = random.choice(fractions_simples)
+            num, denom = safe_random_choice(fractions_simples, ctx, obs_logger)
             
             # Choisir un nombre divisible par denom
             multiple = random.randint(3, 20)
@@ -5550,14 +5465,7 @@ class MathGenerationService:
 
     
     def _gen_mesurer_longueurs(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur mesurer et comparer des longueurs (6e_GM01)
-        
-        Concepts :
-        - Mesurer un segment avec règle
-        - Comparer deux longueurs
-        - Convertir cm ↔ m ↔ km
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -5699,7 +5607,7 @@ class MathGenerationService:
         
         else:  # convertir
             # Conversions cm ↔ m ↔ km
-            type_conversion = random.choice(["cm_to_m", "m_to_cm", "m_to_km", "km_to_m"])
+            type_conversion = safe_random_choice(["cm_to_m", "m_to_cm", "m_to_km", "km_to_m"], ctx, obs_logger)
             
             if type_conversion == "cm_to_m":
                 valeur_cm = random.randint(100, 500)
@@ -5764,14 +5672,7 @@ class MathGenerationService:
 
     
     def _gen_perimetre_figures(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur le périmètre de figures usuelles (6e_GM02)
-        
-        Concepts :
-        - Calculer le périmètre d'un carré, rectangle
-        - Trouver un côté manquant
-        - Problèmes avec périmètre
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -5786,7 +5687,7 @@ class MathGenerationService:
         
         if type_exercice == "calculer_perimetre":
             # Calculer périmètre rectangle ou carré
-            figure_type = random.choice(["rectangle", "carre"])
+            figure_type = safe_random_choice(["rectangle", "carre"], ctx, obs_logger)
             
             if figure_type == "rectangle":
                 longueur = random.randint(5, 15)
@@ -5980,14 +5881,7 @@ class MathGenerationService:
             )
     
     def _gen_aire_rectangle_carre(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur l'aire du rectangle et du carré (6e_GM03)
-        
-        Concepts :
-        - Calculer l'aire d'un rectangle/carré
-        - Trouver un côté à partir de l'aire
-        - Problèmes avec aires
-        """
+        ctx = get_request_context()
         
         points = self._get_next_geometry_points()
         
@@ -6002,7 +5896,7 @@ class MathGenerationService:
         
         if type_exercice == "calculer_aire":
             # Calculer aire rectangle ou carré
-            figure_type = random.choice(["rectangle", "carre"])
+            figure_type = safe_random_choice(["rectangle", "carre"], ctx, obs_logger)
             
             if figure_type == "rectangle":
                 longueur = random.randint(4, 10)
@@ -6168,14 +6062,7 @@ class MathGenerationService:
             )
     
     def _gen_diagrammes_barres(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Génère un exercice sur les diagrammes en barres et pictogrammes (6e_SP02)
-        
-        Concepts :
-        - Lire une valeur sur un diagramme
-        - Comparer deux valeurs
-        - Calculer un total
-        """
+        ctx = get_request_context()
         
         types_exercices = ["lire_diagramme", "comparer", "calculer_total"]
         
@@ -6197,7 +6084,7 @@ class MathGenerationService:
         valeurs = [random.randint(min_val, max_val) for _ in range(nb_categories)]
         
         if type_exercice == "lire_diagramme":
-            categorie_choisie = random.choice(categories)
+            categorie_choisie = safe_random_choice(categories, ctx, obs_logger)
             index = categories.index(categorie_choisie)
             valeur = valeurs[index]
             
@@ -6332,30 +6219,18 @@ class MathGenerationService:
     # ==========================================================================
     
     def _gen_fraction_representation(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Représentation graphique des fractions (6N2-FRAC-REPR)
-        
-        Spécifications (feuillet 2):
-        - Facile: denom in [2,3,4], numerateur < denominateur
-        - Moyen: denom in [5,6,8,10]
-        - Avancé: fractions > 1, comparaison visuelle
-        
-        Énoncés modèles (feuillet 3):
-        - Facile: Quelle fraction du rectangle est coloriée?
-        - Moyen: Représenter 5/8 sur un diagramme circulaire
-        - Avancé: Comparer visuellement 3/4 et 5/6
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
-            denominateur = random.choice([2, 3, 4])
+            denominateur = safe_random_choice([2, 3, 4], ctx, obs_logger)
             numerateur = random.randint(1, denominateur - 1)
             type_diagramme = "rectangulaire"
         elif difficulte == "moyen":
-            denominateur = random.choice([5, 6, 8, 10])
+            denominateur = safe_random_choice([5, 6, 8, 10], ctx, obs_logger)
             numerateur = random.randint(1, denominateur - 1)
-            type_diagramme = random.choice(["circulaire", "rectangulaire"])
+            type_diagramme = safe_random_choice(["circulaire", "rectangulaire"], ctx, obs_logger)
         else:  # avancé
-            denominateur = random.choice([3, 4, 5, 6])
+            denominateur = safe_random_choice([3, 4, 5, 6], ctx, obs_logger)
             numerateur = random.randint(denominateur + 1, denominateur * 2)  # fraction > 1
             type_diagramme = "rectangulaire"
         
@@ -6472,23 +6347,11 @@ class MathGenerationService:
         return svg
     
     def _gen_prop_tableau(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Tableaux de proportionnalité (6N3-PROP-TAB)
-        
-        Spécifications:
-        - Facile: 2 colonnes, coefficient entier (×2, ×3, ×5)
-        - Moyen: 3-4 colonnes
-        - Avancé: coefficient décimal
-        
-        Énoncés modèles:
-        - Facile: Compléter [Quantité: 2, 4, ?] [Prix: 6, 12, 18]
-        - Moyen: Un vélo roule à vitesse constante. [Temps: 5, 10, 15] [Distance: 400, ?, ?]
-        - Avancé: 3 stylos coûtent 4,50€. Compléter pour 1, 5, 7 et 10 stylos.
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
             # Coefficient entier simple
-            coeff = random.choice([2, 3, 4, 5])
+            coeff = safe_random_choice([2, 3, 4, 5], ctx, obs_logger)
             valeurs_ligne1 = [random.randint(1, 5) for _ in range(3)]
             valeurs_ligne2 = [v * coeff for v in valeurs_ligne1]
             
@@ -6498,7 +6361,7 @@ class MathGenerationService:
             valeurs_ligne2_affichees = valeurs_ligne2.copy()
             valeurs_ligne2_affichees[pos_masquee] = "?"
             
-            contexte = random.choice(["prix", "distance"])
+            contexte = safe_random_choice(["prix", "distance"], ctx, obs_logger)
             if contexte == "prix":
                 ligne1_label = "Quantité"
                 ligne2_label = "Prix (€)"
@@ -6507,7 +6370,7 @@ class MathGenerationService:
                 ligne2_label = "Distance (m)"
             
         elif difficulte == "moyen":
-            coeff = random.choice([2, 3, 4, 5, 8, 10])
+            coeff = safe_random_choice([2, 3, 4, 5, 8, 10], ctx, obs_logger)
             valeurs_ligne1 = [random.randint(1, 10) for _ in range(4)]
             valeurs_ligne2 = [v * coeff for v in valeurs_ligne1]
             
@@ -6593,19 +6456,7 @@ class MathGenerationService:
         )
     
     def _gen_prop_achat(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Problèmes d'achats proportionnels (6N3-PROP-ACHAT)
-        
-        Spécifications:
-        - Facile: Prix unitaire × quantité
-        - Moyen: Comparaison de 2 prix
-        - Avancé: Problème multi-étapes avec rendu monnaie
-        
-        Énoncés modèles:
-        - Facile: Une gomme coûte 0,80€. Prix de 5 gommes?
-        - Moyen: Comparer 3kg à 2,40€/kg ou 5kg à 2,20€/kg
-        - Avancé: 4 cahiers à 1,20€ et 3 stylos à 0,90€. Avec 10€, combien reçoit-on?
-        """
+        ctx = get_request_context()
         
         contextes = [
             {"article": "gomme", "unite": "€", "prix_min": 0.5, "prix_max": 1.5},
@@ -6616,7 +6467,7 @@ class MathGenerationService:
         ]
         
         if difficulte == "facile":
-            ctx = random.choice(contextes)
+            ctx = safe_random_choice(contextes, ctx, obs_logger)
             prix_unitaire = round(random.uniform(ctx["prix_min"], ctx["prix_max"]), 2)
             quantite = random.randint(3, 8)
             total = round(prix_unitaire * quantite, 2)
@@ -6633,7 +6484,7 @@ class MathGenerationService:
             
         elif difficulte == "moyen":
             # Comparaison de 2 achats
-            article = random.choice(["pommes", "oranges", "tomates", "bananes"])
+            article = safe_random_choice(["pommes", "oranges", "tomates", "bananes"], ctx, obs_logger)
             
             quantite1 = random.randint(2, 5)
             prix_kg1 = round(random.uniform(1.5, 3.5), 2)
@@ -6669,8 +6520,8 @@ class MathGenerationService:
             
         else:  # avancé
             # Multi-étapes avec rendu monnaie
-            article1 = random.choice(["cahier", "classeur", "livre"])
-            article2 = random.choice(["stylo", "crayon", "feutre"])
+            article1 = safe_random_choice(["cahier", "classeur", "livre"], ctx, obs_logger)
+            article2 = safe_random_choice(["stylo", "crayon", "feutre"], ctx, obs_logger)
             
             quantite1 = random.randint(2, 5)
             prix1 = round(random.uniform(1.0, 2.5), 2)
@@ -6716,19 +6567,7 @@ class MathGenerationService:
         )
     
     def _gen_probleme_2_etapes(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Problèmes à 2 étapes (6P-PROB-2ET)
-        
-        Spécifications:
-        - Facile: 2 opérations consécutives simples
-        - Moyen: 2 opérations avec choix
-        - Avancé: 3 étapes
-        
-        Énoncés modèles:
-        - Facile: Addition puis soustraction
-        - Moyen: Multiplication + addition avec contexte
-        - Avancé: Problème complet de la vie courante
-        """
+        ctx = get_request_context()
         
         contextes_facile = [
             {
@@ -6767,7 +6606,7 @@ class MathGenerationService:
         ]
         
         if difficulte == "facile":
-            ctx = random.choice(contextes_facile)
+            ctx = safe_random_choice(contextes_facile, ctx, obs_logger)
             initial = ctx["etape1_donnee"]()
             val1 = ctx["etape1_valeur"]()
             val2 = ctx["etape2_valeur"]()
@@ -6787,7 +6626,7 @@ class MathGenerationService:
                     val2 = random.randint(1, intermediaire)
                     resultat = intermediaire - val2
             
-            prenom = random.choice(["Lucas", "Emma", "Léa", "Hugo", "Chloé", "Nathan"])
+            prenom = safe_random_choice(["Lucas", "Emma", "Léa", "Hugo", "Chloé", "Nathan"], ctx, obs_logger)
             
             enonce = f"{prenom} a {initial} {ctx['situation']}. Il en {ctx['etape1_action']} {val1}, puis il en {ctx['etape2_action']} {val2}. {ctx['question'].capitalize()} ?"
             
@@ -6800,7 +6639,7 @@ class MathGenerationService:
             resultat_final = f"{resultat} {ctx['situation']}"
             
         elif difficulte == "moyen":
-            prenom = random.choice(["Sophie", "Thomas", "Julie", "Antoine", "Marie", "Paul"])
+            prenom = safe_random_choice(["Sophie", "Thomas", "Julie", "Antoine", "Marie", "Paul"], ctx, obs_logger)
             nb_articles = random.randint(3, 6)
             prix = random.randint(5, 12)
             bonus = random.randint(8, 20)
@@ -6808,7 +6647,7 @@ class MathGenerationService:
             total_achats = nb_articles * prix
             total_final = total_achats + bonus
             
-            article = random.choice(["cahier", "livre", "stylo"])
+            article = safe_random_choice(["cahier", "livre", "stylo"], ctx, obs_logger)
             
             enonce = f"{prenom} achète {nb_articles} {article}s à {prix}€ chacun. Son grand-père lui donne {bonus}€ supplémentaires. Quel est le montant total que {prenom} a dépensé et reçu ?"
             
@@ -6822,7 +6661,7 @@ class MathGenerationService:
             resultat = total_final
             
         else:  # avancé - 3 étapes
-            prenom = random.choice(["Alexandre", "Charlotte", "Mathis", "Clara", "Lucas", "Emma"])
+            prenom = safe_random_choice(["Alexandre", "Charlotte", "Mathis", "Clara", "Lucas", "Emma"], ctx, obs_logger)
             
             # Contexte : économies et achats
             argent_initial = random.randint(50, 100)
@@ -6841,8 +6680,8 @@ class MathGenerationService:
                 total_depenses = prix_article1 + prix_article2
                 reste = total_argent - total_depenses
             
-            article1 = random.choice(["jeu vidéo", "livre", "vêtement"])
-            article2 = random.choice(["accessoire", "gadget", "BD"])
+            article1 = safe_random_choice(["jeu vidéo", "livre", "vêtement"], ctx, obs_logger)
+            article2 = safe_random_choice(["accessoire", "gadget", "BD"], ctx, obs_logger)
             
             enonce = f"{prenom} a {argent_initial}€ dans sa tirelire. Pour son anniversaire, il reçoit {argent_recu}€. Il achète un {article1} à {prix_article1}€ et un {article2} à {prix_article2}€. Combien d'argent lui reste-t-il ?"
             
@@ -6881,25 +6720,14 @@ class MathGenerationService:
         )
     
     def _gen_nombres_lecture(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Lecture et écriture des nombres entiers (6N1-LECTURE)
-        
-        Spécifications:
-        - Facile: < 1000 sans zéros intercalaires
-        - Moyen: < 10000 avec zéros
-        - Avancé: < 1M avec classes multiples
-        
-        Énoncés modèles:
-        - Facile: Écrire en lettres : 347
-        - Moyen: Écrire en lettres : 5 042
-        - Avancé: Écrire 81000 en lettres et décomposer
-        """
+        ctx = get_request_context()
         
         # Dictionnaire pour convertir en lettres
         unites = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf"]
         dizaines = ["", "dix", "vingt", "trente", "quarante", "cinquante", "soixante", "soixante", "quatre-vingt", "quatre-vingt"]
         
         def nombre_en_lettres(n):
+            ctx = get_request_context()
             """Convertit un nombre < 1000 en lettres (simplifié)"""
             if n == 0:
                 return "zéro"
@@ -6929,17 +6757,17 @@ class MathGenerationService:
             unites_val = random.randint(1, 9)
             nombre = centaines * 100 + dizaines_val * 10 + unites_val
             
-            direction = random.choice(["chiffres_vers_lettres", "lettres_vers_chiffres"])
+            direction = safe_random_choice(["chiffres_vers_lettres", "lettres_vers_chiffres"], ctx, obs_logger)
             
         elif difficulte == "moyen":
             # Nombre < 10000 avec au moins un zéro intercalaire
             milliers = random.randint(1, 9)
-            centaines = random.choice([0, random.randint(1, 9)])
-            dizaines_val = random.choice([0, random.randint(1, 9)]) if centaines != 0 else random.randint(1, 9)
+            centaines = safe_random_choice([0, random.randint(1, 9, ctx, obs_logger)])
+            dizaines_val = safe_random_choice([0, random.randint(1, 9, ctx, obs_logger)]) if centaines != 0 else random.randint(1, 9)
             unites_val = random.randint(0, 9)
             nombre = milliers * 1000 + centaines * 100 + dizaines_val * 10 + unites_val
             
-            direction = random.choice(["chiffres_vers_lettres", "lettres_vers_chiffres"])
+            direction = safe_random_choice(["chiffres_vers_lettres", "lettres_vers_chiffres"], ctx, obs_logger)
             
         else:  # avancé
             # Nombre < 1 000 000
@@ -7005,19 +6833,7 @@ class MathGenerationService:
         )
     
     def _gen_nombres_comparaison(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur: Comparaison et rangement de nombres entiers (6N1-COMP)
-        
-        Spécifications:
-        - Facile: 3-4 nombres de 2-3 chiffres
-        - Moyen: 5-6 nombres de 4-5 chiffres
-        - Avancé: 7-8 nombres + pièges (9999 vs 10000)
-        
-        Énoncés modèles:
-        - Facile: Ranger dans l'ordre croissant : 45 ; 12 ; 78 ; 34
-        - Moyen: Ordonner du plus petit au plus grand : 1 205 ; 1 025 ; 1 502 ; 1 250 ; 1 052
-        - Avancé: Populations de villes à classer
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
             nb_nombres = random.randint(3, 4)
@@ -7054,7 +6870,7 @@ class MathGenerationService:
                 if n not in nombres:
                     nombres.append(n)
         
-        ordre = random.choice(["croissant", "décroissant"])
+        ordre = safe_random_choice(["croissant", "décroissant"], ctx, obs_logger)
         
         # Formater les nombres
         nombres_formates = [f"{n:,}".replace(",", " ") for n in nombres]
@@ -7110,19 +6926,20 @@ class MathGenerationService:
     # ==========================================================================
     
     def _gen_droite_graduee_entiers(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Droite graduée - nombres entiers (6N1-DROITE)"""
         
         if difficulte == "facile":
-            debut = random.choice([0, 10, 100])
-            pas = random.choice([1, 2, 5])
+            debut = safe_random_choice([0, 10, 100], ctx, obs_logger)
+            pas = safe_random_choice([1, 2, 5], ctx, obs_logger)
             nb_graduations = 6
         elif difficulte == "moyen":
-            debut = random.choice([0, 50, 200, 1000])
-            pas = random.choice([5, 10, 25, 50])
+            debut = safe_random_choice([0, 50, 200, 1000], ctx, obs_logger)
+            pas = safe_random_choice([5, 10, 25, 50], ctx, obs_logger)
             nb_graduations = 8
         else:
-            debut = random.choice([0, 100, 500, 1000])
-            pas = random.choice([25, 50, 100, 250])
+            debut = safe_random_choice([0, 100, 500, 1000], ctx, obs_logger)
+            pas = safe_random_choice([25, 50, 100, 250], ctx, obs_logger)
             nb_graduations = 10
         
         # Générer les positions sur la droite
@@ -7132,7 +6949,7 @@ class MathGenerationService:
         index_mystere = random.randint(1, nb_graduations - 2)
         valeur_mystere = valeurs[index_mystere]
         
-        type_exercice = random.choice(["lire", "placer"])
+        type_exercice = safe_random_choice(["lire", "placer"], ctx, obs_logger)
         
         if type_exercice == "lire":
             enonce = f"Lire l'abscisse du point A sur la droite graduée ci-dessous."
@@ -7159,6 +6976,7 @@ class MathGenerationService:
         )
     
     def _gen_droite_graduee_decimaux(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Droite graduée - nombres décimaux (6N2-DROITE)"""
         
         if difficulte == "facile":
@@ -7166,12 +6984,12 @@ class MathGenerationService:
             pas = 0.1
             nb_graduations = 11
         elif difficulte == "moyen":
-            debut = random.choice([0, 1, 2])
-            pas = random.choice([0.1, 0.2, 0.5])
+            debut = safe_random_choice([0, 1, 2], ctx, obs_logger)
+            pas = safe_random_choice([0.1, 0.2, 0.5], ctx, obs_logger)
             nb_graduations = 11
         else:
             debut = round(random.uniform(0, 5), 1)
-            pas = random.choice([0.05, 0.1, 0.25])
+            pas = safe_random_choice([0.05, 0.1, 0.25], ctx, obs_logger)
             nb_graduations = 11
         
         valeurs = [round(debut + i * pas, 2) for i in range(nb_graduations)]
@@ -7198,18 +7016,19 @@ class MathGenerationService:
         )
     
     def _gen_fraction_droite(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Fraction sur droite graduée (6N2-FRAC-DROITE)"""
         
         if difficulte == "facile":
-            denominateur = random.choice([2, 4])
+            denominateur = safe_random_choice([2, 4], ctx, obs_logger)
         elif difficulte == "moyen":
-            denominateur = random.choice([3, 5, 6])
+            denominateur = safe_random_choice([3, 5, 6], ctx, obs_logger)
         else:
-            denominateur = random.choice([8, 10, 12])
+            denominateur = safe_random_choice([8, 10, 12], ctx, obs_logger)
         
         numerateur = random.randint(1, denominateur * 2 - 1)
         
-        type_ex = random.choice(["lire", "placer"])
+        type_ex = safe_random_choice(["lire", "placer"], ctx, obs_logger)
         
         if type_ex == "lire":
             enonce = f"La droite ci-dessous est graduée en {denominateur}èmes. Lire l'abscisse du point P sous forme de fraction."
@@ -7233,11 +7052,12 @@ class MathGenerationService:
         )
     
     def _gen_fraction_comparaison(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Comparaison de fractions (6N2-FRAC-COMP)"""
         
         if difficulte == "facile":
             # Même dénominateur
-            den = random.choice([3, 4, 5, 6])
+            den = safe_random_choice([3, 4, 5, 6], ctx, obs_logger)
             num1, num2 = random.sample(range(1, den + 3), 2)
             f1, f2 = f"\\frac{{{num1}}}{{{den}}}", f"\\frac{{{num2}}}{{{den}}}"
             comparaison = "<" if num1 < num2 else ">"
@@ -7273,12 +7093,13 @@ class MathGenerationService:
         )
     
     def _gen_prop_coefficient(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Coefficient de proportionnalité (6N3-PROP-COEFF)"""
         
         if difficulte == "facile":
-            coeff = random.choice([2, 3, 4, 5])
+            coeff = safe_random_choice([2, 3, 4, 5], ctx, obs_logger)
         elif difficulte == "moyen":
-            coeff = random.choice([1.5, 2.5, 0.5, 4, 6])
+            coeff = safe_random_choice([1.5, 2.5, 0.5, 4, 6], ctx, obs_logger)
         else:
             coeff = round(random.uniform(0.2, 3.5), 2)
         
@@ -7304,23 +7125,24 @@ class MathGenerationService:
         )
     
     def _gen_vitesse_duree_distance(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Problèmes vitesse/durée/distance (6N3-VDD)"""
         
-        type_probleme = random.choice(["distance", "duree", "vitesse"])
+        type_probleme = safe_random_choice(["distance", "duree", "vitesse"], ctx, obs_logger)
         
         if difficulte == "facile":
-            vitesse = random.choice([30, 50, 60, 100])  # km/h "ronds"
-            duree = random.choice([1, 2, 3])  # heures entières
+            vitesse = safe_random_choice([30, 50, 60, 100], ctx, obs_logger)  # km/h "ronds"
+            duree = safe_random_choice([1, 2, 3], ctx, obs_logger)  # heures entières
         elif difficulte == "moyen":
-            vitesse = random.choice([40, 45, 50, 60, 80, 90])
-            duree = random.choice([1.5, 2, 2.5, 3])
+            vitesse = safe_random_choice([40, 45, 50, 60, 80, 90], ctx, obs_logger)
+            duree = safe_random_choice([1.5, 2, 2.5, 3], ctx, obs_logger)
         else:
             vitesse = random.randint(30, 120)
             duree = round(random.uniform(0.5, 4), 1)
         
         distance = round(vitesse * duree, 1)
         
-        vehicule = random.choice(["voiture", "train", "vélo", "bus"])
+        vehicule = safe_random_choice(["voiture", "train", "vélo", "bus"], ctx, obs_logger)
         
         if type_probleme == "distance":
             enonce = f"Un {vehicule} roule à {vitesse} km/h pendant {duree} heure(s). Quelle distance parcourt-il ?"
@@ -7351,11 +7173,12 @@ class MathGenerationService:
         )
     
     def _gen_aire_triangle(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Aire du triangle (6G1-AIRE-TRI)"""
         
         if difficulte == "facile":
-            base = random.choice([4, 6, 8, 10])
-            hauteur = random.choice([2, 3, 4, 5])
+            base = safe_random_choice([4, 6, 8, 10], ctx, obs_logger)
+            hauteur = safe_random_choice([2, 3, 4, 5], ctx, obs_logger)
         elif difficulte == "moyen":
             base = random.randint(5, 15)
             hauteur = random.randint(3, 12)
@@ -7462,6 +7285,7 @@ class MathGenerationService:
         )
     
     def _gen_tableau_lecture(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Lecture de tableaux de données (6D-TAB-LIRE)"""
         
         sujets = [
@@ -7470,16 +7294,16 @@ class MathGenerationService:
             {"titre": "Prix des fruits", "colonnes": ["Fruit", "Prix/kg", "Quantité", "Total"], "type": "prix"}
         ]
         
-        sujet = random.choice(sujets)
+        sujet = safe_random_choice(sujets, ctx, obs_logger)
         
         if sujet["type"] == "notes":
             noms = random.sample(["Alice", "Bob", "Clara", "David", "Emma"], 3)
             donnees = [[nom, random.randint(8, 18), random.randint(8, 18), random.randint(8, 18)] for nom in noms]
-            question = random.choice([
+            question = safe_random_choice([
                 f"Quelle est la note de {noms[0]} en Maths ?",
                 f"Qui a la meilleure note en Français ?",
                 f"Calculer la moyenne de {noms[1]} sur les 3 matières."
-            ])
+            ], ctx, obs_logger)
         elif sujet["type"] == "temperatures":
             jours = ["Lundi", "Mardi", "Mercredi"]
             donnees = [[jour, random.randint(5, 15), random.randint(12, 22), random.randint(8, 18)] for jour in jours]
@@ -7511,13 +7335,14 @@ class MathGenerationService:
         )
     
     def _gen_diagramme_barres(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Diagramme en barres (6D-DIAG-BAR)"""
         
-        categories = random.choice([
+        categories = safe_random_choice([
             ["Rouge", "Bleu", "Vert", "Jaune"],
             ["Foot", "Basket", "Tennis", "Natation"],
             ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
-        ])
+        ], ctx, obs_logger)
         
         valeurs = [random.randint(2, 15) for _ in categories]
         max_val = max(valeurs)
@@ -7544,11 +7369,11 @@ class MathGenerationService:
         
         svg += '</svg>'
         
-        question = random.choice([
+        question = safe_random_choice([
             f"Quelle catégorie a la plus grande valeur ?",
             f"Calculer la somme de toutes les valeurs.",
             f"Quelle est la différence entre la plus grande et la plus petite valeur ?"
-        ])
+        ], ctx, obs_logger)
         
         enonce = f"Voici un diagramme en barres.\n{question}"
         
@@ -7564,45 +7389,46 @@ class MathGenerationService:
         )
     
     def _gen_probleme_1_etape(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Problèmes à 1 étape (6P-PROB-1ET)"""
         
         operations = ["addition", "soustraction", "multiplication", "division"]
-        operation = random.choice(operations)
+        operation = safe_random_choice(operations, ctx, obs_logger)
         
-        prenom = random.choice(["Lucas", "Emma", "Léa", "Hugo", "Chloé", "Nathan", "Jade", "Louis"])
+        prenom = safe_random_choice(["Lucas", "Emma", "Léa", "Hugo", "Chloé", "Nathan", "Jade", "Louis"], ctx, obs_logger)
         
         if operation == "addition":
             a, b = random.randint(20, 100), random.randint(10, 50)
-            contexte = random.choice([
+            contexte = safe_random_choice([
                 f"{prenom} a {a} billes. Il en gagne {b}. Combien en a-t-il maintenant ?",
                 f"Un livre coûte {a}€. Les frais de port sont de {b}€. Quel est le prix total ?"
-            ])
+            ], ctx, obs_logger)
             resultat = a + b
             calcul = f"{a} + {b} = {resultat}"
         elif operation == "soustraction":
             a = random.randint(50, 150)
             b = random.randint(10, a - 10)
-            contexte = random.choice([
+            contexte = safe_random_choice([
                 f"{prenom} a {a}€. Elle dépense {b}€. Combien lui reste-t-il ?",
                 f"Un réservoir contient {a} litres. On en utilise {b}. Combien reste-t-il ?"
-            ])
+            ], ctx, obs_logger)
             resultat = a - b
             calcul = f"{a} - {b} = {resultat}"
         elif operation == "multiplication":
             a, b = random.randint(3, 12), random.randint(2, 8)
-            contexte = random.choice([
+            contexte = safe_random_choice([
                 f"Un paquet contient {a} gâteaux. {prenom} achète {b} paquets. Combien de gâteaux a-t-il ?",
                 f"Une boîte contient {a} crayons. Il y a {b} boîtes. Combien de crayons au total ?"
-            ])
+            ], ctx, obs_logger)
             resultat = a * b
             calcul = f"{a} × {b} = {resultat}"
         else:  # division
             b = random.randint(2, 8)
             resultat = random.randint(3, 15)
             a = b * resultat
-            contexte = random.choice([
+            contexte = safe_random_choice([
                 f"{prenom} veut partager {a} bonbons entre {b} amis. Combien chacun reçoit-il ?",
-                f"On range {a} livres dans {b} étagères (même nombre par étagère). Combien par étagère ?"
+                f"On range {a} livres dans {b} étagères (même nombre par étagère, ctx, obs_logger). Combien par étagère ?"
             ])
             calcul = f"{a} ÷ {b} = {resultat}"
         
@@ -7619,10 +7445,11 @@ class MathGenerationService:
         )
     
     def _gen_triangle_construction(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Construction de triangles (6G-TRI)"""
         
         types_triangles = ["quelconque", "isocèle", "équilatéral", "rectangle"]
-        type_tri = random.choice(types_triangles[:3] if difficulte == "facile" else types_triangles)
+        type_tri = safe_random_choice(types_triangles[:3] if difficulte == "facile" else types_triangles, ctx, obs_logger)
         
         if type_tri == "équilatéral":
             cote = random.randint(4, 8)
@@ -7658,10 +7485,11 @@ class MathGenerationService:
         )
     
     def _gen_quadrilateres(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Quadrilatères (6G-QUAD)"""
         
         types = ["carré", "rectangle", "losange", "parallélogramme"]
-        type_quad = random.choice(types[:2] if difficulte == "facile" else types)
+        type_quad = safe_random_choice(types[:2] if difficulte == "facile" else types, ctx, obs_logger)
         
         if type_quad == "carré":
             cote = random.randint(3, 8)
@@ -7699,10 +7527,11 @@ class MathGenerationService:
         )
     
     def _gen_angle_mesure(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Mesure d'angles (6G-ANGLE)"""
         
         if difficulte == "facile":
-            angle = random.choice([30, 45, 60, 90, 120, 135, 150])
+            angle = safe_random_choice([30, 45, 60, 90, 120, 135, 150], ctx, obs_logger)
         elif difficulte == "moyen":
             angle = random.randint(10, 170)
         else:
@@ -7710,7 +7539,7 @@ class MathGenerationService:
         
         type_angle = "aigu" if angle < 90 else ("droit" if angle == 90 else "obtus")
         
-        type_exercice = random.choice(["mesurer", "construire", "calculer"])
+        type_exercice = safe_random_choice(["mesurer", "construire", "calculer"], ctx, obs_logger)
         
         if type_exercice == "mesurer":
             enonce = f"Mesurer l'angle ABC à l'aide d'un rapporteur."
@@ -7735,6 +7564,7 @@ class MathGenerationService:
         )
     
     def _gen_formules(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Utilisation de formules (6L-FORM)"""
         
         formules = [
@@ -7744,7 +7574,7 @@ class MathGenerationService:
             {"nom": "Aire rectangle", "formule": "A = L × l", "vars": {"L": random.randint(4, 10), "l": random.randint(2, 8)}, "calcul": lambda v: v["L"] * v["l"]}
         ]
         
-        formule = random.choice(formules)
+        formule = safe_random_choice(formules, ctx, obs_logger)
         resultat = formule["calcul"](formule["vars"])
         
         vars_str = ", ".join([f"{k} = {v}" for k, v in formule["vars"].items()])
@@ -7772,21 +7602,22 @@ class MathGenerationService:
     # ==========================================================================
     
     def _gen_fractions_egales(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Fractions égales et simplification"""
         
         if difficulte == "facile":
-            facteur = random.choice([2, 3, 5])
+            facteur = safe_random_choice([2, 3, 5], ctx, obs_logger)
             num_simple = random.randint(1, 5)
             den_simple = random.randint(num_simple + 1, 8)
         else:
-            facteur = random.choice([2, 3, 4, 5, 6])
+            facteur = safe_random_choice([2, 3, 4, 5, 6], ctx, obs_logger)
             num_simple = random.randint(1, 8)
             den_simple = random.randint(num_simple + 1, 12)
         
         num_grand = num_simple * facteur
         den_grand = den_simple * facteur
         
-        type_ex = random.choice(["trouver_egale", "simplifier"])
+        type_ex = safe_random_choice(["trouver_egale", "simplifier"], ctx, obs_logger)
         
         if type_ex == "trouver_egale":
             enonce = f"Trouver une fraction égale à \\frac{{{num_simple}}}{{{den_simple}}} avec un dénominateur de {den_grand}."
@@ -7846,6 +7677,7 @@ class MathGenerationService:
         )
     
     def _gen_encadrement(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Encadrement de nombres"""
         
         if difficulte == "facile":
@@ -7855,7 +7687,7 @@ class MathGenerationService:
             sup = inf + 1
         elif difficulte == "moyen":
             nombre = round(random.uniform(1, 50), 2)
-            precision = random.choice(["unité", "dixième"])
+            precision = safe_random_choice(["unité", "dixième"], ctx, obs_logger)
             if precision == "unité":
                 inf, sup = int(nombre), int(nombre) + 1
             else:
@@ -7863,7 +7695,7 @@ class MathGenerationService:
                 sup = round(inf + 0.1, 1)
         else:
             nombre = round(random.uniform(0.1, 10), 3)
-            precision = random.choice(["dixième", "centième"])
+            precision = safe_random_choice(["dixième", "centième"], ctx, obs_logger)
             if precision == "dixième":
                 inf = round(int(nombre * 10) / 10, 1)
                 sup = round(inf + 0.1, 1)
@@ -7884,6 +7716,7 @@ class MathGenerationService:
         )
     
     def _gen_arrondi(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Arrondi de nombres"""
         
         if difficulte == "facile":
@@ -7891,10 +7724,10 @@ class MathGenerationService:
             precision = "unité"
         elif difficulte == "moyen":
             nombre = round(random.uniform(1, 100), 2)
-            precision = random.choice(["unité", "dixième"])
+            precision = safe_random_choice(["unité", "dixième"], ctx, obs_logger)
         else:
             nombre = round(random.uniform(0.01, 50), 3)
-            precision = random.choice(["dixième", "centième"])
+            precision = safe_random_choice(["dixième", "centième"], ctx, obs_logger)
         
         if precision == "unité":
             arrondi = round(nombre)
@@ -7947,10 +7780,11 @@ class MathGenerationService:
         )
     
     def _gen_criteres_divisibilite(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Critères de divisibilité"""
         
         diviseurs = [2, 3, 5, 9, 10]
-        diviseur = random.choice(diviseurs[:3] if difficulte == "facile" else diviseurs)
+        diviseur = safe_random_choice(diviseurs[:3] if difficulte == "facile" else diviseurs, ctx, obs_logger)
         
         # Générer un nombre
         if random.random() < 0.5:
@@ -7989,10 +7823,11 @@ class MathGenerationService:
         )
     
     def _gen_multiples(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Multiples d'un nombre"""
         
         if difficulte == "facile":
-            nombre = random.choice([2, 3, 5, 10])
+            nombre = safe_random_choice([2, 3, 5, 10], ctx, obs_logger)
             nb_multiples = 5
         elif difficulte == "moyen":
             nombre = random.randint(4, 9)
@@ -8003,13 +7838,13 @@ class MathGenerationService:
         
         multiples = [nombre * i for i in range(1, nb_multiples + 1)]
         
-        type_ex = random.choice(["lister", "verifier", "trouver"])
+        type_ex = safe_random_choice(["lister", "verifier", "trouver"], ctx, obs_logger)
         
         if type_ex == "lister":
             enonce = f"Donner les {nb_multiples} premiers multiples de {nombre}."
             resultat = ", ".join(map(str, multiples))
         elif type_ex == "verifier":
-            test = random.choice([nombre * random.randint(2, 10), random.randint(10, 100)])
+            test = safe_random_choice([nombre * random.randint(2, 10, ctx, obs_logger), random.randint(10, 100)])
             est_multiple = test % nombre == 0
             enonce = f"{test} est-il un multiple de {nombre} ?"
             resultat = f"{'Oui' if est_multiple else 'Non'} car {test} {'=' if est_multiple else '≠'} {nombre} × {test // nombre if est_multiple else '...'}"
@@ -8031,6 +7866,7 @@ class MathGenerationService:
         )
     
     def _gen_conversions_unites(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Conversions d'unités"""
         
         types_unites = [
@@ -8039,7 +7875,7 @@ class MathGenerationService:
             {"nom": "capacité", "unites": ["L", "dL", "cL", "mL"], "facteurs": [10, 10, 10]}
         ]
         
-        type_unite = random.choice(types_unites)
+        type_unite = safe_random_choice(types_unites, ctx, obs_logger)
         unites = type_unite["unites"]
         
         if difficulte == "facile":
@@ -8051,7 +7887,7 @@ class MathGenerationService:
         unite_depart = unites[idx_depart]
         unite_arrivee = unites[idx_arrivee]
         
-        valeur_depart = random.choice([1, 2, 5, 10, 25, 50, 100, 0.5, 0.25]) if difficulte != "facile" else random.randint(1, 100)
+        valeur_depart = safe_random_choice([1, 2, 5, 10, 25, 50, 100, 0.5, 0.25], ctx, obs_logger) if difficulte != "facile" else random.randint(1, 100)
         
         # Calculer le facteur de conversion
         facteurs = type_unite["facteurs"]
@@ -8079,6 +7915,7 @@ class MathGenerationService:
         )
     
     def _gen_angle_vocabulaire(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Vocabulaire des angles"""
         
         angle = random.randint(1, 179)
@@ -8093,13 +7930,13 @@ class MathGenerationService:
             type_angle = "obtus"
             definition = "Un angle obtus mesure entre 90° et 180°."
         
-        type_ex = random.choice(["identifier", "donner_exemple"])
+        type_ex = safe_random_choice(["identifier", "donner_exemple"], ctx, obs_logger)
         
         if type_ex == "identifier":
             enonce = f"Un angle mesure {angle}°. De quel type d'angle s'agit-il ?"
             resultat = f"C'est un angle {type_angle}."
         else:
-            type_demande = random.choice(["aigu", "droit", "obtus"])
+            type_demande = safe_random_choice(["aigu", "droit", "obtus"], ctx, obs_logger)
             if type_demande == "aigu":
                 exemple = random.randint(1, 89)
             elif type_demande == "droit":
@@ -8120,6 +7957,7 @@ class MathGenerationService:
         )
     
     def _gen_symetrie_proprietes(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Propriétés de la symétrie axiale"""
         
         proprietes = [
@@ -8130,9 +7968,9 @@ class MathGenerationService:
             "L'axe de symétrie est la médiatrice du segment joignant un point à son symétrique."
         ]
         
-        propriete = random.choice(proprietes)
+        propriete = safe_random_choice(proprietes, ctx, obs_logger)
         
-        type_ex = random.choice(["vrai_faux", "appliquer", "justifier"])
+        type_ex = safe_random_choice(["vrai_faux", "appliquer", "justifier"], ctx, obs_logger)
         
         if type_ex == "vrai_faux":
             # Proposer une vraie ou fausse propriété
@@ -8162,6 +8000,7 @@ class MathGenerationService:
         )
     
     def _gen_tableau_completer(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Compléter un tableau"""
         
         # Tableau simple à compléter
@@ -8170,7 +8009,7 @@ class MathGenerationService:
             operation = "+"
         else:
             colonnes = 4
-            operation = random.choice(["+", "×"])
+            operation = safe_random_choice(["+", "×"], ctx, obs_logger)
         
         # Générer des données avec des cases manquantes
         valeurs = [random.randint(2, 15) for _ in range(colonnes)]
@@ -8207,13 +8046,14 @@ class MathGenerationService:
         )
     
     def _gen_diagramme_circulaire(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Diagramme circulaire"""
         
-        categories = random.choice([
+        categories = safe_random_choice([
             ["Foot", "Basket", "Tennis", "Natation"],
             ["Rouge", "Bleu", "Vert", "Jaune"],
             ["Math", "Français", "Anglais", "Sport"]
-        ])
+        ], ctx, obs_logger)
         
         # Générer des pourcentages qui font 100%
         if difficulte == "facile":
@@ -8253,10 +8093,10 @@ class MathGenerationService:
         
         svg += '</svg>'
         
-        question = random.choice([
+        question = safe_random_choice([
             f"Quelle catégorie représente la plus grande part ?",
             f"Quel pourcentage représente '{categories[0]}' ?"
-        ])
+        ], ctx, obs_logger)
         
         enonce = f"Voici un diagramme circulaire.\n{question}"
         
@@ -8302,6 +8142,7 @@ class MathGenerationService:
         )
 
     def _gen_angle_proprietes(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
+        ctx = get_request_context()
         """Générateur: Propriétés des angles"""
         
         proprietes = [
@@ -8310,7 +8151,7 @@ class MathGenerationService:
             ("opposés par le sommet", "Deux angles opposés par le sommet sont égaux.", None)
         ]
         
-        prop = random.choice(proprietes)
+        prop = safe_random_choice(proprietes, ctx, obs_logger)
         
         if prop[2]:  # complémentaires ou supplémentaires
             angle1 = random.randint(10, prop[2] - 10)
@@ -8338,18 +8179,14 @@ class MathGenerationService:
     # ========== GÉNÉRATEURS DÉDIÉS 6e (P1) ==========
     
     def _gen_calcul_mental_dedie(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur dédié: Calcul mental niveau 6e
-        Petits calculs rapides sans KaTeX, sans tableau
-        Types: additions, multiplications, doubles/moitiés, priorités
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
-            type_calcul = random.choice(["addition", "multiplication", "double"])
+            type_calcul = safe_random_choice(["addition", "multiplication", "double"], ctx, obs_logger)
         elif difficulte == "moyen":
-            type_calcul = random.choice(["addition", "soustraction", "multiplication", "double", "moitie"])
+            type_calcul = safe_random_choice(["addition", "soustraction", "multiplication", "double", "moitie"], ctx, obs_logger)
         else:
-            type_calcul = random.choice(["addition_multiple", "multiplication", "priorite", "double", "moitie"])
+            type_calcul = safe_random_choice(["addition_multiple", "multiplication", "priorite", "double", "moitie"], ctx, obs_logger)
         
         if type_calcul == "addition":
             a = random.randint(10, 99)
@@ -8419,14 +8256,10 @@ class MathGenerationService:
         )
 
     def _gen_calcul_pose_dedie(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur dédié: Calcul posé niveau 6e
-        Opérations à poser verticalement (addition, soustraction, multiplication)
-        Inclut les étapes de calcul
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
-            operation = random.choice(["addition", "soustraction"])
+            operation = safe_random_choice(["addition", "soustraction"], ctx, obs_logger)
             if operation == "addition":
                 a = random.randint(100, 999)
                 b = random.randint(100, 999)
@@ -8434,7 +8267,7 @@ class MathGenerationService:
                 a = random.randint(500, 999)
                 b = random.randint(100, a-1)
         elif difficulte == "moyen":
-            operation = random.choice(["addition", "soustraction", "multiplication"])
+            operation = safe_random_choice(["addition", "soustraction", "multiplication"], ctx, obs_logger)
             if operation in ["addition", "soustraction"]:
                 a = random.randint(1000, 9999)
                 b = random.randint(100, min(a-1, 9999)) if operation == "soustraction" else random.randint(1000, 9999)
@@ -8442,7 +8275,7 @@ class MathGenerationService:
                 a = random.randint(10, 99)
                 b = random.randint(10, 99)
         else:
-            operation = random.choice(["addition", "soustraction", "multiplication"])
+            operation = safe_random_choice(["addition", "soustraction", "multiplication"], ctx, obs_logger)
             if operation in ["addition", "soustraction"]:
                 a = random.randint(10000, 99999)
                 b = random.randint(1000, min(a-1, 99999)) if operation == "soustraction" else random.randint(10000, 99999)
@@ -8514,11 +8347,7 @@ class MathGenerationService:
         )
 
     def _gen_calcul_instrumente_dedie(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur dédié: Calcul instrumenté niveau 6e
-        Exercices adaptés à l'utilisation de la calculatrice
-        Types: ordre de grandeur, arrondi, estimation, calculs complexes
-        """
+        ctx = get_request_context()
         
         contextes = [
             ("prix", "€", ["achat", "budget", "économies"]),
@@ -8528,13 +8357,13 @@ class MathGenerationService:
         ]
         
         if difficulte == "facile":
-            type_calcul = random.choice(["ordre_grandeur", "arrondi_simple"])
+            type_calcul = safe_random_choice(["ordre_grandeur", "arrondi_simple"], ctx, obs_logger)
         elif difficulte == "moyen":
-            type_calcul = random.choice(["ordre_grandeur", "arrondi", "calcul_decimal"])
+            type_calcul = safe_random_choice(["ordre_grandeur", "arrondi", "calcul_decimal"], ctx, obs_logger)
         else:
-            type_calcul = random.choice(["estimation", "calcul_complexe", "arrondi_precision"])
+            type_calcul = safe_random_choice(["estimation", "calcul_complexe", "arrondi_precision"], ctx, obs_logger)
         
-        contexte = random.choice(contextes)
+        contexte = safe_random_choice(contextes, ctx, obs_logger)
         unite = contexte[1]
         
         if type_calcul == "ordre_grandeur":
@@ -8556,7 +8385,7 @@ class MathGenerationService:
             
         elif type_calcul in ["arrondi_simple", "arrondi"]:
             nombre = round(random.uniform(10, 1000), 3)
-            precision = random.choice([0, 1, 2]) if type_calcul == "arrondi" else random.choice([0, 1])
+            precision = safe_random_choice([0, 1, 2], ctx, obs_logger) if type_calcul == "arrondi" else safe_random_choice([0, 1], ctx, obs_logger)
             
             if precision == 0:
                 resultat = round(nombre)
@@ -8576,7 +8405,7 @@ class MathGenerationService:
             
         elif type_calcul == "arrondi_precision":
             nombre = round(random.uniform(100, 10000), 4)
-            precision = random.choice([-1, -2, 0, 1, 2])
+            precision = safe_random_choice([-1, -2, 0, 1, 2], ctx, obs_logger)
             
             if precision == -2:
                 resultat = round(nombre, -2)
@@ -8603,7 +8432,7 @@ class MathGenerationService:
         elif type_calcul == "calcul_decimal":
             a = round(random.uniform(10, 100), 2)
             b = round(random.uniform(1, 50), 2)
-            operation = random.choice(["+", "-", "×"])
+            operation = safe_random_choice(["+", "-", "×"], ctx, obs_logger)
             
             if operation == "+":
                 resultat = round(a + b, 2)
@@ -8626,7 +8455,7 @@ class MathGenerationService:
             c = round(random.uniform(1, 10), 2)
             resultat = round(a * b + c, 2)
             
-            theme = random.choice(contexte[2])
+            theme = safe_random_choice(contexte[2], ctx, obs_logger)
             enonce = f"Pour un {theme}, on calcule : {a} × {b} + {c}. Utiliser la calculatrice pour trouver le résultat."
             etapes = [
                 f"Calcul : {a} × {b} + {c}",
@@ -8650,11 +8479,7 @@ class MathGenerationService:
         )
 
     def _gen_grandeurs_mesures_dedie(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur dédié: Grandeurs et mesures niveau 6e
-        Longueurs, masses, durées - Conversions unité → unité
-        Progressivité adaptée au niveau 6e
-        """
+        ctx = get_request_context()
         
         # Définition des conversions par type
         conversions = {
@@ -8711,19 +8536,19 @@ class MathGenerationService:
         }
         
         # Choisir un type de grandeur
-        type_grandeur = random.choice(["longueur", "masse", "duree"])
+        type_grandeur = safe_random_choice(["longueur", "masse", "duree"], ctx, obs_logger)
         conv_list = conversions[type_grandeur].get(difficulte, conversions[type_grandeur]["moyen"])
         
         # Choisir une conversion
-        unite_depart, unite_arrivee, facteur, methode = random.choice(conv_list)
+        unite_depart, unite_arrivee, facteur, methode = safe_random_choice(conv_list, ctx, obs_logger)
         
         # Générer une valeur adaptée
         if difficulte == "facile":
             valeur = random.randint(1, 20)
         elif difficulte == "moyen":
-            valeur = random.choice([random.randint(1, 100), round(random.uniform(0.5, 10), 1)])
+            valeur = safe_random_choice([random.randint(1, 100, ctx, obs_logger), round(random.uniform(0.5, 10), 1)])
         else:
-            valeur = random.choice([random.randint(1, 1000), round(random.uniform(0.01, 100), 2)])
+            valeur = safe_random_choice([random.randint(1, 1000, ctx, obs_logger), round(random.uniform(0.01, 100), 2)])
         
         # Calculer le résultat
         resultat = valeur * facteur
@@ -8752,7 +8577,7 @@ class MathGenerationService:
             ]
         }
         
-        contexte = random.choice(contextes[type_grandeur])
+        contexte = safe_random_choice(contextes[type_grandeur], ctx, obs_logger)
         enonce = f"{contexte} Convertir cette mesure en {unite_arrivee}."
         
         etapes = [
@@ -8898,16 +8723,7 @@ class MathGenerationService:
         return svg
     
     def _gen_lecture_horloge(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur Type 1: LECTURE D'HORLOGE ANALOGIQUE
-        
-        Niveau didactique:
-        - Facile: heures pleines (8h00, 3h00)
-        - Moyen: quarts d'heure et demi-heures (9h15, 2h30, 11h45)
-        - Difficile: intervalles de 5 minutes (7h35, 10h50)
-        
-        SVG OBLIGATOIRE avec horloge analogique lisible.
-        """
+        ctx = get_request_context()
         
         # Définir les heures selon la difficulté
         if difficulte == "facile":
@@ -8918,12 +8734,12 @@ class MathGenerationService:
         elif difficulte == "moyen":
             # Quarts d'heure
             hours = random.randint(1, 12)
-            minutes = random.choice([0, 15, 30, 45])
+            minutes = safe_random_choice([0, 15, 30, 45], ctx, obs_logger)
             precision = "quart d'heure"
         else:
             # Intervalles de 5 minutes
             hours = random.randint(1, 12)
-            minutes = random.choice([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55])
+            minutes = safe_random_choice([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55], ctx, obs_logger)
             precision = "5 minutes"
         
         # Contextes variés pour rendre l'exercice concret
@@ -8935,7 +8751,7 @@ class MathGenerationService:
             "Emma regarde la pendule du salon."
         ]
         
-        contexte = random.choice(contextes)
+        contexte = safe_random_choice(contextes, ctx, obs_logger)
         
         # Générer le SVG de l'horloge
         clock_svg = self._generate_clock_svg(hours, minutes, label="Horloge")
@@ -9002,20 +8818,11 @@ class MathGenerationService:
         )
     
     def _gen_conversion_durees(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur Type 2: CONVERSIONS DE DURÉES
-        
-        Types de conversions:
-        - Facile: h → min (entiers simples)
-        - Moyen: min → h + min (avec reste), h min → min
-        - Difficile: conversions combinées, nombres plus grands
-        
-        Pas de figure SVG obligatoire.
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
             # Heures vers minutes (entiers simples)
-            type_conv = random.choice(["h_vers_min", "min_vers_h_simple"])
+            type_conv = safe_random_choice(["h_vers_min", "min_vers_h_simple"], ctx, obs_logger)
             
             if type_conv == "h_vers_min":
                 heures = random.randint(1, 5)
@@ -9047,7 +8854,7 @@ class MathGenerationService:
                 resultat = heures
                 
         elif difficulte == "moyen":
-            type_conv = random.choice(["min_vers_h_min", "h_min_vers_min"])
+            type_conv = safe_random_choice(["min_vers_h_min", "h_min_vers_min"], ctx, obs_logger)
             
             if type_conv == "min_vers_h_min":
                 # Minutes vers heures + minutes (avec reste)
@@ -9084,7 +8891,7 @@ class MathGenerationService:
                 resultat = minutes_total
                 
         else:  # difficile
-            type_conv = random.choice(["h_vers_min_grand", "min_vers_h_min_grand", "double_conversion"])
+            type_conv = safe_random_choice(["h_vers_min_grand", "min_vers_h_min_grand", "double_conversion"], ctx, obs_logger)
             
             if type_conv == "h_vers_min_grand":
                 heures = random.randint(5, 12)
@@ -9151,21 +8958,12 @@ class MathGenerationService:
         )
     
     def _gen_calcul_duree(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur Type 3: CALCUL DE DURÉE ENTRE DEUX INSTANTS
-        
-        Niveaux:
-        - Facile: même heure (ex: 14h10 à 14h45)
-        - Moyen: passage d'une heure à l'autre (ex: 14h25 à 15h10)
-        - Difficile: plusieurs heures (ex: 9h45 à 12h30)
-        
-        SVG RECOMMANDÉ : deux horloges côte à côte
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
             # Durée dans la même heure
             heure = random.randint(8, 17)
-            min_debut = random.choice([0, 5, 10, 15, 20])
+            min_debut = safe_random_choice([0, 5, 10, 15, 20], ctx, obs_logger)
             min_fin = min_debut + random.randint(10, 40)
             if min_fin >= 60:
                 min_fin = min_fin - 5
@@ -9205,7 +9003,7 @@ class MathGenerationService:
             ("visite", f"La visite du musée commence à {heure} h {min_debut:02d} et se termine à {h_fin} h {min_fin:02d}.")
         ]
         
-        type_contexte, contexte = random.choice(contextes)
+        type_contexte, contexte = safe_random_choice(contextes, ctx, obs_logger)
         
         # Générer les SVG des deux horloges
         clock1_svg = self._generate_clock_svg(heure, min_debut, size=150, label="Début")
@@ -9268,30 +9066,19 @@ class MathGenerationService:
         )
     
     def _gen_probleme_durees(self, niveau: str, chapitre: str, difficulte: str) -> MathExerciseSpec:
-        """
-        Générateur Type 4: PROBLÈMES CONTEXTUALISÉS SUR LES DURÉES
-        
-        Contextes variés et réalistes:
-        - Film et cinéma
-        - Trajets et transports
-        - Entraînement sportif
-        - Journée scolaire
-        - Recettes de cuisine
-        
-        Chaque problème a un contexte concret - INTERDICTION D'ÉNONCÉS ABSTRAITS.
-        """
+        ctx = get_request_context()
         
         if difficulte == "facile":
             # Problèmes simples à une étape
-            type_prob = random.choice(["film", "trajet", "sport"])
+            type_prob = safe_random_choice(["film", "trajet", "sport"], ctx, obs_logger)
             
             if type_prob == "film":
-                duree_min = random.choice([90, 105, 120, 135, 150])
+                duree_min = safe_random_choice([90, 105, 120, 135, 150], ctx, obs_logger)
                 duree_h = duree_min // 60
                 duree_m = duree_min % 60
                 
                 films = ["Le Roi Lion", "Harry Potter", "La Reine des Neiges", "Les Minions", "Spider-Man"]
-                film = random.choice(films)
+                film = safe_random_choice(films, ctx, obs_logger)
                 
                 enonce = f"Le film « {film} » dure {duree_min} minutes.\nCombien de temps dure-t-il en heures et minutes ?"
                 
@@ -9307,13 +9094,13 @@ class MathGenerationService:
             elif type_prob == "trajet":
                 heure_depart = random.randint(8, 14)
                 duree_h = random.randint(1, 2)
-                duree_m = random.choice([0, 15, 30, 45])
+                duree_m = safe_random_choice([0, 15, 30, 45], ctx, obs_logger)
                 
                 h_arrivee = heure_depart + duree_h
                 m_arrivee = duree_m
                 
                 villes = [("Paris", "Lyon"), ("Marseille", "Nice"), ("Bordeaux", "Toulouse"), ("Lille", "Bruxelles")]
-                ville_dep, ville_arr = random.choice(villes)
+                ville_dep, ville_arr = safe_random_choice(villes, ctx, obs_logger)
                 
                 enonce = f"Un train part de {ville_dep} à {heure_depart} h 00.\nLe trajet dure {duree_h} h {duree_m if duree_m > 0 else '00'} min.\nÀ quelle heure arrive-t-il à {ville_arr} ?"
                 
@@ -9329,12 +9116,12 @@ class MathGenerationService:
                 duree_min = duree_h * 60 + duree_m
                 
             else:  # sport
-                duree_min = random.choice([45, 60, 75, 90])
+                duree_min = safe_random_choice([45, 60, 75, 90], ctx, obs_logger)
                 duree_h = duree_min // 60
                 duree_m = duree_min % 60
                 
                 sports = ["football", "basket", "natation", "tennis", "gymnastique"]
-                sport = random.choice(sports)
+                sport = safe_random_choice(sports, ctx, obs_logger)
                 
                 enonce = f"L'entraînement de {sport} dure {duree_min} minutes.\nExprimer cette durée en heures et minutes."
                 
@@ -9355,7 +9142,7 @@ class MathGenerationService:
                     
         elif difficulte == "moyen":
             # Problèmes à deux étapes
-            type_prob = random.choice(["cinema", "journee_scolaire", "cuisine"])
+            type_prob = safe_random_choice(["cinema", "journee_scolaire", "cuisine"], ctx, obs_logger)
             
             if type_prob == "cinema":
                 heure_debut = random.randint(14, 18)
@@ -9410,7 +9197,7 @@ class MathGenerationService:
                 duree_totale = temps_prep + temps_cuisson + temps_repos
                 
                 plats = ["un gâteau au chocolat", "une tarte aux pommes", "des crêpes", "un gratin"]
-                plat = random.choice(plats)
+                plat = safe_random_choice(plats, ctx, obs_logger)
                 
                 enonce = f"Pour préparer {plat}, il faut :\n• {temps_prep} min de préparation\n• {temps_cuisson} min de cuisson\n• {temps_repos} min de repos\n\nCombien de temps faut-il en tout ?"
                 
@@ -9431,11 +9218,11 @@ class MathGenerationService:
                 
         else:  # difficile
             # Problèmes complexes à plusieurs étapes
-            type_prob = random.choice(["voyage", "planning", "competition"])
+            type_prob = safe_random_choice(["voyage", "planning", "competition"], ctx, obs_logger)
             
             if type_prob == "voyage":
                 h_depart = random.randint(6, 9)
-                m_depart = random.choice([0, 15, 30, 45])
+                m_depart = safe_random_choice([0, 15, 30, 45], ctx, obs_logger)
                 
                 trajet1 = random.randint(45, 90)
                 pause = random.randint(15, 30)
@@ -9505,7 +9292,7 @@ class MathGenerationService:
                 m_fin = duree_totale % 60
                 
                 sports = ["handball", "volley", "basket", "badminton"]
-                sport = random.choice(sports)
+                sport = safe_random_choice(sports, ctx, obs_logger)
                 
                 enonce = f"Un tournoi de {sport} commence à {h_debut} h 00.\nIl y a {nb_matchs} matchs de {duree_match} minutes chacun.\nEntre chaque match, il y a {pause_matchs} minutes de pause.\n\nÀ quelle heure se termine le tournoi ?"
                 

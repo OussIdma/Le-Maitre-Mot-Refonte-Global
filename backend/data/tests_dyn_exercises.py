@@ -11,6 +11,14 @@ mais des templates avec placeholders {{variable}}.
 
 from typing import List, Dict, Any, Optional
 import random
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
+
+obs_logger = get_obs_logger('TESTS_DYN')
 
 
 # =============================================================================
@@ -176,7 +184,8 @@ def get_random_tests_dyn_exercise(
         rng = random.Random(seed)
         return rng.choice(available)
     else:
-        return random.choice(available)
+        ctx = get_request_context()
+        return safe_random_choice(available, ctx, obs_logger)
 
 
 def get_tests_dyn_batch(

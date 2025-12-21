@@ -6,6 +6,48 @@ Les entrées sont listées de la plus récente à la plus ancienne.
 
 ---
 
+### 2025-12-21 – Fix P0 : "CHAPITRE NON MAPPÉ" pour pipeline MIXED sans exercise_types
+
+- **Backend** : blocage du fallback statique pour les chapitres avec `pipeline=MIXED` et `exercise_types=[]`. Retour d'une erreur explicite `MIXED_PIPELINE_NO_DYNAMIC_EXERCISES` à la place d'un fallback silencieux vers le mapping legacy.
+- **Root cause / besoin** : le chapitre `6e_AA_TEST` (pipeline MIXED, `exercise_types=[]`) générait l'erreur "CHAPITRE NON MAPPÉ" lors de la génération de plusieurs exercices avec difficulté "difficile". Le pipeline MIXED capturait les exceptions `randrange` et faisait un fallback statique vers `_map_chapter_to_types()`, mais "AA TEST" n'était pas mappé dans le legacy (libellé utilisé comme clé).
+- **Effet** : plus de fallback silencieux pour les chapitres MIXED sans `exercise_types`. Erreur explicite si aucun exercice dynamique disponible, respectant le principe "pas de fallback silencieux". La génération de plusieurs exercices fonctionne maintenant correctement.
+- **Tests** : `curl` avec `code_officiel=6e_AA_TEST` et `difficulte=difficile` → fonctionne pour 1 et plusieurs exercices. Si aucun exercice dynamique disponible → erreur explicite (pas de "CHAPITRE NON MAPPÉ").
+- **Référence incident** : `docs/incidents/INCIDENT_2025-12-21_chapitre_non_mappe_aa_test.md`.
+
+---
+
+### 2025-12-21 – Ajout des paramètres de générateur dans l'admin UI
+
+- **Frontend** : ajout du composant `GeneratorParamsForm` dans le formulaire de création/édition d'exercices dynamiques (`ChapterExercisesAdminPage.js`). Le formulaire permet maintenant de configurer les paramètres du générateur (ex: `allow_negative`, `max_denominator`, `show_svg`, etc.) directement depuis l'interface admin, avec support des presets pédagogiques.
+- **Documentation** : mise à jour de `docs/PROCEDURE_AJOUT_TEMPLATE_DYNAMIQUE.md` pour documenter l'utilisation des paramètres du générateur dans l'admin UI.
+- **Root cause / besoin** : les générateurs dynamiques (comme `SIMPLIFICATION_FRACTIONS_V1`) définissent des paramètres configurables via `get_schema()`, mais ces paramètres n'étaient pas exposés dans l'interface admin, rendant impossible leur modification sans intervention directe en DB.
+- **Effet** : les administrateurs peuvent maintenant configurer les paramètres du générateur lors de la création d'un exercice dynamique, permettant une personnalisation fine du comportement de génération (limites, options visuelles, etc.). Les paramètres sont stockés dans le champ `variables` de l'exercice en DB.
+- **Tests** : interface testée avec `SIMPLIFICATION_FRACTIONS_V1`, tous les paramètres sont correctement affichés et sauvegardés.
+- **Référence** : `frontend/src/components/admin/ChapterExercisesAdminPage.js`, `docs/PROCEDURE_AJOUT_TEMPLATE_DYNAMIQUE.md`.
+
+---
+
+### 2025-12-21 – Procédure complète d'ajout de template dynamique
+
+- **Documentation** : création de `docs/PROCEDURE_AJOUT_TEMPLATE_DYNAMIQUE.md`, procédure exhaustive pour créer un exercice dynamique sans bug, utilisable par un agent IA. La procédure couvre : identification du générateur, extraction des templates de référence, validation des placeholders, tests de génération, et dépannage.
+- **Script de validation** : création de `backend/scripts/validate_template_placeholders.py`, script Python pour valider automatiquement que tous les placeholders des templates sont générés par le générateur correspondant. Le script peut valider depuis des templates fournis en ligne de commande ou depuis un exercice en DB.
+- **Root cause / besoin** : éviter les erreurs `UNRESOLVED_PLACEHOLDERS` lors de la création d'exercices dynamiques en fournissant une procédure claire et des outils de validation automatique.
+- **Effet** : les futurs exercices dynamiques peuvent être créés en suivant une procédure validée, avec validation automatique des placeholders avant sauvegarde, réduisant drastiquement les risques d'erreur.
+- **Tests** : procédure testée avec `SIMPLIFICATION_FRACTIONS_V1`, script de validation testé avec succès sur exercices en DB et templates fournis.
+- **Référence** : `docs/PROCEDURE_AJOUT_TEMPLATE_DYNAMIQUE.md`, `backend/scripts/validate_template_placeholders.py`.
+
+---
+
+### 2025-12-21 – Fix templates incorrects pour SIMPLIFICATION_FRACTIONS_V1
+
+- **Backend** : création du script de migration `backend/migrations/005_fix_simplification_fractions_templates.py` pour corriger automatiquement les templates des exercices dynamiques avec `generator_key=SIMPLIFICATION_FRACTIONS_V1` qui utilisaient des placeholders incorrects (SYMETRIE_AXIALE au lieu de SIMPLIFICATION_FRACTIONS_V1).
+- **Root cause / besoin** : les exercices du chapitre `6e_AA_TEST` avec `SIMPLIFICATION_FRACTIONS_V1` avaient des templates contenant des placeholders de SYMETRIE_AXIALE (`axe_equation`, `axe_label`, etc.) qui ne sont pas générés par le générateur, provoquant une erreur `UNRESOLVED_PLACEHOLDERS` → fallback pipeline statique → "CHAPITRE NON MAPPÉ".
+- **Effet** : les templates sont corrigés avec les placeholders corrects (`{{fraction}}`, `{{step1}}`, `{{step2}}`, `{{step3}}`, `{{fraction_reduite}}`, etc.), la génération fonctionne correctement, le pipeline MIXED génère des exercices dynamiques sans erreur.
+- **Tests** : `curl -X POST http://localhost:8000/api/v1/exercises/generate -d '{"code_officiel": "6e_AA_TEST", "difficulte": "difficile", "offer": "free", "seed": 42}'` → exercice généré avec succès, logs montrent `[PIPELINE] ✅ Exercice dynamique généré (MIXED, priorité dynamique)`.
+- **Référence incident** : `docs/incidents/INCIDENT_2025-12-21_templates_simplification_fractions.md`.
+
+---
+
 ### 2025-12-19 – Admin curriculum: pipeline désormais persistant
 
 - **Backend** : le champ `pipeline` est maintenant exposé et accepté en édition admin (`AdminChapterResponse` inclut `pipeline` ; `ChapterUpdateRequest` accepte `pipeline`). La valeur saisie dans le formulaire n’est plus ignorée.

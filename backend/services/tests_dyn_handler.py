@@ -34,9 +34,14 @@ from backend.services.template_renderer import render_template, get_template_var
 from backend.services.dynamic_exercise_engine import choose_template_variant
 from backend.services.variants_config import is_chapter_template_based
 from backend.logger import get_logger
-
+from backend.observability import (
+    get_logger as get_obs_logger,
+    set_request_context,
+    get_request_context,
+)
 
 logger = get_logger()
+obs_logger = get_obs_logger('TESTS_DYN')
 
 
 def is_tests_dyn_request(code_officiel: Optional[str]) -> bool:
@@ -79,7 +84,8 @@ def _normalize_figure_type(raw: Optional[str]) -> Optional[str]:
 def format_dynamic_exercise(
     exercise_template: Dict[str, Any],
     timestamp: int,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    overrides: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Formate un exercice dynamique complet.
@@ -88,6 +94,7 @@ def format_dynamic_exercise(
         exercise_template: Template d'exercice depuis la DB
         timestamp: Timestamp pour l'ID unique
         seed: Seed pour le générateur (reproductibilité)
+        overrides: Paramètres à écraser (ex: difficulty de la requête HTTP)
     
     Returns:
         Exercice formaté avec HTML rendu et SVG générés.
@@ -99,21 +106,54 @@ def format_dynamic_exercise(
     - Si des placeholders {{...}} restent après rendu, lève une HTTPException
       422 UNRESOLVED_PLACEHOLDERS pour éviter d'envoyer un énoncé cassé.
     """
+    handler_start = time.time()
     chapter_code = (exercise_template.get("chapter_code") or "6E_TESTS_DYN").upper()
     exercise_id = f"ex_{chapter_code.lower()}_{exercise_template['id']}_{timestamp}"
     is_premium = exercise_template["offer"] == "pro"
-
+    
     # Récupérer le générateur
     generator_key = exercise_template.get("generator_key", "THALES_V1")
     difficulty = exercise_template.get("difficulty", "moyen")
-
+    template_id = exercise_template.get("id")
+    
+    # Mettre à jour le contexte partagé
+    ctx = get_request_context()
+    ctx.update({
+        'chapter_code': chapter_code,
+        'generator_key': generator_key,
+        'template_id': template_id,
+        'exercise_id': exercise_id,
+        'admin_exercise_id': template_id,
+        'difficulty': difficulty,
+        'seed': seed,
+    })
+    set_request_context(**ctx)
+    
+    # Log début handler
+    obs_logger.info(
+        "event=handler_in",
+        event="handler_in",
+        outcome="in_progress",
+        **ctx
+    )
+    
+    # Récupérer les paramètres de l'exercice (configurés dans l'admin)
+    exercise_params = exercise_template.get("variables") or {}
+    
+    # S'assurer que le difficulty de l'exercice est inclus dans les paramètres
+    # (si non présent dans variables, utiliser celui de l'exercice)
+    if "difficulty" not in exercise_params:
+        exercise_params["difficulty"] = difficulty
+    
     # Générer les variables et SVG (dépend uniquement du seed + difficulty)
+    # Ordre de fusion: defaults < exercise_params < overrides
+    gen_start = time.time()
     factory_gen = GeneratorFactory.get(generator_key)
     if factory_gen:
         gen_result = GeneratorFactory.generate(
             key=generator_key,
-            exercise_params=exercise_template.get("variables") or {},
-            overrides=None,
+            exercise_params=exercise_params,
+            overrides=overrides,
             seed=seed,
         )
         variables = gen_result.get("variables", {})
@@ -126,7 +166,18 @@ def format_dynamic_exercise(
         )
         variables = gen_result["variables"]
         results = gen_result["results"]
-
+    
+    gen_duration_ms = int((time.time() - gen_start) * 1000)
+    obs_logger.debug(
+        "event=generator_complete",
+        event="generator_complete",
+        outcome="success",
+        duration_ms=gen_duration_ms,
+        variables_count=len(variables),
+        results_count=len(results),
+        **ctx
+    )
+    
     # Fusionner variables et results pour le rendu
     all_vars: Dict[str, Any] = {**variables, **results}
 
@@ -148,6 +199,15 @@ def format_dynamic_exercise(
 
         missing_alias = [k for k in ("cote_initial", "cote_final") if k not in all_vars or all_vars[k] is None]
         if missing_alias:
+            obs_logger.error(
+                "event=alias_missing",
+                event="alias_missing",
+                outcome="error",
+                reason="placeholder_alias_missing",
+                missing_placeholders=",".join(missing_alias),
+                available_keys_count=len(all_vars),
+                **ctx
+            )
             logger.error(
                 f"[PLACEHOLDER_ALIAS] Impossible de résoudre {missing_alias} pour {generator_key} "
                 f"(candidats présents: {[k for k in all_vars.keys()]})"
@@ -163,6 +223,13 @@ def format_dynamic_exercise(
                 }
             )
         if alias_actions:
+            obs_logger.info(
+                "event=alias_applied",
+                event="alias_applied",
+                outcome="success",
+                alias_count=len(alias_actions),
+                **ctx
+            )
             logger.info(f"[PLACEHOLDER_ALIAS] Aliases appliqués pour {generator_key}: {alias_actions}")
 
     raw_figure_type = all_vars.get("figure_type")
@@ -171,6 +238,18 @@ def format_dynamic_exercise(
         all_vars["figure_type"] = figure_type
 
     # Log de contexte pour diagnostiquer les cas carrés / placeholders résiduels
+    ctx.update({
+        'figure_type': figure_type,
+    })
+    obs_logger.debug(
+        "event=render_prepare",
+        event="render_prepare",
+        outcome="in_progress",
+        figure_type_raw=raw_figure_type,
+        figure_type=figure_type,
+        available_keys_count=len(all_vars),
+        **ctx
+    )
     logger.info(
         f"[TESTS_DYN] format_dynamic_exercise: template_id={exercise_template.get('id')}, "
         f"exercise_id={exercise_id}, seed={seed}, generator={generator_key}, "
@@ -245,6 +324,38 @@ def format_dynamic_exercise(
             # Aliases triangle
             all_vars.setdefault("base_finale", cote_final)
             all_vars.setdefault("hauteur_finale", cote_final)
+
+    # =========================================================================
+    # GÉNÉRATION DES PLACEHOLDERS MÉTIER (answer, question)
+    # =========================================================================
+    # Placeholders métier génériques pour THALES : question/answer
+    if generator_key and generator_key.startswith("THALES"):
+        try:
+            fig = all_vars.get("figure_type", "")
+            # Valeurs fallback sûres
+            cote_final = all_vars.get("cote_final")
+            longueur_finale = all_vars.get("longueur_finale")
+            largeur_finale = all_vars.get("largeur_finale")
+            base_finale = all_vars.get("base_finale")
+            hauteur_finale = all_vars.get("hauteur_finale")
+            coef = all_vars.get("coefficient_str") or all_vars.get("coefficient")
+
+            if fig == "carre" and cote_final is not None:
+                all_vars["question"] = f"Quelle est la mesure du côté final ?"
+                all_vars["answer"] = f"{cote_final} cm"
+            elif fig == "rectangle" and longueur_finale is not None and largeur_finale is not None:
+                all_vars["question"] = "Quelles sont les dimensions du rectangle final ?"
+                all_vars["answer"] = f"longueur {longueur_finale} cm, largeur {largeur_finale} cm"
+            elif fig == "triangle" and base_finale is not None and hauteur_finale is not None:
+                all_vars["question"] = "Quelles sont les dimensions du triangle final ?"
+                all_vars["answer"] = f"base {base_finale} cm, hauteur {hauteur_finale} cm"
+            else:
+                # fallback générique pour ne pas bloquer le rendu
+                all_vars["question"] = "Calcule les dimensions après transformation."
+                all_vars["answer"] = f"coefficient {coef}" if coef is not None else "Voir calculs"
+            logger.info(f"[TESTS_DYN] Placeholders métier générés (question/answer) pour {generator_key} / figure={fig}")
+        except Exception as e:
+            logger.warning(f"[TESTS_DYN] Impossible de générer question/answer pour {generator_key}: {e}")
 
     # =========================================================================
     # SÉLECTION DU TEMPLATE (SINGLE OU VARIANTS)
@@ -342,6 +453,18 @@ def format_dynamic_exercise(
             seed=seed,
             exercise_id=stable_key,
         )
+        
+        # Log variant sélectionné
+        variant_id = getattr(chosen_variant, 'variant_id', None) if chosen_variant else None
+        ctx.update({'variant_id': variant_id})
+        obs_logger.info(
+            "event=variant_selected",
+            event="variant_selected",
+            outcome="success",
+            variant_id=variant_id,
+            variants_count=len(variant_objs),
+            **ctx
+        )
 
         enonce_template = chosen_variant.enonce_template_html
         solution_template = chosen_variant.solution_template_html
@@ -349,7 +472,7 @@ def format_dynamic_exercise(
         # Fallback: comportement legacy, un seul template par exercice
         enonce_template = exercise_template.get("enonce_template_html", "")
         solution_template = exercise_template.get("solution_template_html", "")
-
+    
     # =========================================================================
     # DEBUG: placeholders attendus vs variables fournies
     # =========================================================================
@@ -360,6 +483,15 @@ def format_dynamic_exercise(
     missing_before_render = sorted(expected_placeholders - provided_keys)
 
     if expected_placeholders:
+        obs_logger.debug(
+            "event=placeholders_analysis",
+            event="placeholders_analysis",
+            outcome="in_progress",
+            expected_count=len(expected_placeholders),
+            provided_count=len(provided_keys),
+            missing_before_render_count=len(missing_before_render),
+            **ctx
+        )
         logger.info(
             f"[TESTS_DYN] Placeholders attendus (ex {exercise_template.get('id')} "
             f"/ {generator_key} / {figure_type}): {sorted(expected_placeholders)} | "
@@ -370,7 +502,7 @@ def format_dynamic_exercise(
     # Rendu HTML
     enonce_html = render_template(enonce_template, all_vars)
     solution_html = render_template(solution_template, all_vars)
-
+    
     # =========================================================================
     # GUARDE ANTI-PLACEHOLDERS: ne jamais renvoyer {{...}} côté élève
     # =========================================================================
@@ -379,6 +511,18 @@ def format_dynamic_exercise(
     unresolved = sorted(set(unresolved_enonce + unresolved_solution))
 
     if unresolved:
+        # Log unresolved placeholders avec les bonnes informations
+        obs_logger.error(
+            "event=unresolved_placeholders",
+            event="unresolved_placeholders",
+            outcome="error",
+            reason="placeholders_422",
+            missing_placeholders=",".join(unresolved),
+            available_keys_count=len(provided_keys),
+            expected_count=len(expected_placeholders),
+            **ctx
+        )
+        
         details = {
             "unknown_placeholders": unresolved,
             "placeholders_expected": sorted(expected_placeholders),
@@ -405,7 +549,17 @@ def format_dynamic_exercise(
                 "details": details,
             },
         )
-
+    
+    # Log succès handler
+    handler_duration_ms = int((time.time() - handler_start) * 1000)
+    obs_logger.info(
+        "event=handler_complete",
+        event="handler_complete",
+        outcome="success",
+        duration_ms=handler_duration_ms,
+        **ctx
+    )
+    
     return {
         "id_exercice": exercise_id,
         "niveau": "6e",
@@ -543,7 +697,20 @@ def generate_tests_dyn_batch(
 
 def get_available_generators() -> List[str]:
     """Retourne la liste des générateurs disponibles."""
-    return list(GENERATORS_REGISTRY.keys())
+    # Récupérer les générateurs legacy
+    legacy_generators = list(GENERATORS_REGISTRY.keys())
+    
+    # Récupérer les générateurs de la Factory
+    try:
+        from backend.generators.factory import get_generators_list
+        factory_generators = get_generators_list()
+        factory_keys = [g["key"] for g in factory_generators]
+    except Exception:
+        factory_keys = []
+    
+    # Fusionner et dédupliquer
+    all_generators = list(set(legacy_generators + factory_keys))
+    return sorted(all_generators)
 
 
 if __name__ == "__main__":

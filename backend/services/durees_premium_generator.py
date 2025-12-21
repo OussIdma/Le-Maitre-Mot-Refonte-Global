@@ -22,6 +22,14 @@ import math
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 from dataclasses import dataclass
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
+
+obs_logger = get_obs_logger('GENERATOR')
 
 
 class DureesFamily(Enum):
@@ -309,12 +317,13 @@ class DureesPremiumGenerator:
         Moyen: Minutes précises (5 en 5), format 24h
         Difficile: Position des aiguilles, anticipation, ambiguïtés
         """
-        prenom = random.choice(self.prenoms)
-        contexte_type, contexte_base = random.choice(self.contextes_horloge)
+        ctx = get_request_context()
+        prenom = safe_random_choice(self.prenoms, ctx, obs_logger)
+        contexte_type, contexte_base = safe_random_choice(self.contextes_horloge, ctx, obs_logger)
         contexte = contexte_base.format(prenom=prenom)
         
         if difficulty == "facile":
-            variant = random.choice(["heure_ronde", "demi_heure", "quart"])
+            variant = safe_random_choice(["heure_ronde", "demi_heure", "quart"], ctx, obs_logger)
             
             if variant == "heure_ronde":
                 hours = random.randint(1, 12)
@@ -349,7 +358,7 @@ Quelle heure est-il ? (Format HHhMM)</p>'''
                 
             else:  # quart
                 hours = random.randint(1, 12)
-                minutes = random.choice([15, 45])
+                minutes = safe_random_choice([15, 45], ctx, obs_logger)
                 minute_pos = 3 if minutes == 15 else 9
                 
                 if minutes == 15:
@@ -370,11 +379,11 @@ Quelle heure est-il ? (Format HHhMM)</p>'''
 <p style="color: orange;"><strong>Piège classique :</strong> Ne confondez pas l'aiguille des heures et celle des minutes, surtout quand l'aiguille des minutes est sur un nombre.</p>'''
             
         elif difficulty == "moyen":
-            variant = random.choice(["minute_precise", "format_24h", "moins_le_quart"])
+            variant = safe_random_choice(["minute_precise", "format_24h", "moins_le_quart"], ctx, obs_logger)
             
             if variant == "minute_precise":
                 hours = random.randint(1, 12)
-                minutes = random.choice([7, 13, 22, 38, 47, 53])
+                minutes = safe_random_choice([7, 13, 22, 38, 47, 53], ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Lecture à la minute près :</strong> Le réveil de {prenom} affiche l'heure de son entraînement. 
 L'aiguille des heures est entre le {hours} et le {(hours % 12) + 1}, et l'aiguille des minutes est sur la {minutes}ème petite graduation. 
@@ -390,7 +399,7 @@ Quelle heure est-il ? (Format HHhMM)</p>'''
             elif variant == "format_24h":
                 hours_24 = random.randint(14, 22)
                 hours_12 = hours_24 - 12
-                minutes = random.choice([10, 20, 35, 40, 50])
+                minutes = safe_random_choice([10, 20, 35, 40, 50], ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Lecture format 24h :</strong> {contexte} en fin d'après-midi. 
 L'aiguille des heures est entre le {hours_12} et le {(hours_12 % 12) + 1}. L'aiguille des minutes pointe vers le {minutes // 5}. 
@@ -427,7 +436,7 @@ On suppose que c'est l'après-midi. Quelle est l'heure au format 24h ? (Format H
                 hours = pm_hours
                 
         else:  # difficile
-            variant = random.choice(["anticipation", "position_inverse", "proche_heure"])
+            variant = safe_random_choice(["anticipation", "position_inverse", "proche_heure"], ctx, obs_logger)
             
             if variant == "anticipation":
                 hours = random.randint(8, 11)
@@ -466,7 +475,7 @@ Sachant que l'aiguille des heures est entre le {hours} et le {hours + 1}, à que
                 
             else:  # proche_heure
                 hours = random.randint(1, 11)
-                minutes = random.choice([58, 59, 1, 2])
+                minutes = safe_random_choice([58, 59, 1, 2], ctx, obs_logger)
                 
                 if minutes >= 58:
                     proche = hours + 1
@@ -510,16 +519,17 @@ Quelle heure exacte indique l'horloge ?</p>'''
         Moyen: min→h+min avec reste, h+min+sec→sec
         Difficile: Heures décimales, conversions complexes
         """
-        prenom = random.choice(self.prenoms)
+        ctx = get_request_context()
+        prenom = safe_random_choice(self.prenoms, ctx, obs_logger)
         
         if difficulty == "facile":
-            variant = random.choice(["h_vers_min", "min_vers_sec", "sec_vers_min"])
+            variant = safe_random_choice(["h_vers_min", "min_vers_sec", "sec_vers_min"], ctx, obs_logger)
             
             if variant == "h_vers_min":
                 hours = random.randint(2, 6)
                 result = hours * 60
-                matiere = random.choice(self.matieres)
-                prof = random.choice(self.profs)
+                matiere = safe_random_choice(self.matieres, ctx, obs_logger)
+                prof = safe_random_choice(self.profs, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Conversion simple (h vers min) :</strong> 
 Le cours de {matiere} de {prof} dure <strong>{hours} heures</strong>. 
@@ -533,7 +543,7 @@ Exprime cette durée uniquement en minutes.</p>'''
 </ol>'''
                 
             elif variant == "min_vers_sec":
-                minutes = random.choice([2, 3, 4, 5, 10])
+                minutes = safe_random_choice([2, 3, 4, 5, 10], ctx, obs_logger)
                 result = minutes * 60
                 
                 enonce = f'''<p><strong>Conversion simple (min vers sec) :</strong> 
@@ -548,7 +558,7 @@ Exprime cette durée en secondes.</p>'''
 </ol>'''
                 
             else:  # sec_vers_min
-                minutes = random.choice([3, 4, 5, 6, 10])
+                minutes = safe_random_choice([3, 4, 5, 6, 10], ctx, obs_logger)
                 seconds = minutes * 60
                 
                 enonce = f'''<p><strong>Conversion inverse (sec vers min) :</strong> 
@@ -563,13 +573,13 @@ Exprime cette durée uniquement en minutes.</p>'''
 </ol>'''
                 
         elif difficulty == "moyen":
-            variant = random.choice(["min_vers_h_min", "h_min_sec_vers_sec", "sec_vers_min_sec"])
+            variant = safe_random_choice(["min_vers_h_min", "h_min_sec_vers_sec", "sec_vers_min_sec"], ctx, obs_logger)
             
             if variant == "min_vers_h_min":
                 hours = random.randint(2, 5)
                 mins = random.randint(10, 55)
                 total_min = hours * 60 + mins
-                sport = random.choice(self.sports)
+                sport = safe_random_choice(self.sports, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Conversion min vers h et min :</strong> 
 Le temps passé par un athlète à s'entraîner au {sport} est de <strong>{total_min} minutes</strong>. 
@@ -584,7 +594,7 @@ Convertis cette durée en heures et minutes.</p>'''
 </ol>'''
                 
             elif variant == "h_min_sec_vers_sec":
-                hours = random.choice([1, 2])
+                hours = safe_random_choice([1, 2], ctx, obs_logger)
                 mins = random.randint(5, 30)
                 secs = random.randint(10, 50)
                 total_sec = hours * 3600 + mins * 60 + secs
@@ -619,11 +629,11 @@ Convertis cette durée en minutes et secondes.</p>'''
 </ol>'''
                 
         else:  # difficile
-            variant = random.choice(["heure_decimale", "double_conversion", "inverse_complexe"])
+            variant = safe_random_choice(["heure_decimale", "double_conversion", "inverse_complexe"], ctx, obs_logger)
             
             if variant == "heure_decimale":
                 hours = random.randint(1, 4)
-                decimal_part = random.choice([0.25, 0.5, 0.75])
+                decimal_part = safe_random_choice([0.25, 0.5, 0.75], ctx, obs_logger)
                 decimal_hours = hours + decimal_part
                 minutes = int(decimal_part * 60)
                 
@@ -641,7 +651,7 @@ Convertis cette durée en heures et minutes.</p>'''
 <p style="color: orange;"><strong>Piège classique :</strong> Attention ! ${decimal_part} \\text{{ h}}$ n'est PAS ${int(decimal_part * 100)}$ minutes. Les élèves doivent comprendre que le temps n'est pas en base 100.</p>'''
                 
             elif variant == "double_conversion":
-                hours = random.choice([1, 2])
+                hours = safe_random_choice([1, 2], ctx, obs_logger)
                 mins = random.randint(15, 45)
                 total_min = hours * 60 + mins
                 total_sec = total_min * 60
@@ -696,9 +706,10 @@ Exprime cette durée en heures, minutes et secondes.</p>'''
         Moyen: Avec report (emprunt), méthode par paliers
         Difficile: Passage de jour (minuit), événements fractionnés
         """
+        ctx = get_request_context()
         
         if difficulty == "facile":
-            variant = random.choice(["meme_heure", "sans_report"])
+            variant = safe_random_choice(["meme_heure", "sans_report"], ctx, obs_logger)
             
             if variant == "meme_heure":
                 hour = random.randint(8, 18)
@@ -712,7 +723,7 @@ Exprime cette durée en heures, minutes et secondes.</p>'''
                     ("pause", "la pause café"),
                     ("exercice", "l'exercice de mathématiques"),
                 ]
-                ctx_type, ctx_text = random.choice(contextes)
+                ctx_type, ctx_text = safe_random_choice(contextes, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Durée sans report d'heure :</strong> 
 {ctx_text.capitalize()} commence à <strong>{hour}h{m1:02d}</strong> et se termine à <strong>{hour}h{m2:02d}</strong>. 
@@ -737,7 +748,7 @@ Quelle est la durée ? (Format X min)</p>'''
                 duree_h = h2 - h1
                 duree_m = m2 - m1
                 
-                ctx = random.choice(self.contextes_calcul)
+                ctx = safe_random_choice(self.contextes_calcul, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Calcul de durée sans emprunt :</strong> 
 {ctx[0].capitalize()} {ctx[1]} à <strong>{h1}h{m1:02d}</strong> {ctx[2]} à <strong>{h2}h{m2:02d}</strong>. 
@@ -755,7 +766,7 @@ Quelle est la durée totale ? (Format X h Y min)</p>'''
                 h2_svg, m2_svg = h2, m2
                 
         elif difficulty == "moyen":
-            variant = random.choice(["avec_report", "methode_paliers"])
+            variant = safe_random_choice(["avec_report", "methode_paliers"], ctx, obs_logger)
             
             if variant == "avec_report":
                 h1 = random.randint(14, 18)
@@ -771,7 +782,7 @@ Quelle est la durée totale ? (Format X h Y min)</p>'''
                     duree_h = h2 - h1
                     duree_m = m2 - m1
                 
-                ctx = random.choice(self.contextes_calcul)
+                ctx = safe_random_choice(self.contextes_calcul, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Piège de la soustraction des minutes :</strong> 
 Quelle est la durée d'une partie de jeu vidéo qui commence à <strong>{h1}h{m1:02d}</strong> et se termine à <strong>{h2}h{m2:02d}</strong> ? 
@@ -801,7 +812,7 @@ Quelle est la durée d'une partie de jeu vidéo qui commence à <strong>{h1}h{m1
                 duree_h = total_min // 60
                 duree_m = total_min % 60
                 
-                ctx = random.choice(self.contextes_calcul)
+                ctx = safe_random_choice(self.contextes_calcul, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Calcul de durée avec report :</strong> 
 Quelle est la durée d'{ctx[0]} qui {ctx[1]} à <strong>{h1}h{m1:02d}</strong> et {ctx[2]} à <strong>{h2}h{m2:02d}</strong> ? 
@@ -820,7 +831,7 @@ Quelle est la durée d'{ctx[0]} qui {ctx[1]} à <strong>{h1}h{m1:02d}</strong> e
             h2_svg, m2_svg = h2, m2
             
         else:  # difficile
-            variant = random.choice(["passage_minuit", "fractionne"])
+            variant = safe_random_choice(["passage_minuit", "fractionne"], ctx, obs_logger)
             
             if variant == "passage_minuit":
                 h1 = random.randint(22, 23)
@@ -917,16 +928,16 @@ Combien de temps total a-t-il cuisiné ? (Format X h Y min)</p>'''
         Moyen: Avec emprunt, addition de plusieurs durées
         Difficile: Planification multi-étapes, contraintes temporelles
         """
-        prenom = random.choice(self.prenoms)
+        prenom = safe_random_choice(self.prenoms, ctx, obs_logger)
         
         if difficulty == "facile":
-            variant = random.choice(["heure_fin", "heure_debut_simple"])
+            variant = safe_random_choice(["heure_fin", "heure_debut_simple"], ctx, obs_logger)
             
             if variant == "heure_fin":
                 h_debut = random.randint(8, 14)
                 m_debut = random.randint(0, 45)
                 duree_h = random.randint(1, 3)
-                duree_m = random.choice([0, 15, 30, 45])
+                duree_m = safe_random_choice([0, 15, 30, 45], ctx, obs_logger)
                 
                 total_m = m_debut + duree_m
                 h_fin = h_debut + duree_h + total_m // 60
@@ -938,7 +949,7 @@ Combien de temps total a-t-il cuisiné ? (Format X h Y min)</p>'''
                     ("visite du musée", "La visite se terminera"),
                     ("trajet en bus", "Le bus arrivera"),
                 ]
-                activite, fin_phrase = random.choice(activites)
+                activite, fin_phrase = safe_random_choice(activites, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Problème : Recherche d'heure de fin (Addition simple) :</strong> 
 Une {activite} commence à <strong>{h_debut}h{m_debut:02d}</strong>. 
@@ -965,7 +976,7 @@ Elle est prévue pour durer <strong>{duree_h} h {duree_m:02d} min</strong>.
             else:  # heure_debut_simple
                 h_fin = random.randint(8, 12)
                 m_fin = random.randint(0, 30)
-                duree_min = random.choice([15, 20, 25, 30, 40])
+                duree_min = safe_random_choice([15, 20, 25, 30, 40], ctx, obs_logger)
                 
                 total_m = m_fin - duree_min
                 if total_m < 0:
@@ -1000,12 +1011,12 @@ Le trajet dure <strong>{duree_min} minutes</strong>.
 </ol>'''
                 
         elif difficulty == "moyen":
-            variant = random.choice(["heure_debut_complexe", "addition_trois_durees"])
+            variant = safe_random_choice(["heure_debut_complexe", "addition_trois_durees"], ctx, obs_logger)
             
             if variant == "heure_debut_complexe":
                 h_fin = random.randint(19, 22)
                 m_fin = random.randint(5, 30)
-                duree_h = random.choice([1, 2])
+                duree_h = safe_random_choice([1, 2], ctx, obs_logger)
                 duree_m = random.randint(40, 55)
                 
                 # Calcul de l'heure de début
@@ -1016,7 +1027,7 @@ Le trajet dure <strong>{duree_min} minutes</strong>.
                 m_debut = debut_total_min % 60
                 
                 films = ["Le Voyage Fantastique", "Mission Spatiale", "Les Mystères de la Forêt"]
-                film = random.choice(films)
+                film = safe_random_choice(films, ctx, obs_logger)
                 
                 enonce = f'''<p><strong>Problème : Recherche de l'heure de début :</strong> 
 Le film « {film} » dure <strong>{duree_h} h {duree_m} min</strong>. 
@@ -1060,7 +1071,7 @@ Quel est le temps de travail total de préparation ? (Format X h Y min)</p>'''
 <p>Le temps de travail total est de <strong>{final_h} h {final_m} min</strong>.</p>'''
                 
         else:  # difficile
-            variant = random.choice(["planification", "contrainte_horaire"])
+            variant = safe_random_choice(["planification", "contrainte_horaire"], ctx, obs_logger)
             
             if variant == "planification":
                 h_limite = random.randint(17, 19)

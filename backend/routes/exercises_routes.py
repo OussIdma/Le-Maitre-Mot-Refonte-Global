@@ -29,8 +29,17 @@ from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercis
 from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
 from backend.services.tests_dyn_handler import is_tests_dyn_request, generate_tests_dyn_exercise, generate_tests_dyn_batch, get_available_generators
 from logger import get_logger
+from backend.observability import (
+    get_request_context,
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    ensure_request_id,
+    set_request_context,
+)
 
 logger = get_logger()
+obs_logger = get_obs_logger('PIPELINE')
 
 router = APIRouter()
 
@@ -558,6 +567,25 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     Returns:
         Exercice généré avec énoncé HTML, SVG, solution et pdf_token
     """
+    request_start = time.time()
+    ensure_request_id()
+    set_request_context({
+        'chapter_code': getattr(request, 'code_officiel', None),
+        'niveau': getattr(request, 'niveau', None),
+        'chapitre': getattr(request, 'chapitre', None),
+        'difficulty': getattr(request, 'difficulte', None),
+        'offer': getattr(request, 'offer', None),
+        'seed': getattr(request, 'seed', None),
+    })
+    obs_logger.info(
+        "event=request_in",
+        event="request_in",
+        outcome="in_progress",
+        chapter_code=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        difficulty=getattr(request, 'difficulte', None),
+        offer=getattr(request, 'offer', None),
+    )
     
     # ============================================================================
     # GM07 INTERCEPT: Chapitre pilote avec exercices figés
@@ -785,6 +813,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             
             if pipeline_mode == "TEMPLATE":
                 # Pipeline dynamique uniquement
+                ctx = get_request_context()
+                ctx.update({
+                    'pipeline': 'TEMPLATE',
+                    'chapter_code': chapter_code_for_db,
+                })
+                obs_logger.info(
+                    "event=mixed_decision",
+                    event="mixed_decision",
+                    outcome="in_progress",
+                    chosen_path="TEMPLATE",
+                    chapter=chapter_code_for_db,
+                    pipeline="TEMPLATE",
+                    **ctx
+                )
                 try:
                     has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
                     if not has_exercises:
@@ -827,11 +869,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         )
                     
                     # Sélectionner un exercice dynamique aléatoire (avec seed pour reproductibilité)
-                    import random
-                    if request.seed is not None:
-                        random.seed(request.seed)
-                    
-                    selected_exercise = random.choice(dynamic_exercises)
+                    selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
                     
                     # Générer l'exercice dynamique
                     timestamp = int(time.time() * 1000)
@@ -841,6 +879,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         seed=request.seed
                     )
                     
+                    duration_ms = int((time.time() - request_start) * 1000)
+                    obs_logger.info(
+                        "event=request_complete",
+                        event="request_complete",
+                        outcome="success",
+                        duration_ms=duration_ms,
+                        chosen_path="TEMPLATE",
+                        exercise_id=selected_exercise.get('id'),
+                        generator_key=selected_exercise.get('generator_key'),
+                        **ctx
+                    )
                     logger.info(
                         f"[PIPELINE] ✅ Exercice dynamique généré (TEMPLATE): "
                         f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}, "
@@ -848,9 +897,30 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     
                     return dyn_exercise
-                except HTTPException:
+                except HTTPException as e:
+                    duration_ms = int((time.time() - request_start) * 1000)
+                    obs_logger.error(
+                        "event=request_error",
+                        event="request_error",
+                        outcome="error",
+                        duration_ms=duration_ms,
+                        reason="http_exception",
+                        error_code=e.detail.get('error_code', None) if isinstance(e.detail, dict) else None,
+                        **ctx
+                    )
                     raise
                 except Exception as e:
+                    duration_ms = int((time.time() - request_start) * 1000)
+                    obs_logger.error(
+                        "event=request_exception",
+                        event="request_exception",
+                        outcome="error",
+                        duration_ms=duration_ms,
+                        reason="template_pipeline_error",
+                        exception_type=type(e).__name__,
+                        **ctx,
+                        exc_info=True
+                    )
                     logger.error(
                         f"[PIPELINE] Erreur pipeline TEMPLATE pour {chapter_code_for_db}: {e}"
                     )
@@ -865,6 +935,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             
             elif pipeline_mode == "MIXED":
                 # Priorité dynamique si exercices DB, sinon statique
+                ctx = get_request_context()
+                ctx.update({
+                    'pipeline': 'MIXED',
+                    'chapter_code': chapter_code_for_db,
+                })
+                obs_logger.info(
+                    "event=mixed_decision",
+                    event="mixed_decision",
+                    outcome="in_progress",
+                    chosen_path="MIXED",
+                    chapter=chapter_code_for_db,
+                    pipeline="MIXED",
+                    **ctx
+                )
                 try:
                     has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
                     if has_exercises:
@@ -887,15 +971,22 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                         # 1) Dyn filtré
                         if len(dynamic_exercises) > 0:
-                            import random
-                            if request.seed is not None:
-                                random.seed(request.seed)
-                            selected_exercise = random.choice(dynamic_exercises)
+                            selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
                             timestamp = int(time.time() * 1000)
                             dyn_exercise = format_dynamic_exercise(
                                 exercise_template=selected_exercise,
                                 timestamp=timestamp,
                                 seed=request.seed
+                            )
+                            duration_ms = int((time.time() - request_start) * 1000)
+                            obs_logger.info(
+                                "event=request_complete",
+                                event="request_complete",
+                                outcome="success",
+                                duration_ms=duration_ms,
+                                chosen_path="MIXED_dynamic_filtered",
+                                exercise_id=selected_exercise.get('id'),
+                                **ctx
                             )
                             logger.info(
                                 f"[PIPELINE] ✅ Exercice dynamique généré (MIXED, priorité dynamique): "
@@ -906,10 +997,15 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         # 2) Dyn sans filtre (dégradé)
                         dynamic_all = [ex for ex in exercises if ex.get("is_dynamic") is True]
                         if dynamic_all:
-                            import random
-                            if request.seed is not None:
-                                random.seed(request.seed)
-                            selected_exercise = random.choice(dynamic_all)
+                            obs_logger.warning(
+                                "event=fallback",
+                                event="fallback",
+                                outcome="success",
+                                reason="no_filtered_dynamic",
+                                pool_size=len(dynamic_all),
+                                **ctx
+                            )
+                            selected_exercise = safe_random_choice(dynamic_all, ctx, obs_logger)
                             timestamp = int(time.time() * 1000)
                             dyn_exercise = format_dynamic_exercise(
                                 exercise_template=selected_exercise,
@@ -917,6 +1013,16 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 seed=request.seed
                             )
                             dyn_exercise.setdefault("metadata", {}).update({"fallback_filters": True})
+                            duration_ms = int((time.time() - request_start) * 1000)
+                            obs_logger.info(
+                                "event=request_complete",
+                                event="request_complete",
+                                outcome="success",
+                                duration_ms=duration_ms,
+                                chosen_path="MIXED_dynamic_degraded",
+                                exercise_id=selected_exercise.get('id'),
+                                **ctx
+                            )
                             logger.info(
                                 f"[PIPELINE] ✅ Exercice dynamique généré (MIXED dégradé, sans filtre offer/difficulty): "
                                 f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
@@ -925,10 +1031,15 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         
                         # 3) Statiques filtrés
                         if len(static_exercises) > 0:
-                            import random
-                            if request.seed is not None:
-                                random.seed(request.seed)
-                            selected_static = random.choice(static_exercises)
+                            obs_logger.warning(
+                                "event=fallback",
+                                event="fallback",
+                                outcome="success",
+                                reason="no_dynamic_fallback_static",
+                                pool_size=len(static_exercises),
+                                **ctx
+                            )
+                            selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
                             timestamp = int(time.time() * 1000)
                             static_exercise = {
                                 "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
@@ -945,6 +1056,16 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                     "is_fallback": False
                                 }
                             }
+                            duration_ms = int((time.time() - request_start) * 1000)
+                            obs_logger.info(
+                                "event=request_complete",
+                                event="request_complete",
+                                outcome="success",
+                                duration_ms=duration_ms,
+                                chosen_path="MIXED_static_fallback",
+                                exercise_id=selected_static.get('id'),
+                                **ctx
+                            )
                             logger.info(
                                 f"[PIPELINE] ✅ Exercice statique (admin) généré (MIXED fallback statique): "
                                 f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
@@ -972,12 +1093,27 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         )
                     
                     # Fallback sur pipeline statique
+                    obs_logger.warning(
+                        "event=fallback",
+                        event="fallback",
+                        outcome="in_progress",
+                        reason="no_exercises_fallback_static",
+                        **ctx
+                    )
                     logger.info(
                         f"[PIPELINE] Pipeline MIXED pour {chapter_code_for_db}: pas d'exercices dynamiques, "
                         f"utilisation du pipeline STATIQUE."
                     )
                     # Continue vers pipeline statique (code ci-dessous)
                 except Exception as e:
+                    obs_logger.warning(
+                        "event=fallback",
+                        event="fallback",
+                        outcome="in_progress",
+                        reason="exception_fallback_static",
+                        exception_type=type(e).__name__,
+                        **ctx
+                    )
                     logger.warning(
                         f"[PIPELINE] Erreur vérification exercices dynamiques (MIXED) pour {chapter_code_for_db}: {e}. "
                         f"Fallback sur pipeline STATIQUE."
@@ -986,6 +1122,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             
             elif pipeline_mode == "SPEC":
                 # Pipeline statique uniquement - continue vers le code ci-dessous
+                ctx = get_request_context()
+                ctx.update({
+                    'pipeline': 'SPEC',
+                    'chapter_code': chapter_code_for_db,
+                })
+                obs_logger.info(
+                    "event=mixed_decision",
+                    event="mixed_decision",
+                    outcome="in_progress",
+                    chosen_path="SPEC",
+                    chapter=chapter_code_for_db,
+                    pipeline="SPEC",
+                    **ctx
+                )
                 logger.info(f"[PIPELINE] Pipeline SPEC pour {chapter_code_for_db}: utilisation du pipeline STATIQUE.")
                 try:
                     # Utiliser en priorité les exercices statiques saisis en admin
@@ -1014,11 +1164,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 }
                             }
                         )
-                    if static_exercises:
-                        import random
-                        if request.seed is not None:
-                            random.seed(request.seed)
-                        selected_static = random.choice(static_exercises)
+                        if static_exercises:
+                            selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
                         timestamp = int(time.time() * 1000)
                         static_exercise = {
                             "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
@@ -1078,11 +1225,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
                     
                     if len(dynamic_exercises) > 0:
-                        import random
-                        if request.seed is not None:
-                            random.seed(request.seed)
-                        
-                        selected_exercise = random.choice(dynamic_exercises)
+                        selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
                         timestamp = int(time.time() * 1000)
                         dyn_exercise = format_dynamic_exercise(
                             exercise_template=selected_exercise,
@@ -1097,11 +1240,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         
                         return dyn_exercise
                     
-                    if len(static_exercises) > 0:
-                        import random
-                        if request.seed is not None:
-                            random.seed(request.seed)
-                        selected_static = random.choice(static_exercises)
+                        if len(static_exercises) > 0:
+                            selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
                         timestamp = int(time.time() * 1000)
                         static_exercise = {
                             "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
@@ -1334,6 +1474,13 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         
         if use_premium and premium_generators:
             # Utiliser le générateur premium
+            obs_logger.info(
+                "event=mixed_decision",
+                event="mixed_decision",
+                outcome="in_progress",
+                chosen_path="premium",
+                **ctx
+            )
             # Note: MathExerciseType est déjà importé en haut via math_models
             specs = _math_service.generate_math_exercise_specs_with_types(
                 niveau=request.niveau,
@@ -1344,6 +1491,14 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             )
         elif exercise_types_override and len(exercise_types_override) > 0:
             # Mode code_officiel : utiliser les types spécifiés dans le référentiel
+            obs_logger.info(
+                "event=mixed_decision",
+                event="mixed_decision",
+                outcome="in_progress",
+                chosen_path="exercise_types_override",
+                exercise_types_count=len(exercise_types_override),
+                **ctx
+            )
             specs = _math_service.generate_math_exercise_specs_with_types(
                 niveau=request.niveau,
                 chapitre=request.chapitre,
@@ -1382,12 +1537,42 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         
         spec = specs[0]  # Prendre le premier exercice
         
+        duration_ms = int((time.time() - request_start) * 1000)
+        obs_logger.info(
+            "event=request_complete",
+            event="request_complete",
+            outcome="success",
+            duration_ms=duration_ms,
+            chosen_path="legacy_static",
+            exercise_type=str(spec.type_exercice) if spec.type_exercice else None,
+            **ctx
+        )
         logger.info(f"Exercice généré: type={spec.type_exercice}, has_figure={spec.figure_geometrique is not None}")
         
-    except HTTPException:
+    except HTTPException as e:
         # Propager les erreurs structurées déjà construites
+        duration_ms = int((time.time() - request_start) * 1000)
+        obs_logger.error(
+            "event=request_error",
+            event="request_error",
+            outcome="error",
+            duration_ms=duration_ms,
+            reason="http_exception",
+            error_code=e.detail.get('error_code', None) if isinstance(e.detail, dict) else None,
+            **ctx
+        )
         raise
     except ValueError as e:
+        duration_ms = int((time.time() - request_start) * 1000)
+        obs_logger.error(
+            "event=request_error",
+            event="request_error",
+            outcome="error",
+            duration_ms=duration_ms,
+            reason="validation_error",
+            exception_type="ValueError",
+            **ctx
+        )
         logger.error(f"Validation génération exercice: {e}")
         raise HTTPException(
             status_code=422,
@@ -1399,6 +1584,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             }
         )
     except Exception as e:
+        duration_ms = int((time.time() - request_start) * 1000)
+        obs_logger.error(
+            "event=request_exception",
+            event="request_exception",
+            outcome="error",
+            duration_ms=duration_ms,
+            reason="generation_error",
+            exception_type=type(e).__name__,
+            **ctx,
+            exc_info=True
+        )
         logger.error(f"Erreur lors de la génération de l'exercice: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,

@@ -750,6 +750,20 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             update_data["is_dynamic"] = request.is_dynamic
         if request.generator_key is not None:
             update_data["generator_key"] = request.generator_key
+        # Sauvegarder variables même si c'est un objet vide (pour permettre de réinitialiser)
+        # Sauvegarder variables même si c'est un objet vide (pour permettre de réinitialiser)
+        # Note: request.variables peut être None (non fourni), {} (vide), ou un dict avec des valeurs
+        if hasattr(request, 'variables') and request.variables is not None:
+            # Si c'est un objet vide {}, on le sauvegarde quand même (pour réinitialiser les paramètres)
+            update_data["variables"] = request.variables if isinstance(request.variables, dict) else {}
+            logger.debug(f"[UPDATE] Variables mises à jour: {update_data['variables']}")
+        if request.variables_schema is not None:
+            update_data["variables_schema"] = request.variables_schema
+        if request.template_variants is not None:
+            update_data["template_variants"] = [
+                variant.dict() if hasattr(variant, 'dict') else variant
+                for variant in request.template_variants
+            ] if request.template_variants else None
         # Synchroniser exercise_type si dynamique et generator_key présent (nouveau ou existant)
         if (update_data.get("is_dynamic", existing.get("is_dynamic")) and
             update_data.get("generator_key", existing.get("generator_key"))):
@@ -767,10 +781,6 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
                         "Retirez l'exercise_type manuel ou choisissez le generator_key adéquat."
                     )
             update_data["exercise_type"] = gen_type
-        if request.template_variants is not None:
-            update_data["template_variants"] = [
-                variant.dict() for variant in request.template_variants
-            ] or None
         
         if not update_data:
             del existing["_id"]

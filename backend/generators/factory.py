@@ -15,7 +15,12 @@ Endpoints exposés:
 """
 
 from typing import Dict, Any, List, Optional, Type
+import time
 from backend.generators.base_generator import BaseGenerator, GeneratorMeta, ParamSchema, Preset
+from backend.observability import (
+    get_logger as get_obs_logger,
+    get_request_context,
+)
 
 
 # =============================================================================
@@ -143,34 +148,111 @@ class GeneratorFactory:
         Returns:
             Exercice généré complet
         """
-        gen_class = cls.get(key)
-        if not gen_class:
-            raise ValueError(f"Générateur inconnu: {key}. Disponibles: {list(cls._generators.keys())}")
+        gen_start = time.time()
+        obs_logger = get_obs_logger('GENERATOR')
+        ctx = get_request_context()
+        ctx.update({
+            'generator_key': key,
+            'seed': seed,
+        })
         
-        # Fusion des paramètres
-        merged = gen_class.merge_params(exercise_params or {}, overrides or {})
+        # Log début génération
+        obs_logger.info(
+            "event=generate_in",
+            event="generate_in",
+            outcome="in_progress",
+            **ctx
+        )
         
-        # Validation
-        valid, result = gen_class.validate_params(merged)
-        if not valid:
-            raise ValueError(f"Paramètres invalides: {result}")
+        # Log params (DEBUG uniquement si LOG_VERBOSE=1)
+        if exercise_params or overrides:
+            obs_logger.debug(
+                "event=params",
+                event="params",
+                outcome="in_progress",
+                exercise_params_keys=list(exercise_params.keys()) if exercise_params else [],
+                overrides_keys=list(overrides.keys()) if overrides else [],
+                **ctx
+            )
         
-        # Génération
-        generator = gen_class(seed=seed)
-        output = generator.generate(result)
-        
-        # Ajouter les métadonnées de génération
-        meta = gen_class.get_meta()
-        output["generation_meta"] = {
-            "generator_key": meta.key,
-            "generator_version": meta.version,
-            "exercise_type": meta.exercise_type,
-            "svg_mode": meta.svg_mode,
-            "params_used": result,
-            "seed": seed
-        }
-        
-        return output
+        try:
+            gen_class = cls.get(key)
+            if not gen_class:
+                obs_logger.error(
+                    "event=generator_unknown",
+                    event="generator_unknown",
+                    outcome="error",
+                    reason="generator_key_unknown",
+                    generator_key=key,
+                    available_generators=list(cls._generators.keys()),
+                    **ctx
+                )
+                raise ValueError(f"Générateur inconnu: {key}. Disponibles: {list(cls._generators.keys())}")
+            
+            # Fusion des paramètres
+            merged = gen_class.merge_params(exercise_params or {}, overrides or {})
+            
+            # Validation
+            valid, result = gen_class.validate_params(merged)
+            if not valid:
+                obs_logger.error(
+                    "event=params_invalid",
+                    event="params_invalid",
+                    outcome="error",
+                    reason="validation_failed",
+                    validation_errors=result if isinstance(result, list) else [str(result)],
+                    **ctx
+                )
+                raise ValueError(f"Paramètres invalides: {result}")
+            
+            # Génération
+            generator = gen_class(seed=seed)
+            output = generator.generate(result)
+            
+            # Ajouter les métadonnées de génération
+            meta = gen_class.get_meta()
+            output["generation_meta"] = {
+                "generator_key": meta.key,
+                "generator_version": meta.version,
+                "exercise_type": meta.exercise_type,
+                "svg_mode": meta.svg_mode,
+                "params_used": result,
+                "seed": seed
+            }
+            
+            # Log succès
+            gen_duration_ms = int((time.time() - gen_start) * 1000)
+            ctx.update({
+                'variant_id': result.get('variant_id'),
+                'pedagogy_mode': result.get('pedagogy_mode'),
+            })
+            obs_logger.info(
+                "event=generate_complete",
+                event="generate_complete",
+                outcome="success",
+                duration_ms=gen_duration_ms,
+                variables_count=len(output.get('variables', {})),
+                has_svg_enonce=output.get('figure_svg_enonce') is not None,
+                has_svg_solution=output.get('figure_svg_solution') is not None,
+                **ctx
+            )
+            
+            return output
+            
+        except Exception as e:
+            gen_duration_ms = int((time.time() - gen_start) * 1000)
+            obs_logger.error(
+                "event=generate_exception",
+                event="generate_exception",
+                outcome="error",
+                duration_ms=gen_duration_ms,
+                reason="generation_failed",
+                exception_type=type(e).__name__,
+                exception_message=str(e)[:200],
+                **ctx,
+                exc_info=True
+            )
+            raise
 
 
 # =============================================================================
@@ -234,6 +316,16 @@ def _register_all_generators():
 
     try:
         from backend.generators.thales_generator import ThalesGenerator  # noqa:F401
+    except ImportError:
+        pass
+    
+    try:
+        from backend.generators.simplification_fractions_v1 import SimplificationFractionsV1Generator  # noqa:F401
+    except ImportError:
+        pass
+    
+    try:
+        from backend.generators.simplification_fractions_v2 import SimplificationFractionsV2Generator  # noqa:F401
     except ImportError:
         pass
 

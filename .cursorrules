@@ -234,6 +234,55 @@ Zéro tolérance, zéro supposition, preuve obligatoire.
 
 ---
 
+## 📡 OBSERVABILITY — LOGS PACK (OBLIGATOIRE)
+
+### 🎯 Objectif
+Réduire drastiquement le temps de debug : chaque décision runtime doit être traçable.
+**Pas de logs = pas de preuve = pas de validation.**
+
+### ✅ Déclencheurs (si VRAI → LOGS PACK obligatoire)
+Si la tâche touche à au moins un de ces éléments :
+- routes API / handlers / middlewares
+- génération (pipeline, routing, generators, templates, placeholders)
+- filtres (difficulty/offer/seed), RNG, pools, variants
+- persistance / cache / loaders curriculum
+- migrations / mapping / pipeline
+- feature flags / ENV / config
+➡️ alors : **LOGS PACK obligatoire**.
+
+### 📦 LOGS PACK (à livrer à chaque fix concerné)
+1) **Logs de décision (INFO)** à chaque branche importante :
+   - event=decision, chosen_path, chapter, pipeline, diff, offer, seed
+2) **Fallbacks loggués (WARNING)** avec reason=... (jamais silencieux)
+3) **Erreurs logguées (ERROR)** avec contexte complet + stacktrace au point de capture (pas 3 fois)
+4) **Placeholders non résolus** : log explicite avant 422 (missing_placeholders + available_keys_count, pas de valeurs)
+5) **Mode audit/verbose respecté**
+   - LOG_VERBOSE=1 active DEBUG ciblé
+   - (optionnel mais recommandé) LOG_AUDIT=1 active uniquement les logs diagnostic (decision/fallback/422/exception) sans bruit
+
+### 🛑 DoD — Observability (bloquant)
+Interdiction de conclure "OK / validé" si :
+- une nouvelle branche logique n’a pas de log INFO event=decision,
+- un fallback n’a pas de log WARNING reason=...,
+- une exception possible est swallow/catch sans ERROR + contexte,
+- un risque randrange/choice vide n’est pas prévenu/loggué,
+- un placeholder peut rester sans log dédié.
+
+### Mode BUG / INCIDENT (auto-détecté)
+Si l’utilisateur :
+- signale un bug, une anomalie, une erreur runtime,
+- fournit un message d’erreur, un log, une capture, un 4xx/5xx,
+- ou utilise les mots-clés : bug, erreur, KO, incident, root cause,
+
+ALORS :
+- Le **LOGS PACK est AUTOMATIQUEMENT ACTIVÉ**
+- Toute analyse DOIT inclure :
+  - vérification de l’existant en logs,
+  - ajout ou renforcement des logs manquants,
+  - identification explicite des zones non observables,
+  - proposition de logs correctifs si la root cause n’est pas directement prouvable.
+- Interdiction de conclure sans observabilité suffisante.
+
 # FIN DU FICHIER
 
 

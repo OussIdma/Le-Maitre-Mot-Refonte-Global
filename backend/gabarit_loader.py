@@ -20,8 +20,15 @@ sys.path.insert(0, '/app/backend')
 from models.math_models import MathExerciseSpec
 from style_manager import StyleFormulation
 from pedagogie_rules import ExerciseType
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
 
 logger = logging.getLogger(__name__)
+obs_logger = get_obs_logger('CACHE')
 
 
 class GabaritLoader:
@@ -124,7 +131,8 @@ class GabaritLoader:
             return None
         
         # Retourner un template aléatoire
-        return random.choice(style_gabarits)
+        ctx = get_request_context()
+        return safe_random_choice(style_gabarits, ctx, obs_logger)
     
     def prepare_interpolation_values(self, spec: MathExerciseSpec) -> Dict[str, Any]:
         """

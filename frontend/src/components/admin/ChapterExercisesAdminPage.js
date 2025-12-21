@@ -528,7 +528,7 @@ const ChapterExercisesAdminPage = () => {
       generator_key: exercise.generator_key || '',
       enonce_template_html: exercise.enonce_template_html || '',
       solution_template_html: exercise.solution_template_html || '',
-      variables: exercise.variables || null,
+      variables: exercise.variables || {},
       template_variants: exercise.template_variants || []
     });
     setActiveVariantIndex(0);
@@ -636,6 +636,14 @@ const ChapterExercisesAdminPage = () => {
       // - les champs legacy enonce_template_html/solution_template_html restent un miroir
       //   (compat uniquement, jamais source principale en mode variants)
       const payload = { ...formData };
+      
+      // S'assurer que variables est toujours un objet (même vide) pour les exercices dynamiques
+      if (payload.is_dynamic) {
+        if (!payload.variables || typeof payload.variables !== 'object') {
+          payload.variables = {};
+        }
+      }
+      
       if (payload.is_dynamic && Array.isArray(payload.template_variants) && payload.template_variants.length > 0) {
         const first = payload.template_variants[0];
         payload.enonce_template_html = first.enonce_template_html || '';
@@ -1313,6 +1321,36 @@ const ChapterExercisesAdminPage = () => {
                       L’exercise_type est fixé par le generator_key (Factory). Si un type manuel diffère, la sauvegarde sera refusée côté backend.
                     </p>
                   </div>
+                  
+                  {/* Paramètres du générateur */}
+                  {formData.generator_key && formData.is_dynamic && (
+                    <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-semibold text-blue-800">
+                          Paramètres du générateur
+                        </Label>
+                        <Badge variant="outline" className="text-xs">
+                          Optionnel
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-blue-700">
+                        Ces paramètres contrôlent le comportement du générateur (difficulté, limites, options visuelles, etc.).
+                        Si non renseignés, les valeurs par défaut du générateur seront utilisées.
+                      </p>
+                      <GeneratorParamsForm
+                        generatorKey={formData.generator_key}
+                        initialParams={formData.variables || {}}
+                        onChange={(params) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            variables: params
+                          }));
+                        }}
+                        showPresets={true}
+                        compact={false}
+                      />
+                    </div>
+                  )}
                   
                   {/* Panneau des variables disponibles (P0.2) */}
                   {formData.generator_key && (

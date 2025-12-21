@@ -21,6 +21,14 @@ import random
 import math
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
+from backend.observability import (
+    get_logger as get_obs_logger,
+    safe_random_choice,
+    safe_randrange,
+    get_request_context,
+)
+
+obs_logger = get_obs_logger('GENERATOR')
 
 
 @dataclass
@@ -60,8 +68,9 @@ class ThalesV1Generator:
             - figure_svg_enonce: SVG de la figure initiale
             - figure_svg_solution: SVG de la figure finale
         """
+        ctx = get_request_context()
         # Sélectionner le type de figure
-        figure_type = random.choice(ThalesV1Config.FIGURE_TYPES)
+        figure_type = safe_random_choice(ThalesV1Config.FIGURE_TYPES, ctx, obs_logger)
         
         # Sélectionner le coefficient selon la difficulté
         coefficient = self._select_coefficient()
@@ -111,34 +120,38 @@ class ThalesV1Generator:
     
     def _select_coefficient(self) -> float:
         """Sélectionne un coefficient selon la difficulté."""
+        ctx = get_request_context()
         if self.difficulty == "facile":
-            return random.choice(ThalesV1Config.COEFFICIENTS_FACILE)
+            return safe_random_choice(ThalesV1Config.COEFFICIENTS_FACILE, ctx, obs_logger)
         elif self.difficulty == "difficile":
-            return random.choice(ThalesV1Config.COEFFICIENTS_DIFFICILE)
+            return safe_random_choice(ThalesV1Config.COEFFICIENTS_DIFFICILE, ctx, obs_logger)
         else:  # moyen
-            return random.choice(ThalesV1Config.COEFFICIENTS_MOYEN)
+            return safe_random_choice(ThalesV1Config.COEFFICIENTS_MOYEN, ctx, obs_logger)
     
     def _generate_square_dimensions(self) -> Dict[str, float]:
         """Génère les dimensions d'un carré."""
-        cote = random.choice(ThalesV1Config.BASE_LENGTHS)
+        ctx = get_request_context()
+        cote = safe_random_choice(ThalesV1Config.BASE_LENGTHS, ctx, obs_logger)
         return {"cote": cote, "type": "carre"}
     
     def _generate_rectangle_dimensions(self) -> Dict[str, float]:
         """Génère les dimensions d'un rectangle."""
-        longueur = random.choice(ThalesV1Config.BASE_LENGTHS)
+        ctx = get_request_context()
+        longueur = safe_random_choice(ThalesV1Config.BASE_LENGTHS, ctx, obs_logger)
         smaller_values = [l for l in ThalesV1Config.BASE_LENGTHS if l < longueur]
         if smaller_values:
-            largeur = random.choice(smaller_values)
+            largeur = safe_random_choice(smaller_values, ctx, obs_logger)
         else:
             largeur = max(1, longueur - 1)  # Fallback: au moins 1 cm de moins
         return {"longueur": longueur, "largeur": largeur, "type": "rectangle"}
     
     def _generate_triangle_dimensions(self) -> Dict[str, float]:
         """Génère les dimensions d'un triangle rectangle."""
-        base = random.choice(ThalesV1Config.BASE_LENGTHS)
+        ctx = get_request_context()
+        base = safe_random_choice(ThalesV1Config.BASE_LENGTHS, ctx, obs_logger)
         other_values = [h for h in ThalesV1Config.BASE_LENGTHS if h != base]
         if other_values:
-            hauteur = random.choice(other_values)
+            hauteur = safe_random_choice(other_values, ctx, obs_logger)
         else:
             hauteur = base + 1  # Fallback
         return {"base": base, "hauteur": hauteur, "type": "triangle"}
