@@ -499,15 +499,19 @@ def format_dynamic_exercise(
                     available_variant_ids=[getattr(v, 'id', None) for v in variant_objs],
                     **ctx
                 )
+                available_variant_ids = [getattr(v, 'id', None) for v in variant_objs]
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "error_code": "VARIANT_ID_NOT_FOUND",
                         "error": "variant_id_not_found",
                         "message": f"Le variant_id '{variant_id_from_params}' n'a pas été trouvé dans les template_variants.",
-                        "variant_id_requested": variant_id_from_params,
-                        "available_variant_ids": [getattr(v, 'id', None) for v in variant_objs],
-                        "exercise_template_id": exercise_template.get("id"),
+                        "hint": f"Les variants disponibles sont : {', '.join(map(str, available_variant_ids))}. Vérifiez que le variant_id demandé existe pour cet exercice.",
+                        "context": {
+                            "exercise_id": exercise_template.get("id"),
+                            "variant_id_requested": variant_id_from_params,
+                            "variants_present": available_variant_ids
+                        }
                     }
                 )
         else:

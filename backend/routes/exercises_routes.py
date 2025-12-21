@@ -1054,6 +1054,31 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             )
                             return dyn_exercise
                         
+                        # Pool vide : aucun exercice dynamique disponible
+                        obs_logger.error(
+                            "event=pool_empty",
+                            event="pool_empty",
+                            outcome="error",
+                            reason="no_dynamic_exercises_available",
+                            pool_size=0,
+                            **ctx
+                        )
+                        raise HTTPException(
+                            status_code=422,
+                            detail={
+                                "error_code": "POOL_EMPTY",
+                                "error": "pool_empty",
+                                "message": f"Aucun exercice dynamique disponible pour ce chapitre avec les critères demandés.",
+                                "hint": f"Vérifiez que des exercices dynamiques existent pour le chapitre '{chapter_code_for_db}' avec difficulty='{request.difficulte}' et offer='{request.offer}'. Vous pouvez essayer une autre difficulté ou contacter l'administrateur.",
+                                "context": {
+                                    "chapter": chapter_code_for_db,
+                                    "difficulty": request.difficulte,
+                                    "offer": request.offer,
+                                    "pipeline": "MIXED"
+                                }
+                            }
+                        )
+                        
                         # 3) Statiques filtrés
                         if len(static_exercises) > 0:
                             obs_logger.warning(

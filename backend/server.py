@@ -391,10 +391,27 @@ def process_exercise_content(content: str) -> str:
     
     return content
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+# MongoDB connection - avec validation des variables d'environnement
+def validate_env():
+    """Valide les variables d'environnement critiques au démarrage"""
+    required_vars = {
+        'MONGO_URL': os.environ.get('MONGO_URL'),
+        'DB_NAME': os.environ.get('DB_NAME')
+    }
+    
+    missing = [var for var, value in required_vars.items() if not value]
+    if missing:
+        raise RuntimeError(
+            f"Variables d'environnement requises manquantes: {', '.join(missing)}. "
+            f"Veuillez configurer ces variables avant de démarrer l'application."
+        )
+    
+    return required_vars['MONGO_URL'], required_vars['DB_NAME']
+
+# Valider les variables d'environnement avant de créer le client MongoDB
+mongo_url, db_name = validate_env()
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[db_name]
 
 
 def _compute_build_id() -> str:

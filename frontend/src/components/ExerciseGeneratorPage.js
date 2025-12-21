@@ -35,6 +35,7 @@ import {
   List
 } from "lucide-react";
 import MathRenderer from "./MathRenderer";
+import { useToast } from "../hooks/use-toast";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API_V1 = `${BACKEND_URL}/api/v1/exercises`;
@@ -118,6 +119,8 @@ const MathHtmlRenderer = ({ html, className = "" }) => {
 };
 
 const ExerciseGeneratorPage = () => {
+  const { toast } = useToast();
+  
   // État du catalogue
   const [catalog, setCatalog] = useState(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -406,12 +409,37 @@ const ExerciseGeneratorPage = () => {
       
       // Gestion défensive des erreurs : supporter plusieurs formats
       let errorMessage = "Erreur lors de la génération des exercices";
+      let errorCode = null;
+      let hint = null;
       
       if (error.response?.data) {
         const data = error.response.data;
+        const detail = data.detail || data;
         
+        // Format FastAPI avec error_code structuré
+        if (detail.error_code) {
+          errorCode = detail.error_code;
+          errorMessage = detail.message || errorMessage;
+          hint = detail.hint;
+          
+          // Messages spécifiques selon error_code
+          if (errorCode === "POOL_EMPTY") {
+            errorMessage = "Aucun exercice disponible";
+            hint = hint || `Aucun exercice dynamique trouvé pour ce chapitre avec les critères demandés. Essayez une autre difficulté.`;
+          } else if (errorCode === "VARIANT_ID_NOT_FOUND") {
+            errorMessage = "Variant d'exercice introuvable";
+            hint = hint || `Le variant demandé n'existe pas pour cet exercice.`;
+          }
+          
+          // Afficher toast avec message spécifique
+          toast({
+            title: errorMessage,
+            description: hint || "Veuillez réessayer avec d'autres paramètres.",
+            variant: "destructive"
+          });
+        }
         // Format nouveau JSON-safe : {success: false, message, error_code, details}
-        if (data.message) {
+        else if (data.message) {
           errorMessage = data.message;
         }
         // Format FastAPI legacy : {detail: {message, ...} ou {detail: "string"}
@@ -430,6 +458,15 @@ const ExerciseGeneratorPage = () => {
         }
       } else if (error.message) {
         errorMessage = error.message;
+      }
+      
+      // Afficher toast générique si pas de toast spécifique déjà affiché
+      if (!errorCode) {
+        toast({
+          title: "Erreur",
+          description: errorMessage,
+          variant: "destructive"
+        });
       }
       
       setError(errorMessage);

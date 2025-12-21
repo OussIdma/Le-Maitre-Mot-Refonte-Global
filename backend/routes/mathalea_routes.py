@@ -1178,17 +1178,35 @@ async def generate_pro_pdf(
     template = request.template
     logger.info(f"📝 Demande de génération PDF Pro pour la fiche {sheet_id} (template: {template})")
     
-    # VÉRIFICATION PRO (Simplified pour MVP - à améliorer avec vraie vérification Pro)
-    # Pour l'instant, on accepte si un token de session est fourni
+    # VÉRIFICATION PRO - Validation stricte du token et statut Pro
     if not x_session_token:
         logger.warning("⚠️ Tentative d'accès PDF Pro sans token de session")
         raise HTTPException(
-            status_code=403,
-            detail="PRO_REQUIRED: Un compte Pro est nécessaire pour cette fonctionnalité"
+            status_code=401,
+            detail={"error": "AUTHENTICATION_REQUIRED", "message": "Token de session requis"}
         )
     
-    # TODO: Vérifier que le token correspond bien à un compte Pro actif
-    # Pour le MVP, on considère que tout token valide = Pro
+    # Valider le token de session et récupérer l'email
+    from backend.server import validate_session_token, check_user_pro_status
+    
+    user_email = await validate_session_token(x_session_token)
+    if not user_email:
+        logger.warning(f"⚠️ Token de session invalide ou expiré: {x_session_token[:20]}...")
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "INVALID_SESSION_TOKEN", "message": "Token de session invalide ou expiré"}
+        )
+    
+    # Vérifier que l'utilisateur est Pro actif
+    is_pro, user = await check_user_pro_status(user_email)
+    if not is_pro:
+        logger.warning(f"⚠️ Utilisateur {user_email} n'est pas Pro ou abonnement expiré")
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "PRO_REQUIRED", "message": "Un compte Pro actif est nécessaire pour cette fonctionnalité"}
+        )
+    
+    logger.info(f"✅ Utilisateur Pro authentifié: {user_email}")
     
     try:
         # 1. Récupérer la fiche
@@ -1259,11 +1277,8 @@ async def generate_pro_pdf(
         }
         
         # 4. Récupérer la configuration Pro de l'utilisateur depuis MongoDB
+        # user_email est déjà validé et récupéré depuis la session DB ci-dessus
         from services.pro_config_service import get_pro_config_for_user
-        
-        # TODO: Extraire le vrai email depuis le token de session
-        # Pour l'instant, utiliser un email par défaut ou token comme identifiant
-        user_email = x_session_token if "@" in x_session_token else "user@lemaitremot.com"
         
         logger.info(f"🔑 Export Pro pour user_email: {user_email}")
         
@@ -1277,7 +1292,12 @@ async def generate_pro_pdf(
         if logo_url and not logo_url.startswith('http'):
             # Convertir le chemin relatif en chemin absolu pour WeasyPrint
             logo_path = Path("/app/backend") / logo_url.lstrip('/')
-            logo_url = f"file://{logo_path}" if logo_path.exists() else None
+            # Vérifier que le fichier existe ET est un fichier (pas un répertoire)
+            if logo_path.exists() and logo_path.is_file():
+                logo_url = f"file://{logo_path}"
+            else:
+                logger.warning(f"⚠️ Logo introuvable ou invalide: {logo_path}")
+                logo_url = None
         
         template_config = {
             "professor_name": pro_config.get("professor_name", ""),
@@ -1304,6 +1324,44 @@ async def generate_pro_pdf(
         # 6. Générer les 2 PDFs Pro (Sujet + Corrigé) via Jinja2
         from engine.pdf_engine.template_renderer import render_pro_sujet, render_pro_corrige
         import weasyprint
+        import asyncio
+        
+        # Helper pour générer PDF avec timeout
+        async def generate_pdf_with_timeout(html_content: str, pdf_name: str, timeout_seconds: int = 30) -> bytes:
+            """Génère un PDF avec timeout pour éviter les blocages"""
+            try:
+                # Exécuter WeasyPrint dans un thread pool avec timeout
+                loop = asyncio.get_event_loop()
+                pdf_bytes = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: weasyprint.HTML(
+                            string=html_content,
+                            base_url=str(Path("/app/backend").resolve())
+                        ).write_pdf()
+                    ),
+                    timeout=timeout_seconds
+                )
+                logger.info(f"✅ PDF {pdf_name} généré avec succès ({len(pdf_bytes)} bytes)")
+                return pdf_bytes
+            except asyncio.TimeoutError:
+                logger.error(f"❌ Timeout lors de la génération du PDF {pdf_name} (> {timeout_seconds}s)")
+                raise HTTPException(
+                    status_code=504,
+                    detail={
+                        "error": "PDF_GENERATION_TIMEOUT",
+                        "message": f"La génération du PDF {pdf_name} a pris trop de temps (> {timeout_seconds}s). Veuillez réessayer avec moins d'exercices."
+                    }
+                )
+            except Exception as e:
+                logger.error(f"❌ Erreur lors de la génération du PDF {pdf_name}: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": "PDF_GENERATION_ERROR",
+                        "message": f"Erreur lors de la génération du PDF {pdf_name}: {str(e)}"
+                    }
+                )
         
         # Générer le Sujet Pro (énoncés + zones de réponse)
         html_sujet = render_pro_sujet(
@@ -1311,7 +1369,7 @@ async def generate_pro_pdf(
             document_data=document_data,
             template_config=template_config
         )
-        pro_subject_pdf_bytes = weasyprint.HTML(string=html_sujet).write_pdf()
+        pro_subject_pdf_bytes = await generate_pdf_with_timeout(html_sujet, "sujet", timeout_seconds=30)
         
         # Générer le Corrigé Pro (énoncés + solutions)
         html_corrige = render_pro_corrige(
@@ -1319,7 +1377,7 @@ async def generate_pro_pdf(
             document_data=document_data,
             template_config=template_config
         )
-        pro_correction_pdf_bytes = weasyprint.HTML(string=html_corrige).write_pdf()
+        pro_correction_pdf_bytes = await generate_pdf_with_timeout(html_corrige, "corrigé", timeout_seconds=30)
         
         # 7. Encoder les 2 PDFs en base64
         import base64
