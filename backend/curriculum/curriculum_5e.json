@@ -1,0 +1,107 @@
+{
+  "version": 2,
+  "niveau": "5e",
+  "description": "Référentiel pédagogique officiel 5e basé sur le programme de mathématiques",
+  "macro_groups": [
+    {
+      "label": "Nombres décimaux",
+      "codes_officiels": [
+        "5e_N01",
+        "5e_N02",
+        "5e_N03",
+        "5e_N04"
+      ],
+      "description": "Lecture, écriture, comparaison et opérations avec les nombres décimaux"
+    }
+  ],
+  "chapitres": [
+    {
+      "niveau": "5e",
+      "code_officiel": "5e_N01",
+      "domaine": "Nombres et calculs",
+      "libelle": "Nombres décimaux (lecture, écriture, comparaison)",
+      "chapitre_backend": "Nombres décimaux",
+      "exercise_types": [
+        "CALCUL_NOMBRES_V1",
+        "NOMBRES_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "décimaux",
+        "lecture",
+        "écriture",
+        "comparaison"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "5e",
+      "code_officiel": "5e_N02",
+      "domaine": "Nombres et calculs",
+      "libelle": "Addition et soustraction de nombres décimaux",
+      "chapitre_backend": "Calculs avec décimaux",
+      "exercise_types": [
+        "CALCUL_NOMBRES_V1",
+        "CALCUL_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "addition",
+        "soustraction",
+        "décimaux",
+        "calcul"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "5e",
+      "code_officiel": "5e_N03",
+      "domaine": "Nombres et calculs",
+      "libelle": "Multiplication avec des nombres décimaux",
+      "chapitre_backend": "Calculs avec décimaux",
+      "exercise_types": [
+        "CALCUL_NOMBRES_V1",
+        "CALCUL_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "multiplication",
+        "décimaux",
+        "calcul"
+      ],
+      "contexts": []
+    },
+    {
+      "niveau": "5e",
+      "code_officiel": "5e_N04",
+      "domaine": "Nombres et calculs",
+      "libelle": "Division décimale (quotients décimaux)",
+      "chapitre_backend": "Calculs avec décimaux",
+      "exercise_types": [
+        "CALCUL_NOMBRES_V1",
+        "CALCUL_DECIMAUX"
+      ],
+      "schema_requis": false,
+      "difficulte_min": 1,
+      "difficulte_max": 3,
+      "statut": "prod",
+      "tags": [
+        "division",
+        "décimaux",
+        "quotient",
+        "calcul"
+      ],
+      "contexts": []
+    }
+  ]
+}
+

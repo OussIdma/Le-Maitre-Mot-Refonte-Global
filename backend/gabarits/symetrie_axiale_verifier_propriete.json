@@ -1,0 +1,98 @@
+{
+  "chapitre": "Symétrie axiale",
+  "type_exercice": "verifier_propriete",
+  "description": "Gabarits pour exercices où l'élève doit vérifier si deux points sont symétriques",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "{pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}). Axe {axeDesc}. Symétriques ?",
+        "Points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). {axeDesc}. Vérifier symétrie.",
+        "{pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {axeDesc}. Symétriques par rapport à l'axe ?",
+        "Axe : {axeDesc}. {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}). Symétrie vérifiée ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont-ils symétriques par rapport à {axeDesc} ?",
+        "Vérifie si {pointA} de coordonnées ({coordA_x}, {coordA_y}) et {pointB} de coordonnées ({coordB_x}, {coordB_y}) sont symétriques relativement à {axeDesc}.",
+        "On donne {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Démontre si ces deux points sont symétriques par rapport à {axeDesc}.",
+        "Soit {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Ces points sont-ils images l'un de l'autre par la symétrie d'axe {axeDesc} ?"
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Étant donnés les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}), établis si ces points satisfont la propriété de symétrie axiale relativement à {axeDesc}.",
+        "Vérifie analytiquement si {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont images réciproques par la transformation de symétrie d'axe {axeDesc}.",
+        "Démontre rigoureusement si les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) respectent les conditions d'équidistance à {axeDesc}."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Sarah a placé deux points sur son graphique : {pointA} en ({coordA_x}, {coordA_y}) et {pointB} en ({coordB_x}, {coordB_y}). Elle se demande s'ils sont symétriques par rapport à {axeDesc}. Qu'en penses-tu ?",
+        "Léo affirme que {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont symétriques par rapport à {axeDesc}. A-t-il raison ?",
+        "Nina a tracé {pointA} en ({coordA_x}, {coordA_y}) et {pointB} en ({coordB_x}, {coordB_y}). Elle hésite : ces points sont-ils vraiment symétriques par rapport à {axeDesc} ? Aide-la à vérifier."
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe les points {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Pour vérifier s'ils sont symétriques par rapport à {axeDesc}, calcule leur distance à l'axe.",
+        "Commence par repérer {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}). Ensuite, mesure leur distance à {axeDesc}. Sont-elles égales ?",
+        "Étape 1 : Localise {axeDesc}. Étape 2 : Calcule la distance de {pointA}({coordA_x}, {coordA_y}) à l'axe. Étape 3 : Calcule celle de {pointB}({coordB_x}, {coordB_y}). Compare."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Défi ! {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}), axe {axeDesc}. Symétriques ou pas ? Réponds vite !",
+        "Challenge géométrique : vérifie en 1 minute si {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) sont symétriques par rapport à {axeDesc}.",
+        "Mission : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {axeDesc}. Symétrie : vrai ou faux ?"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Bon alors, t'as {pointA} en ({coordA_x}, {coordA_y}) et {pointB} en ({coordB_x}, {coordB_y}). Avec {axeDesc}, ils sont symétriques ou pas ?",
+        "Regarde : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), et l'axe c'est {axeDesc}. Alors, symétrie ou pas ?",
+        "Dis-moi, {pointA} en ({coordA_x}, {coordA_y}) et {pointB} en ({coordB_x}, {coordB_y}), par rapport à {axeDesc}, c'est bon pour la symétrie ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Note les coordonnées : {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y})\nÉtape 2 : Identifie {axeDesc}\nÉtape 3 : Vérifie si les distances à l'axe sont égales",
+        "1) Repère {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y})\n2) Localise {axeDesc}\n3) Calcule et compare les distances\n4) Conclus sur la symétrie",
+        "Procédure de vérification :\n→ {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y})\n→ Axe : {axeDesc}\n→ Calcul des distances\n→ Validation"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu sais qu'en symétrie, les distances à l'axe sont égales. Applique ce principe avec {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}) et {axeDesc}.",
+        "Rappelle-toi la propriété fondamentale de la symétrie. Vérifie-la pour {pointA}({coordA_x}, {coordA_y}) et {pointB}({coordB_x}, {coordB_y}) par rapport à {axeDesc}.",
+        "Comme dans les exercices précédents, utilise la règle d'équidistance. {pointA}({coordA_x}, {coordA_y}), {pointB}({coordB_x}, {coordB_y}), {axeDesc}. Qu'en conclus-tu ?"
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Coordonnées de {pointA} ?\nR : ({coordA_x}, {coordA_y}).\nQ : Coordonnées de {pointB} ?\nR : ({coordB_x}, {coordB_y}).\nQ : Axe ?\nR : {axeDesc}.\nQ : Symétrie validée ?",
+        "Question : Position de {pointA} ?\nRéponse : ({coordA_x}, {coordA_y}).\nQuestion : Position de {pointB} ?\nRéponse : ({coordB_x}, {coordB_y}).\nQuestion : Ces points sont-ils symétriques par rapport à {axeDesc} ?",
+        "Q : {pointA} = ?\nR : ({coordA_x}, {coordA_y}).\nQ : {pointB} = ?\nR : ({coordB_x}, {coordB_y}).\nQ : Axe ?\nR : {axeDesc}.\nQ : Symétrie vérifiée ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "pointA": "Nom du premier point (ex: M, A, D)",
+    "pointB": "Nom du second point (ex: N, B, E)",
+    "coordA_x": "Coordonnée x du premier point (entier)",
+    "coordA_y": "Coordonnée y du premier point (entier)",
+    "coordB_x": "Coordonnée x du second point (entier)",
+    "coordB_y": "Coordonnée y du second point (entier)",
+    "axeDesc": "Description de l'axe (ex: 'l'axe vertical x = 5', 'l'axe horizontal y = 3', 'l'axe des abscisses', 'l'axe des ordonnées')"
+  }
+}

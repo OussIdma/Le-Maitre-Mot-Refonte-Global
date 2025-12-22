@@ -1,0 +1,2067 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle 
+} from '../ui/card';
+import { Badge } from '../ui/badge';
+import { Input } from '../ui/input';
+import { Button } from '../ui/button';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '../ui/select';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '../ui/table';
+import { Alert, AlertDescription } from '../ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import { Switch } from '../ui/switch';
+import {
+  RefreshCw, 
+  CheckCircle, 
+  AlertCircle, 
+  ChevronLeft,
+  Plus,
+  Pencil,
+  Trash2,
+  Save,
+  X,
+  Loader2,
+  BookOpen,
+  Eye,
+  ExternalLink,
+  ArrowLeft,
+  Sparkles,
+  PlayCircle,
+  Copy
+} from 'lucide-react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import GeneratorVariablesPanel from './GeneratorVariablesPanel';
+import DynamicPreviewModal from './DynamicPreviewModal';
+import GeneratorParamsForm from './GeneratorParamsForm';
+import {
+  createChapterExercise,
+  updateChapterExercise,
+  deleteChapterExercise,
+} from '../../lib/adminApi';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+/**
+ * Page d'administration des exercices d'un chapitre
+ * Permet le CRUD sur les exercices figés des chapitres pilotes
+ */
+const ChapterExercisesAdminPage = () => {
+  const { chapterCode } = useParams();
+  const navigate = useNavigate();
+  
+  // État principal
+  const [exercises, setExercises] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // P1: Pipeline du chapitre (chargé depuis le curriculum)
+  const [chapterPipeline, setChapterPipeline] = useState(null);
+  const [chapterMeta, setChapterMeta] = useState(null);
+  
+  // Types d'exercices disponibles (chargés depuis l'API)
+  const [exerciseTypes, setExerciseTypes] = useState([]);
+  
+  // Filtres
+  const [filterOffer, setFilterOffer] = useState('all');
+  const [filterDifficulty, setFilterDifficulty] = useState('all');
+  
+  // Modal d'édition
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('create');
+  const [editingExercise, setEditingExercise] = useState(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    family: 'none',
+    exercise_type: '',
+    difficulty: 'facile',
+    offer: 'free',
+    enonce_html: '',
+    solution_html: '',
+    needs_svg: false,
+    svg_enonce_brief: '',
+    svg_solution_brief: '',
+    // Champs pour exercices dynamiques
+    is_dynamic: false,
+    generator_key: '',
+    enonce_template_html: '',
+    solution_template_html: '',
+    variables: null,
+    template_variants: []
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  
+  // Générateurs disponibles
+  const [availableGenerators, setAvailableGenerators] = useState([]);
+  
+  // Modal de prévisualisation
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewExercise, setPreviewExercise] = useState(null);
+  // Variants dynamiques (UI)
+  const [activeVariantIndex, setActiveVariantIndex] = useState(0);
+  
+  // Confirmation suppression
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [exerciseToDelete, setExerciseToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  
+  // Messages
+  const [operationMessage, setOperationMessage] = useState(null);
+  
+  // Preview dynamique (P2)
+  const [dynamicPreviewOpen, setDynamicPreviewOpen] = useState(false);
+
+  // Import/export
+  const fileInputRef = useRef(null);
+  const [exportPipeline, setExportPipeline] = useState('ALL');
+  
+  // Schéma du générateur sélectionné (P0.2)
+  const [generatorSchema, setGeneratorSchema] = useState(null);
+  
+  // Familles disponibles (déprécié - legacy)
+  const families = ['CONVERSION', 'COMPARAISON', 'PERIMETRE', 'PROBLEME', 'DUREES', 'LECTURE_HORLOGE', 'CALCUL_DUREE', 'AGRANDISSEMENT_REDUCTION'];
+  
+  // Charger les types d'exercices et générateurs
+  useEffect(() => {
+    const fetchExerciseTypes = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/admin/exercises/pilot-chapters`);
+        if (response.ok) {
+          const data = await response.json();
+          setExerciseTypes(data.exercise_types || []);
+        }
+      } catch (err) {
+        console.error('Erreur chargement types:', err);
+      }
+    };
+    
+    const fetchGenerators = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/v1/exercises/generators`);
+        if (response.ok) {
+          const data = await response.json();
+          // Gérer les deux formats: liste d'objets ou liste de strings
+          const generators = data.generators || [];
+          const keys = generators.map(g => typeof g === 'string' ? g : g.key);
+          // Ajouter SYMETRIE_AXIALE_V2 si non présent (nouveau générateur)
+          if (!keys.includes('SYMETRIE_AXIALE_V2')) {
+            keys.push('SYMETRIE_AXIALE_V2');
+          }
+          setAvailableGenerators(keys);
+        }
+      } catch (err) {
+        console.error('Erreur chargement générateurs:', err);
+        setAvailableGenerators(['THALES_V1', 'SYMETRIE_AXIALE_V2']); // Fallback avec les deux
+      }
+    };
+    
+    fetchExerciseTypes();
+    fetchGenerators();
+    
+    // P1: Charger le pipeline du chapitre depuis le curriculum
+    const fetchChapterPipeline = async () => {
+      if (!chapterCode) return;
+      
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/admin/curriculum/6e`);
+        if (response.ok) {
+          const data = await response.json();
+          const chapter = data.chapitres?.find(ch => ch.code_officiel === chapterCode);
+          if (chapter) {
+            setChapterPipeline(chapter.pipeline || 'SPEC');
+            setChapterMeta(chapter);
+          }
+        }
+      } catch (err) {
+        console.error('Erreur chargement pipeline chapitre:', err);
+      }
+    };
+    
+    fetchChapterPipeline();
+  }, [chapterCode]);
+  
+  // Charger les exercices
+  const fetchExercises = useCallback(async () => {
+    if (!chapterCode) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      let url = `${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises`;
+      const params = new URLSearchParams();
+      
+      if (filterOffer !== 'all') params.append('offer', filterOffer);
+      if (filterDifficulty !== 'all') params.append('difficulty', filterDifficulty);
+      
+      if (params.toString()) url += `?${params.toString()}`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setExercises(data.exercises || []);
+      setStats(data.stats || null);
+      if (!chapterPipeline && data.pipeline) {
+        setChapterPipeline(data.pipeline);
+      }
+      
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [chapterCode, filterOffer, filterDifficulty]);
+  
+  useEffect(() => {
+    fetchExercises();
+  }, [fetchExercises]);
+
+  // Effacer les messages
+  useEffect(() => {
+    if (operationMessage) {
+      const timer = setTimeout(() => setOperationMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [operationMessage]);
+
+  // Infos pipeline / disponibilité
+  const dynamicCount = exercises.filter(ex => ex.is_dynamic).length;
+  const staticCount = exercises.filter(ex => !ex.is_dynamic).length;
+  const pipelineMessage = (() => {
+    if (chapterPipeline === 'TEMPLATE') {
+      return "Pipeline dynamique : seuls les exercices dynamiques seront générés. «Disponible» = au moins 1 exercice dynamique pour les filtres choisis.";
+    }
+    if (chapterPipeline === 'SPEC') {
+      return "Pipeline statique : seuls les exercices statiques seront générés. Les exercices dynamiques sont ignorés.";
+    }
+    if (chapterPipeline === 'MIXED') {
+      return "Pipeline mixte : priorité aux dynamiques ; les statiques ne servent qu'en fallback si aucun dynamique ne matche l'offre/la difficulté.";
+    }
+    return null;
+  })();
+
+  // Export JSON
+  const handleExport = async (pipelineFilter) => {
+    try {
+      const params = pipelineFilter && pipelineFilter !== 'ALL' ? `?pipeline=${pipelineFilter}` : '';
+      const res = await fetch(`${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises-export${params}`);
+      if (!res.ok) {
+        throw new Error(`Export échoué (${res.status})`);
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${chapterCode}_exercises${pipelineFilter && pipelineFilter !== 'ALL' ? `_${pipelineFilter}` : ''}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setOperationMessage({ type: 'success', text: 'Export JSON réalisé.' });
+    } catch (e) {
+      setOperationMessage({ type: 'error', text: `Export impossible: ${e.message}` });
+    }
+  };
+
+  // Import JSON
+  const handleImportClick = () => {
+    if (fileInputRef.current) fileInputRef.current.value = null;
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await fetch(`${BACKEND_URL}/api/admin/chapters/${chapterCode}/exercises/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail?.message || `Import échoué (${res.status})`);
+      }
+      setOperationMessage({ type: 'success', text: 'Import JSON terminé.' });
+      fetchExercises();
+    } catch (e) {
+      setOperationMessage({ type: 'error', text: `Import impossible: ${e.message}` });
+    }
+  };
+  
+  // Couleurs
+  const getDifficultyColor = (difficulty) => {
+    const colors = {
+      'facile': 'bg-green-100 text-green-800',
+      'moyen': 'bg-yellow-100 text-yellow-800',
+      'difficile': 'bg-red-100 text-red-800'
+    };
+    return colors[difficulty] || 'bg-gray-100 text-gray-800';
+  };
+  
+  const getOfferColor = (offer) => {
+    return offer === 'pro' 
+      ? 'bg-purple-100 text-purple-800 border-purple-300' 
+      : 'bg-blue-100 text-blue-800 border-blue-300';
+  };
+
+  // Helpers variants dynamiques
+  // Vérifier si l'exercice est dynamique ET a des variants OU est un générateur premium qui devrait avoir des variants
+  const isPremiumGenerator = formData.generator_key === 'SIMPLIFICATION_FRACTIONS_V2';
+  const hasTemplateVariants =
+    Array.isArray(formData.template_variants) &&
+    formData.template_variants.length > 0;
+  
+  // Pour les générateurs premium, afficher la section même si variants vides (pour permettre l'ajout)
+  const shouldShowVariantsSection = formData.is_dynamic && (hasTemplateVariants || isPremiumGenerator);
+
+  // Dès que des template_variants existent, ils sont la source de vérité pour l'UI
+  // Pour les générateurs premium, activer le mode variant même si la liste est vide (pour permettre l'ajout)
+  const isVariantMode = hasTemplateVariants || (isPremiumGenerator && formData.is_dynamic);
+
+  const effectiveVariants = hasTemplateVariants
+    ? formData.template_variants
+    : [
+        {
+          id: 'v1',
+          label: 'Variant 1',
+          weight: 1,
+          enonce_template_html: formData.enonce_template_html || '',
+          solution_template_html: formData.solution_template_html || '',
+        },
+      ];
+
+  const currentVariantIndex =
+    activeVariantIndex >= 0 && activeVariantIndex < effectiveVariants.length
+      ? activeVariantIndex
+      : 0;
+
+  const currentVariant = effectiveVariants[currentVariantIndex];
+
+  const updateVariantField = (index, field, value) => {
+    setFormData((prev) => {
+      if (!Array.isArray(prev.template_variants) || prev.template_variants.length === 0) {
+        // Pas encore en mode variants: on ne met à jour que les champs legacy
+        return prev;
+      }
+      const updated = prev.template_variants.map((v, i) =>
+        i === index ? { ...v, [field]: value } : v
+      );
+      return { ...prev, template_variants: updated };
+    });
+  };
+
+  const handleAddVariant = () => {
+    if (!Array.isArray(formData.template_variants) || formData.template_variants.length === 0) {
+      const baseVariant = {
+        id: 'v1',
+        label: 'Variant 1',
+        weight: 1,
+        enonce_template_html: formData.enonce_template_html || '',
+        solution_template_html: formData.solution_template_html || '',
+      };
+      const newVariant = {
+        id: 'v2',
+        label: 'Variant 2',
+        weight: 1,
+        enonce_template_html: formData.enonce_template_html || '',
+        solution_template_html: formData.solution_template_html || '',
+      };
+      setFormData((prev) => ({
+        ...prev,
+        template_variants: [baseVariant, newVariant],
+      }));
+      setActiveVariantIndex(1);
+    } else {
+      const existing = formData.template_variants;
+      const base = existing[existing.length - 1];
+      const nextIndex = existing.length + 1;
+      const newVariant = {
+        ...base,
+        id: `v${nextIndex}`,
+        label: base.label || `Variant ${nextIndex}`,
+      };
+      const updated = [...existing, newVariant];
+      setFormData((prev) => ({ ...prev, template_variants: updated }));
+      setActiveVariantIndex(updated.length - 1);
+    }
+  };
+
+  const handleDuplicateVariant = () => {
+    if (!isVariantMode) return;
+    const existing = formData.template_variants || [];
+    if (existing.length === 0) return;
+    const base = existing[currentVariantIndex];
+    const nextIndex = existing.length + 1;
+    const newVariant = {
+      ...base,
+      id: `v${nextIndex}`,
+      label: base.label || `Variant ${nextIndex}`,
+    };
+    const updated = [...existing, newVariant];
+    setFormData((prev) => ({ ...prev, template_variants: updated }));
+    setActiveVariantIndex(updated.length - 1);
+  };
+
+  const handleDeleteVariant = () => {
+    if (!isVariantMode) return;
+    const existing = formData.template_variants || [];
+    if (existing.length <= 1) return; // Ne jamais supprimer le dernier
+    const updated = existing.filter((_, idx) => idx !== currentVariantIndex);
+    setFormData((prev) => ({ ...prev, template_variants: updated }));
+    setActiveVariantIndex(0);
+  };
+  
+  // Ouvrir modal création
+  const handleOpenCreate = () => {
+    setModalMode('create');
+    setEditingExercise(null);
+    setFormData({
+      family: 'none',
+      exercise_type: '',
+      difficulty: 'facile',
+      offer: 'free',
+      enonce_html: '',
+      solution_html: getSolutionTemplate(),
+      needs_svg: false,
+      svg_enonce_brief: '',
+      svg_solution_brief: '',
+      is_dynamic: false,
+      title: '',
+      generator_key: '',
+      enonce_template_html: '',
+      solution_template_html: '',
+      variables: null,
+      template_variants: []
+    });
+    setActiveVariantIndex(0);
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+  
+  // Template solution 4 étapes
+  const getSolutionTemplate = () => {
+    return `<h4>Correction détaillée</h4>
+<ol>
+  <li><strong>Compréhension :</strong> </li>
+  <li><strong>Méthode :</strong> </li>
+  <li><strong>Calculs :</strong> </li>
+  <li><strong>Conclusion :</strong> </li>
+</ol>`;
+  };
+  
+  // Template pour exercice dynamique
+  const getDynamicTemplates = (generatorKey) => {
+    if (generatorKey === 'THALES_V1' || generatorKey === 'THALES_V2') {
+      return {
+        enonce: `<p><strong>Agrandissement d'{{figure_type_article}} :</strong></p>
+<p>On considère {{figure_type_article}} de côté <strong>{{cote_initial}} cm</strong>.</p>
+<p>On effectue un <strong>{{transformation}}</strong> de coefficient <strong>{{coefficient_str}}</strong>.</p>
+<p><em>Question :</em> Quelle est la mesure du côté de la figure obtenue ?</p>`,
+        solution: `<h4>Correction détaillée</h4>
+<ol>
+  <li><strong>Compréhension :</strong> On a {{figure_type_article}} qu'on {{transformation_verbe}}.</li>
+  <li><strong>Méthode :</strong> Multiplier chaque dimension par le coefficient.</li>
+  <li><strong>Calculs :</strong> {{cote_initial}} × {{coefficient_str}} = <strong>{{cote_final}} cm</strong></li>
+  <li><strong>Conclusion :</strong> La figure mesure <strong>{{cote_final}} cm</strong>.</li>
+</ol>`
+      };
+    }
+    if (generatorKey === 'SYMETRIE_AXIALE_V2') {
+      return {
+        enonce: `<p><strong>Symétrie axiale</strong></p>
+<p>Soit {{figure_description}} <strong>{{points_labels}}</strong> et la droite {{axe_label}} d'équation <strong>{{axe_equation}}</strong>.</p>
+<p><em>Construire le symétrique de {{points_labels}} par rapport à {{axe_label}}.</em></p>`,
+        solution: `<h4>Correction</h4>
+<ol>
+  <li><strong>Méthode :</strong> Pour chaque point, tracer la perpendiculaire à {{axe_label}} passant par ce point.</li>
+  <li><strong>Report des distances :</strong> Reporter la même distance de l'autre côté de l'axe.</li>
+  <li><strong>Résultat :</strong> Les symétriques sont : <strong>{{points_symmetric_labels}}</strong></li>
+</ol>`
+      };
+    }
+    if (generatorKey === 'SIMPLIFICATION_FRACTIONS_V2') {
+      // Templates Variant A (Standard) par défaut
+      return {
+        enonce: "<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>",
+        solution: `<ol>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      };
+    }
+    return { enonce: '', solution: '' };
+  };
+  
+  // Templates pour les variants A/B/C de SIMPLIFICATION_FRACTIONS_V2
+  const getSimplificationFractionsV2Templates = () => {
+    return {
+      A: {
+        enonce: "<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>",
+        solution: `<ol>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      },
+      B: {
+        enonce: `<p><strong>Simplifier la fraction :</strong> {{fraction}}</p>
+{{hint_display}}`,
+        solution: `<ol>
+  <li><strong>Méthode :</strong> {{method_explanation}}</li>
+  <li>{{step1}}</li>
+  <li>{{step2}}</li>
+  <li>{{step3}}</li>
+  <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
+</ol>`
+      },
+      C: {
+        enonce: `<p><strong>Analyse cette simplification :</strong></p>
+<p>Fraction initiale : <strong>{{fraction}}</strong></p>
+<p>Simplification proposée : <strong>{{wrong_simplification}}</strong></p>
+<p><em>Cette simplification est-elle correcte ?</em></p>`,
+        solution: `<ol>
+  <li><strong>Vérification :</strong> {{check_equivalence_str}}</li>
+  <li><strong>Conclusion :</strong> {{diagnostic_explanation}}</li>
+  <li><strong>Simplification correcte :</strong> {{fraction_reduite}}</li>
+</ol>`
+      }
+    };
+  };
+  
+  // Ouvrir modal édition
+  const handleOpenEdit = (exercise) => {
+    setModalMode('edit');
+    setEditingExercise(exercise);
+    setFormData({
+      family: exercise.family,
+      exercise_type: exercise.exercise_type || '',
+      difficulty: exercise.difficulty,
+      offer: exercise.offer,
+      enonce_html: exercise.enonce_html || '',
+      solution_html: exercise.solution_html || '',
+      needs_svg: exercise.needs_svg || false,
+      svg_enonce_brief: exercise.svg_enonce_brief || '',
+      svg_solution_brief: exercise.svg_solution_brief || '',
+      is_dynamic: exercise.is_dynamic || false,
+      title: exercise.title || '',
+      generator_key: exercise.generator_key || '',
+      enonce_template_html: exercise.enonce_template_html || '',
+      solution_template_html: exercise.solution_template_html || '',
+      variables: exercise.variables || {},
+      template_variants: (() => {
+        // Si template_variants existe et est un tableau non vide
+        if (Array.isArray(exercise.template_variants) && exercise.template_variants.length > 0) {
+          // Pour les générateurs premium, s'assurer que tous les variants A/B/C sont présents avec leurs templates
+          if (exercise.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && exercise.is_dynamic) {
+            const variantTemplates = getSimplificationFractionsV2Templates();
+            const existingVariants = exercise.template_variants;
+            const variantMap = {};
+            existingVariants.forEach(v => {
+              const key = v.variant_id || v.id;
+              if (key) variantMap[key] = v;
+            });
+            
+            // S'assurer que A, B, C existent avec leurs templates par défaut si absents ou vides
+            return ['A', 'B', 'C'].map(variantId => {
+              const existing = variantMap[variantId];
+              if (existing) {
+                // Variant existe : utiliser les templates existants, ou les templates par défaut si vides
+                return {
+                  ...existing,
+                  id: existing.id || variantId,
+                  variant_id: existing.variant_id || variantId,
+                  label: existing.label || (variantId === 'A' ? 'Direct' : variantId === 'B' ? 'Guidé' : 'Diagnostic'),
+                  weight: existing.weight || 1,
+                  enonce_template_html: existing.enonce_template_html?.trim() || variantTemplates[variantId].enonce,
+                  solution_template_html: existing.solution_template_html?.trim() || variantTemplates[variantId].solution
+                };
+              } else {
+                // Variant absent : créer avec templates par défaut
+                return {
+                  id: variantId,
+                  variant_id: variantId,
+                  label: variantId === 'A' ? 'Direct' : variantId === 'B' ? 'Guidé' : 'Diagnostic',
+                  weight: 1,
+                  enonce_template_html: variantTemplates[variantId].enonce,
+                  solution_template_html: variantTemplates[variantId].solution
+                };
+              }
+            });
+          }
+          // Pour les autres générateurs, retourner tel quel
+          return exercise.template_variants;
+        }
+        // Si c'est un générateur premium mais variants vides en DB, initialiser A/B/C
+        if (exercise.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && exercise.is_dynamic) {
+          const variantTemplates = getSimplificationFractionsV2Templates();
+          return [
+            { 
+              id: 'A', 
+              variant_id: 'A', 
+              label: 'Direct', 
+              weight: 1, 
+              enonce_template_html: exercise.enonce_template_html || variantTemplates.A.enonce, 
+              solution_template_html: exercise.solution_template_html || variantTemplates.A.solution 
+            },
+            { 
+              id: 'B', 
+              variant_id: 'B', 
+              label: 'Guidé', 
+              weight: 1, 
+              enonce_template_html: variantTemplates.B.enonce, 
+              solution_template_html: variantTemplates.B.solution 
+            },
+            { 
+              id: 'C', 
+              variant_id: 'C', 
+              label: 'Diagnostic', 
+              weight: 1, 
+              enonce_template_html: variantTemplates.C.enonce, 
+              solution_template_html: variantTemplates.C.solution 
+            }
+          ];
+        }
+        // Sinon, tableau vide ou conversion si c'est un objet unique
+        if (exercise.template_variants && !Array.isArray(exercise.template_variants)) {
+          return [exercise.template_variants];
+        }
+        return [];
+      })()
+    });
+    setActiveVariantIndex(0);
+    setFormErrors({});
+    setIsModalOpen(true);
+  };
+  
+  // Fermer modal
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingExercise(null);
+    setFormErrors({});
+  };
+  
+  // Prévisualiser
+  const handlePreview = (exercise) => {
+    setPreviewExercise(exercise);
+    setPreviewOpen(true);
+  };
+  
+  // Valider le formulaire
+  const validateForm = () => {
+    const errors = {};
+    
+    // Validation pour exercices STATIQUES
+    if (!formData.is_dynamic) {
+      if (!formData.enonce_html.trim()) {
+        errors.enonce_html = "L'énoncé est requis";
+      }
+      
+      if (!formData.solution_html.trim()) {
+        errors.solution_html = 'La solution est requise';
+      }
+      
+      // Vérifier pas de LaTeX
+      if (formData.enonce_html.includes('$') || formData.solution_html.includes('$')) {
+        errors.latex = 'Le contenu ne doit pas contenir de LaTeX ($). Utilisez du HTML pur.';
+      }
+      
+      // Vérifier structure solution
+      if (!formData.solution_html.includes('<ol>') || !formData.solution_html.includes('<li>')) {
+        errors.solution_html = 'La solution doit contenir une structure en 4 étapes (<ol><li>...)';
+      }
+    }
+    
+    // Validation pour exercices DYNAMIQUES
+    if (formData.is_dynamic) {
+      if (!formData.generator_key) {
+        errors.generator_key = 'Le générateur est requis pour les exercices dynamiques';
+      }
+
+      const hasVariants =
+        Array.isArray(formData.template_variants) &&
+        formData.template_variants.length > 0;
+
+      if (hasVariants) {
+        // Les variants deviennent la source de vérité
+        formData.template_variants.forEach((variant, idx) => {
+          if (!variant.id || !variant.id.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`id_${idx}`] =
+              "Chaque variant doit avoir un identifiant non vide";
+          }
+          if (!variant.enonce_template_html?.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`enonce_${idx}`] =
+              "Le template énoncé est requis pour chaque variant";
+          }
+          if (!variant.solution_template_html?.trim()) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`solution_${idx}`] =
+              "Le template solution est requis pour chaque variant";
+          }
+          const weight = Number(variant.weight ?? 1);
+          if (Number.isNaN(weight) || weight < 1) {
+            errors.template_variants = errors.template_variants || {};
+            errors.template_variants[`weight_${idx}`] =
+              "Le poids de chaque variant doit être un entier ≥ 1";
+          }
+        });
+      } else {
+        // Mode legacy: on valide les templates uniques
+        if (!formData.enonce_template_html?.trim()) {
+          errors.enonce_template_html = 'Le template énoncé est requis';
+        }
+        if (!formData.solution_template_html?.trim()) {
+          errors.solution_template_html = 'Le template solution est requis';
+        }
+      }
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+  
+  // Soumettre avec gestion robuste des erreurs (P0.1) via adminApi
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
+    
+    setSaving(true);
+    
+    try {
+      // Préparer le payload en respectant la règle:
+      // - si template_variants non vide: source de vérité pour le dynamique côté backend/rendu
+      // - les champs legacy enonce_template_html/solution_template_html restent un miroir
+      //   (compat uniquement, jamais source principale en mode variants)
+      const payload = { ...formData };
+      
+      // S'assurer que variables est toujours un objet (même vide) pour les exercices dynamiques
+      if (payload.is_dynamic) {
+        if (!payload.variables || typeof payload.variables !== 'object') {
+          payload.variables = {};
+        }
+      }
+      
+      // S'assurer que template_variants est toujours un tableau (même vide) pour les exercices dynamiques
+      // Le backend doit recevoir template_variants pour pouvoir le sauvegarder
+      if (payload.is_dynamic) {
+        if (!Array.isArray(payload.template_variants)) {
+          payload.template_variants = [];
+        }
+      }
+      
+      // Si template_variants non vide, mettre à jour les templates legacy (miroir)
+      if (payload.is_dynamic && Array.isArray(payload.template_variants) && payload.template_variants.length > 0) {
+        const first = payload.template_variants[0];
+        payload.enonce_template_html = first.enonce_template_html || '';
+        payload.solution_template_html = first.solution_template_html || '';
+      }
+      
+      const result =
+        modalMode === 'create'
+          ? await createChapterExercise(chapterCode, payload)
+          : await updateChapterExercise(chapterCode, editingExercise.id, payload);
+
+      if (!result.success) {
+        const details = result.error_details || {};
+        const message =
+          result.error ||
+          details.message ||
+          'Erreur lors de la sauvegarde';
+        throw new Error(message);
+      }
+
+      const data = result.data || {};
+      
+      setOperationMessage({
+        type: 'success',
+        text: data.message || `Exercice ${modalMode === 'create' ? 'créé' : 'modifié'} avec succès`
+      });
+      
+      handleCloseModal();
+      fetchExercises();
+      
+    } catch (err) {
+      let errorMessage = err.message;
+      
+      setOperationMessage({
+        type: 'error',
+        text: errorMessage,
+        showRetry: true
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  // Ouvrir confirmation suppression
+  const handleOpenDelete = (exercise) => {
+    setExerciseToDelete(exercise);
+    setDeleteConfirmOpen(true);
+  };
+  
+  // Confirmer suppression
+  const handleConfirmDelete = async () => {
+    if (!exerciseToDelete) return;
+    
+    setDeleting(true);
+    
+    try {
+      const result = await deleteChapterExercise(chapterCode, exerciseToDelete.id);
+
+      if (!result.success) {
+        const details = result.error_details || {};
+        const message =
+          result.error ||
+          details.message ||
+          'Erreur lors de la suppression';
+        throw new Error(message);
+      }
+
+      const data = result.data || {};
+      
+      setOperationMessage({
+        type: 'success',
+        text: data.message || 'Exercice supprimé avec succès'
+      });
+      
+      setDeleteConfirmOpen(false);
+      setExerciseToDelete(null);
+      fetchExercises();
+      
+    } catch (err) {
+      setOperationMessage({
+        type: 'error',
+        text: err.message
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+  
+  // Tronquer le texte HTML
+  const truncateHtml = (html, maxLength = 80) => {
+    const text = html.replace(/<[^>]*>/g, '');
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+  };
+
+  const getExercisePreview = (ex) => {
+    if (ex.title) return ex.title;
+    if (ex.is_dynamic) {
+      const snippet = truncateHtml(ex.enonce_template_html || '', 80);
+      const gen = ex.generator_key ? `Générateur: ${ex.generator_key}` : 'Dynamique';
+      return snippet ? `${gen} • ${snippet}` : gen;
+    }
+    return truncateHtml(ex.enonce_html || '', 80);
+  };
+  
+  // Ouvrir la page élève avec le chapitre pré-sélectionné
+  const handleOpenStudentView = () => {
+    const url = `/generate?code_officiel=${chapterCode}&difficulte=moyen`;
+    window.open(url, '_blank');
+  };
+  
+  // Loading
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Chargement des exercices...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Erreur
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-4xl mx-auto">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <div className="mt-4 flex gap-2">
+            <Button onClick={() => navigate('/admin/curriculum')}>
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Retour au curriculum
+            </Button>
+            <Button onClick={fetchExercises}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Réessayer
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* Bouton Retour amélioré */}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => navigate('/admin/curriculum')}
+                className="flex items-center gap-1"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Retour curriculum</span>
+              </Button>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-blue-600" />
+                  Exercices {chapterCode}
+                </h1>
+                <p className="text-sm text-gray-500">
+                  Gestion des exercices figés • {exercises.length} exercice{exercises.length > 1 ? 's' : ''}
+                  {chapterPipeline && (
+                    <span className="ml-2">
+                      • Pipeline: <Badge variant="outline" className="text-xs">
+                        {chapterPipeline === 'SPEC' && 'Statique (SPEC)'}
+                        {chapterPipeline === 'TEMPLATE' && 'Dynamique (TEMPLATE)'}
+                        {chapterPipeline === 'MIXED' && 'Mixte (MIXED)'}
+                      </Badge>
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Export / Import */}
+              <div className="hidden sm:flex items-center gap-2">
+                <Select value={exportPipeline} onValueChange={setExportPipeline}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Export: Tous</SelectItem>
+                    <SelectItem value="TEMPLATE">Export: Dynamiques</SelectItem>
+                    <SelectItem value="SPEC">Export: Statiques</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => handleExport(exportPipeline)}>
+                  Exporter
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleImportClick}>
+                  Importer
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+              </div>
+              {/* Bouton Ouvrir côté élève */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleOpenStudentView}
+                className="flex items-center gap-1"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span className="hidden sm:inline">👀 Côté élève</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={fetchExercises}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">Actualiser</span>
+              </Button>
+              <Button size="sm" onClick={handleOpenCreate}>
+                <Plus className="h-4 w-4 mr-1" />
+                Ajouter
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+      
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Message avec bouton Réessayer (P0.1) */}
+        {operationMessage && (
+          <Alert 
+            className={`mb-4 ${operationMessage.type === 'success' ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}
+          >
+            {operationMessage.type === 'success' ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            )}
+            <AlertDescription className={`flex items-center justify-between ${operationMessage.type === 'success' ? 'text-green-800' : 'text-red-800'}`}>
+              <span>{operationMessage.text}</span>
+              {operationMessage.showRetry && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSubmit}
+                  className="ml-4"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Réessayer
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Bandeau pipeline / disponibilité */}
+        {chapterPipeline && (
+          <Alert className="mb-4 border-blue-500 bg-blue-50">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800 text-sm">
+              <div className="flex flex-wrap gap-3 items-center">
+                <Badge variant="outline" className="font-mono text-xs">
+                  Pipeline&nbsp;{chapterPipeline}
+                </Badge>
+                <span>Disponible = génère réellement dans ce pipeline.</span>
+                <span className="text-xs text-gray-600">
+                  Dynamiques : {dynamicCount} • Statiques : {staticCount}
+                </span>
+              </div>
+              <div className="mt-1">{pipelineMessage}</div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Alerte pipeline / disponibilité */}
+        {(() => {
+          const hasDynamic = exercises.some(ex => ex.is_dynamic);
+          const hasStatic = exercises.some(ex => !ex.is_dynamic);
+          const templateMissingDyn = chapterPipeline === 'TEMPLATE' && !hasDynamic;
+          const specMissingStaticsAndTypes = chapterPipeline === 'SPEC' && !hasStatic && !(chapterMeta?.exercise_types?.length);
+          const mixedEmpty = chapterPipeline === 'MIXED' && !hasDynamic && !hasStatic;
+          if (!templateMissingDyn && !specMissingStaticsAndTypes && !mixedEmpty) return null;
+          return (
+            <Alert className="mb-4 border-yellow-500 bg-yellow-50">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800 text-sm">
+                {templateMissingDyn && "Pipeline TEMPLATE : aucun exercice dynamique n'est présent pour ce chapitre. Ajoutez un exo dynamique ou passez en MIXED/SPEC."}
+                {specMissingStaticsAndTypes && "Pipeline SPEC : aucun exercice statique ici et aucun exercise_type dans le référentiel. Ajoutez un exo statique ou configurez exercise_types côté curriculum."}
+                {mixedEmpty && "Pipeline MIXED : aucun exercice dynamique ni statique pour l’instant. Ajoutez-en au moins un."}
+              </AlertDescription>
+            </Alert>
+          );
+        })()}
+        
+        {/* Stats */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">Total</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.total}</div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">Free</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">{stats.by_offer?.free || 0}</div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">Pro</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-600">{stats.by_offer?.pro || 0}</div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">Familles</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900">
+                  {Object.keys(stats.by_family || {}).length}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        
+        {/* Filtres */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="w-full sm:w-48">
+                <Label className="text-xs text-gray-500 mb-1 block">Offre</Label>
+                <Select value={filterOffer} onValueChange={setFilterOffer}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes les offres</SelectItem>
+                    <SelectItem value="free">Free</SelectItem>
+                    <SelectItem value="pro">Pro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="w-full sm:w-48">
+                <Label className="text-xs text-gray-500 mb-1 block">Difficulté</Label>
+                <Select value={filterDifficulty} onValueChange={setFilterDifficulty}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    <SelectItem value="facile">Facile</SelectItem>
+                    <SelectItem value="moyen">Moyen</SelectItem>
+                    <SelectItem value="difficile">Difficile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Tableau */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Liste des exercices</CardTitle>
+            <CardDescription>
+              Cliquez sur un exercice pour le modifier
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-16">ID</TableHead>
+                    <TableHead className="w-32">Famille</TableHead>
+                    <TableHead className="w-24">Difficulté</TableHead>
+                    <TableHead className="w-20">Offre</TableHead>
+                    <TableHead className="w-32">Pipeline / Usage</TableHead>
+                    <TableHead>Énoncé / Aperçu</TableHead>
+                    <TableHead className="w-16 text-center">SVG</TableHead>
+                    <TableHead className="w-32 text-center">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {exercises.map((exercise) => (
+                    <TableRow key={exercise.id} className="hover:bg-gray-50">
+                      <TableCell className="font-mono font-medium">
+                        #{exercise.id}
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {exercise.family}
+                        </Badge>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge className={`${getDifficultyColor(exercise.difficulty)} text-xs`}>
+                          {exercise.difficulty}
+                        </Badge>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge 
+                          variant="outline" 
+                          className={`${getOfferColor(exercise.offer)} text-xs`}
+                        >
+                          {exercise.offer}
+                        </Badge>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <div className="flex flex-col text-xs text-gray-700">
+                          <span className="font-mono">
+                            Chapitre: {chapterPipeline || 'N/A'}
+                          </span>
+                          {exercise.is_dynamic ? (
+                            <span className="text-green-700">
+                              {chapterPipeline === 'SPEC' && 'Ignoré (pipeline statique)'}
+                              {chapterPipeline === 'TEMPLATE' && 'Utilisé (dynamique)'}
+                              {chapterPipeline === 'MIXED' && 'Utilisé (priorité dynamique)'}
+                              {!chapterPipeline && 'Dynamique'}
+                            </span>
+                          ) : (
+                            <span className="text-blue-700">
+                              {chapterPipeline === 'SPEC' && 'Utilisé (statique)'}
+                              {chapterPipeline === 'TEMPLATE' && 'Ignoré (pipeline dynamique)'}
+                              {chapterPipeline === 'MIXED' && 'Utilisé si aucun dynamique'}
+                              {!chapterPipeline && 'Statique'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell className="text-sm text-gray-600">
+                        <div className="flex flex-col">
+                          <span>{getExercisePreview(exercise)}</span>
+                          {exercise.is_dynamic && exercise.generator_key && (
+                            <span className="text-xs text-gray-500">
+                              Générateur: {exercise.generator_key}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell className="text-center">
+                        {exercise.needs_svg ? (
+                          <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </TableCell>
+                      
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePreview(exercise)}
+                            className="h-8 w-8 p-0"
+                            title="Prévisualiser"
+                          >
+                            <Eye className="h-4 w-4 text-gray-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEdit(exercise)}
+                            className="h-8 w-8 p-0"
+                            title="Modifier"
+                          >
+                            <Pencil className="h-4 w-4 text-blue-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenDelete(exercise)}
+                            className="h-8 w-8 p-0"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {exercises.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Aucun exercice pour ce chapitre</p>
+                <Button onClick={handleOpenCreate} className="mt-4">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Créer le premier exercice
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </main>
+      
+      {/* Modal Création/Édition */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {modalMode === 'create' ? 'Créer un exercice' : `Modifier l'exercice #${editingExercise?.id}`}
+            </DialogTitle>
+            <DialogDescription>
+              Contenu en HTML pur uniquement. Pas de LaTeX, pas de Markdown.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            {/* Famille (déprécié), Difficulté, Offer sur une ligne */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label className="text-sm flex items-center gap-2">
+                  Famille <span className="text-xs text-gray-400">(déprécié)</span>
+                </Label>
+                <Select 
+                  value={formData.family} 
+                  onValueChange={(v) => setFormData(p => ({...p, family: v}))}
+                  disabled
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                <SelectItem value="none">-- Aucune --</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Champ conservé pour compatibilité legacy (GM07/GM08). Laissez vide pour les nouveaux exercices.
+                </p>
+              </div>
+              
+              <div>
+                <Label className="text-sm">Difficulté *</Label>
+                <Select 
+                  value={formData.difficulty} 
+                  onValueChange={(v) => setFormData(p => ({...p, difficulty: v}))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="facile">Facile</SelectItem>
+                    <SelectItem value="moyen">Moyen</SelectItem>
+                    <SelectItem value="difficile">Difficile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label className="text-sm">Offre *</Label>
+                <Select 
+                  value={formData.offer} 
+                  onValueChange={(v) => setFormData(p => ({...p, offer: v}))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">Free (1-10)</SelectItem>
+                    <SelectItem value="pro">Pro (11-20)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Toggle Exercice Dynamique */}
+            <div className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🎲</span>
+                  <Label className="text-sm font-medium text-purple-800">Exercice dynamique (template)</Label>
+                </div>
+                <Switch
+                  checked={formData.is_dynamic}
+                  onCheckedChange={(checked) => {
+                    setFormData(p => ({
+                      ...p, 
+                      is_dynamic: checked,
+                      generator_key: checked ? 'THALES_V1' : '',
+                      enonce_template_html: checked ? getDynamicTemplates('THALES_V1').enonce : '',
+                      solution_template_html: checked ? getDynamicTemplates('THALES_V1').solution : ''
+                    }));
+                  }}
+                />
+              </div>
+              
+              {formData.is_dynamic && (
+                <div className={`space-y-4 mt-4 ${chapterPipeline === 'SPEC' ? 'opacity-60' : ''}`}>
+                  {chapterPipeline === 'SPEC' && (
+                    <Alert className="border-yellow-500 bg-yellow-50">
+                      <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      <AlertDescription className="text-yellow-800 text-xs">
+                        ⚠️ Le chapitre utilise le pipeline SPEC (statique). Cet exercice dynamique ne sera pas utilisé lors de la génération.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="text-xs text-purple-600 bg-purple-100 p-2 rounded">
+                    💡 Les exercices dynamiques utilisent des templates avec variables <code>{'{{variable}}'}</code> 
+                    et génèrent des variantes infinies.
+                  </div>
+                  
+                  {/* Sélecteur de générateur */}
+                  <div>
+                    <Label className="text-sm">Titre (facultatif)</Label>
+                    <Input
+                      placeholder="Ex: Symétrie d'un triangle par rapport à (d)"
+                      value={formData.title}
+                      onChange={(e) => setFormData(p => ({...p, title: e.target.value}))}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Sera affiché dans la liste des exercices. N'affecte pas la génération.
+                    </p>
+                  </div>
+
+                  {/* Sélecteur de générateur */}
+                  <div>
+                    <Label className="text-sm">
+                      Générateur *
+                      <span className="text-xs text-gray-500 ml-1">(déduit aussi l'exercise_type)</span>
+                    </Label>
+                    <Select 
+                      value={formData.generator_key || 'THALES_V1'} 
+                      onValueChange={(v) => {
+                        const templates = getDynamicTemplates(v);
+                        setFormData(p => {
+                          // Pour les générateurs premium (SIMPLIFICATION_FRACTIONS_V2), initialiser les variants A/B/C si absents
+                          const isPremiumGen = v === 'SIMPLIFICATION_FRACTIONS_V2';
+                          const shouldInitVariants = isPremiumGen && 
+                            (!Array.isArray(p.template_variants) || p.template_variants.length === 0);
+                          const baseUpdate = {
+                            ...p, 
+                            generator_key: v,
+                            enonce_template_html: templates.enonce,
+                            solution_template_html: templates.solution
+                          };
+                          
+                          // Initialiser les variants A/B/C pour les générateurs premium avec les bons templates
+                          if (shouldInitVariants) {
+                            const variantTemplates = getSimplificationFractionsV2Templates();
+                            baseUpdate.template_variants = [
+                              { 
+                                id: 'A', 
+                                variant_id: 'A', 
+                                label: 'Direct', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.A.enonce, 
+                                solution_template_html: variantTemplates.A.solution 
+                              },
+                              { 
+                                id: 'B', 
+                                variant_id: 'B', 
+                                label: 'Guidé', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.B.enonce, 
+                                solution_template_html: variantTemplates.B.solution 
+                              },
+                              { 
+                                id: 'C', 
+                                variant_id: 'C', 
+                                label: 'Diagnostic', 
+                                weight: 1, 
+                                enonce_template_html: variantTemplates.C.enonce, 
+                                solution_template_html: variantTemplates.C.solution 
+                              }
+                            ];
+                          }
+                          
+                          return baseUpdate;
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choisir un générateur..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableGenerators.map(g => (
+                          <SelectItem key={g} value={g}>
+                            {g === 'THALES_V1' ? '🔺 THALES_V1 - Agrandissements/Réductions' : 
+                             g === 'SYMETRIE_AXIALE_V2' ? '📐 SYMETRIE_AXIALE_V2 - Symétrie Axiale' :
+                             g === 'THALES_V2' ? '🔺 THALES_V2 - Agrandissements/Réductions' : g}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      L’exercise_type est fixé par le generator_key (Factory). Si un type manuel diffère, la sauvegarde sera refusée côté backend.
+                    </p>
+                  </div>
+                  
+                  {/* Paramètres du générateur */}
+                  {formData.generator_key && formData.is_dynamic && (
+                    <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-semibold text-blue-800">
+                          Paramètres du générateur
+                        </Label>
+                        <Badge variant="outline" className="text-xs">
+                          Optionnel
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-blue-700">
+                        Ces paramètres contrôlent le comportement du générateur (difficulté, limites, options visuelles, etc.).
+                        Si non renseignés, les valeurs par défaut du générateur seront utilisées.
+                      </p>
+                      <GeneratorParamsForm
+                        generatorKey={formData.generator_key}
+                        initialParams={formData.variables || {}}
+                        onChange={(params) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            variables: params
+                          }));
+                        }}
+                        showPresets={true}
+                        compact={false}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Panneau des variables disponibles (P0.2) */}
+                  {formData.generator_key && (
+                    <GeneratorVariablesPanel 
+                      generatorKey={formData.generator_key}
+                      onTemplatesLoaded={(templates) => {
+                        setFormData(p => {
+                          // Pour les générateurs premium, initialiser les variants si absents
+                          if (p.generator_key === 'SIMPLIFICATION_FRACTIONS_V2' && 
+                              (!Array.isArray(p.template_variants) || p.template_variants.length === 0)) {
+                            const variantTemplates = getSimplificationFractionsV2Templates();
+                            return {
+                              ...p,
+                              template_variants: [
+                                { 
+                                  id: 'A', 
+                                  variant_id: 'A', 
+                                  label: 'Direct', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.A.enonce, 
+                                  solution_template_html: variantTemplates.A.solution 
+                                },
+                                { 
+                                  id: 'B', 
+                                  variant_id: 'B', 
+                                  label: 'Guidé', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.B.enonce, 
+                                  solution_template_html: variantTemplates.B.solution 
+                                },
+                                { 
+                                  id: 'C', 
+                                  variant_id: 'C', 
+                                  label: 'Diagnostic', 
+                                  weight: 1, 
+                                  enonce_template_html: variantTemplates.C.enonce, 
+                                  solution_template_html: variantTemplates.C.solution 
+                                }
+                              ]
+                            };
+                          } else {
+                            // Mode legacy : mettre à jour les templates uniques
+                            if (!p.enonce_template_html && !p.solution_template_html) {
+                              return {
+                                ...p,
+                                enonce_template_html: templates.enonce,
+                                solution_template_html: templates.solution
+                              };
+                            }
+                          }
+                          return p;
+                        });
+                      }}
+                    />
+                  )}
+                  
+                  {/* Bloc Variants d'énoncés - Affiché pour tous les exercices dynamiques, mais contenu conditionnel */}
+                  {shouldShowVariantsSection && (
+                  <div className="border border-purple-200 rounded-lg p-3 bg-white space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-purple-800">
+                        Variants d’énoncés dynamiques
+                      </Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleAddVariant}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Ajouter
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleDuplicateVariant}
+                          disabled={!isVariantMode}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Dupliquer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          onClick={handleDeleteVariant}
+                          disabled={!isVariantMode || (formData.template_variants || []).length <= 1}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1 text-red-600" />
+                          Supprimer
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2">
+                      {effectiveVariants.map((variant, idx) => (
+                        <Button
+                          key={variant.id || `variant-${idx}`}
+                          type="button"
+                          size="xs"
+                          variant={idx === currentVariantIndex ? 'default' : 'outline'}
+                          className={idx === currentVariantIndex ? 'bg-purple-600 text-white' : 'text-purple-700'}
+                          onClick={() => setActiveVariantIndex(idx)}
+                        >
+                          {variant.label || variant.id || `Variant ${idx + 1}`}
+                        </Button>
+                      ))}
+                    </div>
+                    
+                    {isVariantMode && currentVariant && (
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs text-gray-600">ID du variant *</Label>
+                          <Input
+                            value={currentVariant.id || ''}
+                            onChange={(e) =>
+                              updateVariantField(currentVariantIndex, 'id', e.target.value)
+                            }
+                            className="h-8 text-xs font-mono"
+                          />
+                          {formErrors.template_variants?.[`id_${currentVariantIndex}`] && (
+                            <p className="text-xs text-red-500 mt-1">
+                              {formErrors.template_variants[`id_${currentVariantIndex}`]}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Label (optionnel)</Label>
+                          <Input
+                            value={currentVariant.label || ''}
+                            onChange={(e) =>
+                              updateVariantField(currentVariantIndex, 'label', e.target.value)
+                            }
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-gray-600">Poids *</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={currentVariant.weight ?? 1}
+                            onChange={(e) =>
+                              updateVariantField(
+                                currentVariantIndex,
+                                'weight',
+                                e.target.value ? parseInt(e.target.value, 10) : 1
+                              )
+                            }
+                            className="h-8 text-xs w-20"
+                          />
+                          {formErrors.template_variants?.[`weight_${currentVariantIndex}`] && (
+                            <p className="text-xs text-red-500 mt-1">
+                              {formErrors.template_variants[`weight_${currentVariantIndex}`]}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {isVariantMode && formErrors.template_variants && (
+                      <p className="text-xs text-red-500">
+                        Certains variants contiennent des erreurs, merci de corriger les champs en rouge.
+                      </p>
+                    )}
+                    
+                    {!hasTemplateVariants && isPremiumGenerator && (
+                      <Alert className="border-blue-500 bg-blue-50">
+                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                        <AlertDescription className="text-blue-800 text-xs">
+                          💡 Ce générateur premium supporte les variants A/B/C (Direct/Guidé/Diagnostic). 
+                          Cliquez sur "Ajouter" pour créer les variants.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                  )}
+                  
+                  {/* Template énoncé */}
+                  <div>
+                    <Label className="text-sm">Template énoncé *</Label>
+                    <Textarea
+                      value={
+                        isVariantMode
+                          ? currentVariant?.enonce_template_html || ''
+                          : formData.enonce_template_html
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (isVariantMode) {
+                          updateVariantField(currentVariantIndex, 'enonce_template_html', value);
+                        } else {
+                          setFormData((p) => ({ ...p, enonce_template_html: value }));
+                        }
+                      }}
+                      placeholder="<p>Exercice avec {{variable}}...</p>"
+                      className="font-mono text-sm min-h-[100px] bg-white"
+                    />
+                    {formErrors.enonce_template_html && (
+                      <p className="text-xs text-red-500 mt-1">{formErrors.enonce_template_html}</p>
+                    )}
+                  </div>
+                  
+                  {/* Template solution */}
+                  <div>
+                    <Label className="text-sm">Template solution *</Label>
+                    <Textarea
+                      value={
+                        isVariantMode
+                          ? currentVariant?.solution_template_html || ''
+                          : formData.solution_template_html
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (isVariantMode) {
+                          updateVariantField(
+                            currentVariantIndex,
+                            'solution_template_html',
+                            value
+                          );
+                        } else {
+                          setFormData((p) => ({ ...p, solution_template_html: value }));
+                        }
+                      }}
+                      placeholder="<h4>Correction</h4>..."
+                      className="font-mono text-sm min-h-[100px] bg-white"
+                    />
+                    {formErrors.solution_template_html && (
+                      <p className="text-xs text-red-500 mt-1">{formErrors.solution_template_html}</p>
+                    )}
+                  </div>
+                  
+                  {/* Bouton Preview (P2) */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDynamicPreviewOpen(true)}
+                    className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
+                    disabled={!formData.enonce_template_html || !formData.solution_template_html}
+                  >
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    Prévisualiser un exemple généré
+                  </Button>
+                </div>
+              )}
+            </div>
+            
+            {/* Type d'exercice (statique / legacy) */}
+            <div className={chapterPipeline === 'TEMPLATE' || formData.is_dynamic ? 'opacity-60' : ''}>
+              <Label className="text-sm">
+                Type exercice (statique)
+                {(chapterPipeline === 'TEMPLATE' || formData.is_dynamic) && (
+                  <span className="text-xs text-gray-400 ml-1">(déduit du generator_key pour les dynamiques)</span>
+                )}
+              </Label>
+              <Select 
+                value={formData.exercise_type || ''} 
+                onValueChange={(v) => setFormData(p => ({...p, exercise_type: v === 'none' ? '' : v}))}
+                disabled={chapterPipeline === 'TEMPLATE' || formData.is_dynamic} // éviter collision avec generator_key
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner un type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-- Aucun (auto) --</SelectItem>
+                  {exerciseTypes.map(t => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label} - {t.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Utilisé pour les exercices statiques (SPEC ou fallback MIXED). Les dynamiques déduisent le type via leur generator_key (Factory).
+              </p>
+            </div>
+            
+            {/* Énoncé - seulement si non dynamique */}
+            {!formData.is_dynamic && (
+              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
+                <Label className="text-sm">
+                  Énoncé HTML *
+                  {chapterPipeline === 'TEMPLATE' && (
+                    <span className="text-xs text-gray-400 ml-1">(ignoré pour pipeline TEMPLATE)</span>
+                  )}
+                </Label>
+                <Textarea
+                  value={formData.enonce_html}
+                  onChange={(e) => setFormData(p => ({...p, enonce_html: e.target.value}))}
+                  placeholder="<p><strong>Titre :</strong> Description de l'exercice...</p>"
+                  className={`font-mono text-sm min-h-[120px] ${formErrors.enonce_html ? 'border-red-500' : ''}`}
+                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
+                />
+                {formErrors.enonce_html && (
+                  <p className="text-xs text-red-500 mt-1">{formErrors.enonce_html}</p>
+                )}
+              </div>
+            )}
+            
+            {/* Solution - seulement si non dynamique */}
+            {!formData.is_dynamic && (
+              <div className={chapterPipeline === 'TEMPLATE' ? 'opacity-60' : ''}>
+                <Label className="text-sm">
+                  Solution HTML (4 étapes) *
+                  {chapterPipeline === 'TEMPLATE' && (
+                    <span className="text-xs text-gray-400 ml-1">(ignorée pour pipeline TEMPLATE)</span>
+                  )}
+                </Label>
+                <Textarea
+                  value={formData.solution_html}
+                  onChange={(e) => setFormData(p => ({...p, solution_html: e.target.value}))}
+                  placeholder={getSolutionTemplate()}
+                  className={`font-mono text-sm min-h-[200px] ${formErrors.solution_html ? 'border-red-500' : ''}`}
+                  disabled={chapterPipeline === 'TEMPLATE'} // P1: Désactiver si pipeline TEMPLATE
+                />
+                {formErrors.solution_html && (
+                  <p className="text-xs text-red-500 mt-1">{formErrors.solution_html}</p>
+                )}
+              </div>
+            )}
+            
+            {/* Erreur LaTeX */}
+            {formErrors.latex && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{formErrors.latex}</AlertDescription>
+              </Alert>
+            )}
+            
+            {/* SVG requis */}
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={formData.needs_svg}
+                onCheckedChange={(checked) => setFormData(p => ({...p, needs_svg: checked}))}
+              />
+              <Label className="text-sm">Nécessite un SVG (schéma)</Label>
+              {formData.is_dynamic && (
+                <Badge variant="outline" className="ml-2 text-purple-600 border-purple-300">
+                  Auto-généré par {formData.generator_key || 'THALES_V1'}
+                </Badge>
+              )}
+            </div>
+            
+            {/* Champs SVG conditionnels - affichés uniquement si needs_svg est true ET non dynamique */}
+            {formData.needs_svg && !formData.is_dynamic && (
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  Configuration des figures SVG
+                </div>
+                
+                <div>
+                  <Label className="text-sm">Brief SVG pour l'énoncé</Label>
+                  <Input
+                    value={formData.svg_enonce_brief}
+                    onChange={(e) => setFormData(p => ({...p, svg_enonce_brief: e.target.value}))}
+                    placeholder="Ex: Horloge sans aiguilles, Rectangle 6cm × 4cm..."
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Laissez vide pour utiliser le comportement par défaut du type d'exercice.
+                  </p>
+                </div>
+                
+                <div>
+                  <Label className="text-sm">Brief SVG pour la solution</Label>
+                  <Input
+                    value={formData.svg_solution_brief}
+                    onChange={(e) => setFormData(p => ({...p, svg_solution_brief: e.target.value}))}
+                    placeholder="Ex: Horloge avec aiguilles à 9h20, Figure symétrique complète..."
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Si absent, utilise le brief de l'énoncé ou le comportement par défaut.
+                  </p>
+                </div>
+                
+                {/* Info sur le type sélectionné */}
+                {formData.exercise_type && (
+                  <div className="text-xs text-blue-700 bg-blue-50 p-2 rounded">
+                    💡 Type <strong>{formData.exercise_type}</strong> : 
+                    {formData.exercise_type === 'PLACER_AIGUILLES' && " Figure vide (énoncé) → Figure complète (solution)"}
+                    {formData.exercise_type === 'LECTURE_HEURE' && " Figure avec aiguilles dans l'énoncé uniquement"}
+                    {formData.exercise_type === 'SYMETRIE_AXIALE' && " Axe seul (énoncé) → Figure symétrique (solution)"}
+                    {formData.exercise_type === 'PERIMETRE' && " Forme géométrique dans l'énoncé"}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Aide */}
+            <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800">
+              <p className="font-medium mb-1">💡 Rappel HTML :</p>
+              <ul className="list-disc list-inside text-xs space-y-1">
+                <li><code>&lt;strong&gt;</code> pour le gras, <code>&lt;em&gt;</code> pour italique</li>
+                <li><code>×</code> pour la multiplication, <code>÷</code> pour la division</li>
+                <li>Structure solution : <code>&lt;ol&gt;&lt;li&gt;Étape 1&lt;/li&gt;...&lt;/ol&gt;</code></li>
+              </ul>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseModal}>
+              <X className="h-4 w-4 mr-2" />
+              Annuler
+            </Button>
+            <Button onClick={handleSubmit} disabled={saving}>
+              {saving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              {modalMode === 'create' ? 'Créer' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Modal Prévisualisation */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              Exercice #{previewExercise?.id}
+            </DialogTitle>
+            <DialogDescription>
+              <div className="flex gap-2 mt-2">
+                <Badge className={getDifficultyColor(previewExercise?.difficulty)}>
+                  {previewExercise?.difficulty}
+                </Badge>
+                <Badge variant="outline" className={getOfferColor(previewExercise?.offer)}>
+                  {previewExercise?.offer}
+                </Badge>
+                <Badge variant="outline">{previewExercise?.family}</Badge>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          
+          {previewExercise && (
+            <div className="space-y-4 py-4">
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Énoncé</h4>
+                <div 
+                  className="bg-gray-50 p-4 rounded-md prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: previewExercise.enonce_html }}
+                />
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Solution</h4>
+                <div 
+                  className="bg-green-50 p-4 rounded-md prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: previewExercise.solution_html }}
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
+              Fermer
+            </Button>
+            <Button onClick={() => { setPreviewOpen(false); handleOpenEdit(previewExercise); }}>
+              <Pencil className="h-4 w-4 mr-2" />
+              Modifier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog Suppression */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Confirmer la suppression</DialogTitle>
+            <DialogDescription>
+              Êtes-vous sûr de vouloir supprimer exercice #{exerciseToDelete?.id} ?
+              <br />
+              <span className="text-red-500">Cette action est irréversible.</span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          {exerciseToDelete && (
+            <div className="py-4">
+              <div className="bg-gray-50 p-3 rounded-md text-sm">
+                <p className="text-gray-600">{truncateHtml(exerciseToDelete.enonce_html, 150)}</p>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+              Annuler
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Modal Preview Dynamique (P2) */}
+      <DynamicPreviewModal
+        open={dynamicPreviewOpen}
+        onOpenChange={setDynamicPreviewOpen}
+        generatorKey={formData.generator_key}
+        enonceTemplate={formData.enonce_template_html}
+        solutionTemplate={formData.solution_template_html}
+        difficulty={formData.difficulty}
+        templateVariants={formData.is_dynamic ? formData.template_variants : null}
+        stableKey={editingExercise ? `${chapterCode}:${editingExercise.id}` : null}
+      />
+    </div>
+  );
+};
+
+export default ChapterExercisesAdminPage;

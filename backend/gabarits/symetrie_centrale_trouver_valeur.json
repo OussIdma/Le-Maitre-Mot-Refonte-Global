@@ -1,0 +1,98 @@
+{
+  "chapitre": "Symétrie centrale",
+  "type_exercice": "trouver_valeur",
+  "description": "Gabarits pour exercices où l'élève doit trouver le point symétrique par rapport à un centre",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "Point {pointA}({coordA_x}, {coordA_y}). Centre {pointO}({centreX}, {centreY}). Trouve {pointB}.",
+        "{pointA}({coordA_x}, {coordA_y}). Symétrie centrale / {pointO}({centreX}, {centreY}). {pointB} = ?",
+        "Donnés : {pointA}({coordA_x}, {coordA_y}), centre {pointO}({centreX}, {centreY}). Calcule {pointB}.",
+        "{pointA} en ({coordA_x}, {coordA_y}). Centre : {pointO}({centreX}, {centreY}). {pointB} ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Soit le point {pointA} de coordonnées ({coordA_x}, {coordA_y}). Détermine les coordonnées du point {pointB} symétrique de {pointA} par rapport au centre {pointO}({centreX}, {centreY}).",
+        "On considère le point {pointA}({coordA_x}, {coordA_y}). Calcule les coordonnées de son symétrique {pointB} par symétrie centrale de centre {pointO}({centreX}, {centreY}).",
+        "Dans un repère orthonormé, le point {pointA} a pour coordonnées ({coordA_x}, {coordA_y}). Trouve les coordonnées de {pointB}, symétrique de {pointA} par rapport au point {pointO}({centreX}, {centreY}).",
+        "Le point {pointA} est placé en ({coordA_x}, {coordA_y}). Détermine les coordonnées de {pointB}, son image par la symétrie de centre {pointO}({centreX}, {centreY})."
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Dans un repère orthonormé, considère le point {pointA}({coordA_x}, {coordA_y}). En appliquant les propriétés de la symétrie centrale, détermine les coordonnées du point {pointB}, image de {pointA} par la symétrie de centre {pointO}({centreX}, {centreY}).",
+        "Soit le point {pointA}({coordA_x}, {coordA_y}). Par application de la transformation géométrique de symétrie centrale de centre {pointO}({centreX}, {centreY}), détermine les coordonnées exactes du point image {pointB}.",
+        "Étant donné {pointA}({coordA_x}, {coordA_y}) et le centre de symétrie {pointO}({centreX}, {centreY}), établis les coordonnées du point {pointB} en utilisant la propriété : {pointO} est le milieu de [{pointA}{pointB}]."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Emma dessine un point {pointA} aux coordonnées ({coordA_x}, {coordA_y}) sur son cahier. Elle souhaite tracer son symétrique {pointB} par rapport au centre {pointO}({centreX}, {centreY}). Aide-la à trouver où placer {pointB}.",
+        "Lucas travaille sur la symétrie centrale. Il a placé {pointA} en ({coordA_x}, {coordA_y}) et doit trouver son symétrique {pointB} par rapport au point {pointO}({centreX}, {centreY}). Quelle sera la position de {pointB} ?",
+        "Marie trace un point {pointA} en ({coordA_x}, {coordA_y}). Son professeur lui demande de construire {pointB}, le symétrique de {pointA} par rapport à {pointO}({centreX}, {centreY}). Où doit-elle le placer ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe le point {pointA} placé en ({coordA_x}, {coordA_y}). Le centre de symétrie est {pointO}({centreX}, {centreY}). Pour trouver {pointB}, rappelle-toi que {pointO} doit être le milieu du segment [{pointA}{pointB}].",
+        "Commence par repérer {pointA}({coordA_x}, {coordA_y}) et {pointO}({centreX}, {centreY}). Le point {pointB} sera tel que {pointO} est exactement au milieu entre {pointA} et {pointB}. Calcule ses coordonnées.",
+        "Utilise la propriété du milieu : si {pointO}({centreX}, {centreY}) est le milieu de [{pointA}{pointB}], alors les coordonnées de {pointB} se calculent facilement. {pointA} est en ({coordA_x}, {coordA_y})."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Défi géométrie ! Le point {pointA} est en ({coordA_x}, {coordA_y}). Sauras-tu trouver rapidement son symétrique {pointB} par rapport au centre {pointO}({centreX}, {centreY}) ?",
+        "Challenge ! {pointA}({coordA_x}, {coordA_y}), centre {pointO}({centreX}, {centreY}). Trouve {pointB} en moins de 2 minutes !",
+        "Mission symétrie centrale : {pointA} en ({coordA_x}, {coordA_y}), centre {pointO}({centreX}, {centreY}). Calcule {pointB} le plus vite possible !"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Tu vois le point {pointA} là, en ({coordA_x}, {coordA_y}) ? Bon, le centre c'est {pointO}({centreX}, {centreY}). Trouve-moi le symétrique {pointB}, vas-y !",
+        "Alors voilà : {pointA} est en ({coordA_x}, {coordA_y}), et le centre de symétrie c'est {pointO}({centreX}, {centreY}). Où tu mets {pointB} ?",
+        "OK, {pointA} c'est ({coordA_x}, {coordA_y}). Le centre c'est {pointO}({centreX}, {centreY}). Maintenant dis-moi où va {pointB}."
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Repère le point {pointA}({coordA_x}, {coordA_y})\nÉtape 2 : Identifie le centre {pointO}({centreX}, {centreY})\nÉtape 3 : Utilise la formule du milieu pour calculer {pointB}",
+        "1) Place {pointA} en ({coordA_x}, {coordA_y})\n2) Repère {pointO}({centreX}, {centreY})\n3) Détermine {pointB} tel que {pointO} soit le milieu de [{pointA}{pointB}]",
+        "Procédure :\n→ Localise {pointA}({coordA_x}, {coordA_y})\n→ Repère {pointO}({centreX}, {centreY})\n→ Calcule {pointB} : {pointO} milieu de [{pointA}{pointB}]"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu as déjà tracé des symétriques centrales. Applique la même méthode : {pointA} est en ({coordA_x}, {coordA_y}), le centre est {pointO}({centreX}, {centreY}). Déduis-en {pointB}.",
+        "Rappelle-toi comment on fait pour la symétrie centrale. Ici, {pointA}({coordA_x}, {coordA_y}) et centre {pointO}({centreX}, {centreY}). Trouve {pointB}.",
+        "Tu connais le principe : {pointO} est le milieu. Avec {pointA}({coordA_x}, {coordA_y}) et {pointO}({centreX}, {centreY}), calcule {pointB}."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Où est {pointA} ?\nR : En ({coordA_x}, {coordA_y}).\nQ : Centre de symétrie ?\nR : {pointO}({centreX}, {centreY}).\nQ : Où placer {pointB} ?",
+        "Question : Quelles sont les coordonnées de {pointA} ?\nRéponse : ({coordA_x}, {coordA_y}).\nQuestion : Quel est le centre ?\nRéponse : {pointO}({centreX}, {centreY}).\nQuestion : Calcule {pointB}.",
+        "Q : Point initial ?\nR : {pointA}({coordA_x}, {coordA_y}).\nQ : Centre ?\nR : {pointO}({centreX}, {centreY}).\nQ : Point symétrique {pointB} ?"
+      ]
+    }
+  ],
+  "placeholders": {
+    "pointA": "Nom du point initial (ex: M, A, D)",
+    "pointB": "Nom du point symétrique (ex: M', A', D')",
+    "pointO": "Nom du centre de symétrie (ex: O, I, K)",
+    "coordA_x": "Coordonnée x du point initial (entier)",
+    "coordA_y": "Coordonnée y du point initial (entier)",
+    "centreX": "Coordonnée x du centre (entier)",
+    "centreY": "Coordonnée y du centre (entier)"
+  }
+}

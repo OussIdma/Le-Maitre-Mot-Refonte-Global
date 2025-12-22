@@ -1,0 +1,98 @@
+{
+  "chapitre": "Théorème de Pythagore",
+  "type_exercice": "trouver_valeur",
+  "description": "Gabarits pour exercices de calcul de longueur avec le théorème de Pythagore",
+  "gabarits": [
+    {
+      "style": "concis",
+      "templates": [
+        "Triangle {triangle} rectangle en {angleD}. {cote1} = {long1} cm, {cote2} = {long2} cm. Trouve {coteACalculer}.",
+        "{triangle} rectangle en {angleD}. Données : {cote1} = {long1} cm, {cote2} = {long2} cm. {coteACalculer} = ?",
+        "Triangle rectangle : {cote1} = {long1} cm, {cote2} = {long2} cm. Calcule {coteACalculer}.",
+        "{triangle}, angle droit en {angleD}. {cote1} = {long1} cm, {cote2} = {long2} cm. Longueur {coteACalculer} ?"
+      ]
+    },
+    {
+      "style": "scolaire",
+      "templates": [
+        "Soit le triangle {triangle} rectangle en {angleD}. On donne {cote1} = {long1} cm et {cote2} = {long2} cm. Calcule la longueur {coteACalculer}.",
+        "Dans le triangle {triangle} rectangle en {angleD}, on connaît {cote1} = {long1} cm et {cote2} = {long2} cm. Détermine {coteACalculer}.",
+        "Considère le triangle {triangle} rectangle en {angleD}. Sachant que {cote1} = {long1} cm et {cote2} = {long2} cm, calcule {coteACalculer}.",
+        "Le triangle {triangle} est rectangle en {angleD}. Les longueurs {cote1} et {cote2} mesurent respectivement {long1} cm et {long2} cm. Quelle est la longueur de {coteACalculer} ?"
+      ]
+    },
+    {
+      "style": "academique",
+      "templates": [
+        "Soit {triangle} un triangle rectangle en {angleD}. En appliquant le théorème de Pythagore avec {cote1} = {long1} cm et {cote2} = {long2} cm, détermine la longueur {coteACalculer}.",
+        "Étant donné le triangle {triangle} rectangle en {angleD}, où {cote1} mesure {long1} cm et {cote2} mesure {long2} cm, établis la valeur de {coteACalculer} par application du théorème de Pythagore.",
+        "Dans le triangle {triangle} rectangle en {angleD}, utilise les propriétés du théorème de Pythagore pour déterminer {coteACalculer}, sachant que {cote1} = {long1} cm et {cote2} = {long2} cm."
+      ]
+    },
+    {
+      "style": "narratif",
+      "templates": [
+        "Sophie travaille sur un triangle rectangle {triangle}. L'angle droit est en {angleD}. Elle mesure {cote1} qui fait {long1} cm et {cote2} qui fait {long2} cm. Aide-la à calculer {coteACalculer}.",
+        "Marc dessine un triangle {triangle} avec un angle droit en {angleD}. Il sait que {cote1} = {long1} cm et {cote2} = {long2} cm. Quelle est la longueur de {coteACalculer} ?",
+        "Léa doit calculer la longueur {coteACalculer} d'un triangle {triangle} rectangle en {angleD}. Elle connaît {cote1} = {long1} cm et {cote2} = {long2} cm. Peux-tu l'aider ?"
+      ]
+    },
+    {
+      "style": "guide",
+      "templates": [
+        "Observe le triangle {triangle} rectangle en {angleD}. Tu connais {cote1} = {long1} cm et {cote2} = {long2} cm. Pour trouver {coteACalculer}, utilise le théorème de Pythagore.",
+        "Commence par identifier l'angle droit en {angleD}. Tu as {cote1} = {long1} cm et {cote2} = {long2} cm. Applique maintenant Pythagore pour trouver {coteACalculer}.",
+        "Méthode : repère que {triangle} est rectangle en {angleD}. Note {cote1} = {long1} cm et {cote2} = {long2} cm. Utilise a² + b² = c² pour calculer {coteACalculer}."
+      ]
+    },
+    {
+      "style": "defi",
+      "templates": [
+        "Défi Pythagore ! Triangle {triangle}, angle droit en {angleD}, {cote1} = {long1} cm, {cote2} = {long2} cm. Trouve {coteACalculer} en moins de 2 minutes !",
+        "Challenge math : calcule {coteACalculer} dans le triangle rectangle {triangle} sachant que {cote1} = {long1} cm et {cote2} = {long2} cm. Go !",
+        "Mission géométrie : {triangle} rectangle en {angleD}. Données : {cote1} = {long1} cm, {cote2} = {long2} cm. Calcule {coteACalculer} rapidement !"
+      ]
+    },
+    {
+      "style": "oral",
+      "templates": [
+        "Alors voilà : triangle {triangle}, angle droit en {angleD}. T'as {cote1} qui fait {long1} cm et {cote2} qui fait {long2} cm. Trouve {coteACalculer}.",
+        "OK, {triangle} c'est un triangle rectangle en {angleD}. {cote1} = {long1} cm, {cote2} = {long2} cm. Maintenant calcule {coteACalculer}.",
+        "Regarde : {triangle}, rectangle en {angleD}. {cote1} mesure {long1} cm, {cote2} mesure {long2} cm. Donc {coteACalculer}, ça fait combien ?"
+      ]
+    },
+    {
+      "style": "etapes",
+      "templates": [
+        "Étape 1 : Triangle {triangle} rectangle en {angleD}\nÉtape 2 : Note {cote1} = {long1} cm et {cote2} = {long2} cm\nÉtape 3 : Applique Pythagore pour trouver {coteACalculer}",
+        "1) Identifie : triangle rectangle {triangle}, angle droit en {angleD}\n2) Données : {cote1} = {long1} cm, {cote2} = {long2} cm\n3) Calcule {coteACalculer} avec a² + b² = c²",
+        "Procédure :\n→ Triangle {triangle}, rectangle en {angleD}\n→ {cote1} = {long1} cm, {cote2} = {long2} cm\n→ Théorème de Pythagore : trouve {coteACalculer}"
+      ]
+    },
+    {
+      "style": "inductif",
+      "templates": [
+        "Tu connais le théorème de Pythagore. Applique-le au triangle {triangle} rectangle en {angleD} avec {cote1} = {long1} cm et {cote2} = {long2} cm. Que trouves-tu pour {coteACalculer} ?",
+        "Rappelle-toi : dans un triangle rectangle, a² + b² = c². Ici, {triangle} est rectangle en {angleD}, {cote1} = {long1} cm, {cote2} = {long2} cm. Déduis {coteACalculer}.",
+        "Comme dans l'exercice précédent, utilise Pythagore. Triangle {triangle} rectangle en {angleD}, {cote1} = {long1} cm, {cote2} = {long2} cm. Calcule {coteACalculer}."
+      ]
+    },
+    {
+      "style": "qr",
+      "templates": [
+        "Q : Quel triangle ?\nR : {triangle} rectangle en {angleD}.\nQ : Longueurs connues ?\nR : {cote1} = {long1} cm, {cote2} = {long2} cm.\nQ : Calcule {coteACalculer}.",
+        "Question : Type de triangle ?\nRéponse : {triangle}, rectangle en {angleD}.\nQuestion : Données ?\nRéponse : {cote1} = {long1} cm, {cote2} = {long2} cm.\nQuestion : Longueur de {coteACalculer} ?",
+        "Q : Angle droit où ?\nR : En {angleD}.\nQ : Côtés connus ?\nR : {cote1} = {long1} cm, {cote2} = {long2} cm.\nQ : Trouve {coteACalculer}."
+      ]
+    }
+  ],
+  "placeholders": {
+    "triangle": "Nom du triangle (ex: ABC, DEF, RST)",
+    "angleD": "Sommet de l'angle droit (ex: B, E, S)",
+    "cote1": "Nom du premier côté connu (ex: AB, DE)",
+    "long1": "Longueur du premier côté (entier)",
+    "cote2": "Nom du second côté connu (ex: BC, EF)",
+    "long2": "Longueur du second côté (entier)",
+    "coteACalculer": "Nom du côté à calculer (ex: AC, DF)"
+  }
+}
