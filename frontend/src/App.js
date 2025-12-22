@@ -21,6 +21,8 @@ import ProSettingsPage from "./components/ProSettingsPage";
 import ExerciseGeneratorPage from "./components/ExerciseGeneratorPage";
 import Curriculum6eAdminPage from "./components/admin/Curriculum6eAdminPage";
 import ChapterExercisesAdminPage from "./components/admin/ChapterExercisesAdminPage";
+import LandingPage from "./components/LandingPage";
+import NavBar from "./components/NavBar";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1333,21 +1335,151 @@ function MainApp() {
   );
 }
 
+// Component wrapper avec NavBar
+function AppWithNav({ children, showNav = true }) {
+  if (!showNav) {
+    return <>{children}</>;
+  }
+  return (
+    <>
+      <NavBar />
+      {children}
+    </>
+  );
+}
+
+// Redirect component pour normaliser les routes
+function RedirectToGenerer() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  React.useEffect(() => {
+    // Normaliser les variations de casse
+    const normalizedPath = location.pathname.toLowerCase();
+    if (normalizedPath === '/générer' || normalizedPath === '/generer' || normalizedPath === '/Générer') {
+      navigate('/generer', { replace: true });
+      return;
+    }
+    
+    // Rediriger toute route inconnue vers /generer
+    navigate('/generer', { replace: true });
+  }, [location.pathname, navigate]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-gray-600 mb-4">Redirection en cours...</p>
+      </div>
+    </div>
+  );
+}
+
+// 404 Component
+function NotFoundPage() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <GraduationCap className="mx-auto h-12 w-12 text-blue-600 mb-4" />
+          <CardTitle>Page non trouvée</CardTitle>
+          <CardDescription>
+            La page que vous recherchez n'existe pas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-center space-y-4">
+          <Button
+            onClick={() => navigate('/generer')}
+            className="w-full"
+          >
+            Aller au générateur
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate('/')}
+            className="w-full"
+          >
+            Retour à l'accueil
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Routes spéciales sans NavBar */}
         <Route path="/success" element={<PaymentSuccess />} />
         <Route path="/cancel" element={<PaymentCancel />} />
         <Route path="/login/verify" element={<LoginVerify />} />
-        <Route path="/generate" element={<ExerciseGeneratorPage />} />
-        <Route path="/builder" element={<SheetBuilderPage />} />
-        <Route path="/builder/:sheetId" element={<SheetBuilderPage />} />
-        <Route path="/sheets" element={<MySheetsPage />} />
-        <Route path="/pro/settings" element={<ProSettingsPage />} />
-        <Route path="/admin/curriculum" element={<Curriculum6eAdminPage />} />
-        <Route path="/admin/curriculum/:chapterCode/exercises" element={<ChapterExercisesAdminPage />} />
-        <Route path="/*" element={<MainApp />} />
+        
+        {/* Routes principales avec NavBar */}
+        <Route path="/" element={
+          <AppWithNav>
+            <LandingPage />
+          </AppWithNav>
+        } />
+        
+        <Route path="/generer" element={
+          <AppWithNav>
+            <ExerciseGeneratorPage />
+          </AppWithNav>
+        } />
+        
+        {/* Normalisation des variations de casse */}
+        <Route path="/générer" element={<RedirectToGenerer />} />
+        <Route path="/Générer" element={<RedirectToGenerer />} />
+        
+        {/* Route legacy /generate redirige vers /generer */}
+        <Route path="/generate" element={<RedirectToGenerer />} />
+        
+        {/* Routes existantes avec NavBar */}
+        <Route path="/builder" element={
+          <AppWithNav>
+            <SheetBuilderPage />
+          </AppWithNav>
+        } />
+        <Route path="/builder/:sheetId" element={
+          <AppWithNav>
+            <SheetBuilderPage />
+          </AppWithNav>
+        } />
+        <Route path="/sheets" element={
+          <AppWithNav>
+            <MySheetsPage />
+          </AppWithNav>
+        } />
+        <Route path="/pro/settings" element={
+          <AppWithNav>
+            <ProSettingsPage />
+          </AppWithNav>
+        } />
+        
+        {/* Routes admin avec NavBar */}
+        <Route path="/admin/curriculum" element={
+          <AppWithNav>
+            <Curriculum6eAdminPage />
+          </AppWithNav>
+        } />
+        <Route path="/admin/curriculum/:chapterCode/exercises" element={
+          <AppWithNav>
+            <ChapterExercisesAdminPage />
+          </AppWithNav>
+        } />
+        
+        {/* Route legacy MainApp (simplifiée) - redirige vers /generer */}
+        <Route path="/legacy" element={
+          <AppWithNav>
+            <MainApp />
+          </AppWithNav>
+        } />
+        
+        {/* Catch-all: rediriger vers /generer */}
+        <Route path="/*" element={<RedirectToGenerer />} />
       </Routes>
     </BrowserRouter>
   );

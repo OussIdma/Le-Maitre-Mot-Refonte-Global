@@ -3,11 +3,11 @@
  * 
  * Migration vers le référentiel officiel:
  * - Charge le catalogue depuis /api/v1/curriculum/6e/catalog
- * - Toggle Mode Simple / Mode Officiel
+ * - Toggle Mode Simple / Mode Standard (programme)
  * - Génère toujours via code_officiel
  * 
- * Mode Simple: chapitres macro regroupés
- * Mode Officiel: 27 chapitres officiels du programme
+ * Mode Simple: chapitres macro regroupés (exercices guidés)
+ * Mode Standard: chapitres officiels du programme (difficulté normale)
  */
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -32,10 +32,12 @@ import {
   GraduationCap,
   Settings2,
   Layers,
-  List
+  List,
+  Crown
 } from "lucide-react";
 import MathRenderer from "./MathRenderer";
 import { useToast } from "../hooks/use-toast";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API_V1 = `${BACKEND_URL}/api/v1/exercises`;
@@ -207,7 +209,7 @@ const ExerciseGeneratorPage = () => {
           hasGenerators: mg.total_generators > 0
         }));
     } else {
-      // Mode officiel: retourne les chapitres
+      // Mode Standard: retourne les chapitres
       let chapters = [];
       catalog.domains.forEach(domain => {
         domain.chapters.forEach(ch => {
@@ -298,11 +300,11 @@ const ExerciseGeneratorPage = () => {
         }
         
         codeOfficiel = selectCodeFromMacro(macroGroup.codes_officiels);
-        console.log(`📦 Mode macro "${macroLabel}" → code sélectionné: ${codeOfficiel}`);
+        console.log(`📦 Mode Simple "${macroLabel}" → code sélectionné: ${codeOfficiel}`);
       } else {
-        // Mode officiel: utiliser directement le code
+        // Mode Standard: utiliser directement le code
         codeOfficiel = selectedItem;
-        console.log(`📋 Mode officiel → code: ${codeOfficiel}`);
+        console.log(`📋 Mode Standard → code: ${codeOfficiel}`);
       }
       
       if (!codeOfficiel) {
@@ -726,8 +728,14 @@ const ExerciseGeneratorPage = () => {
               </Badge>
             )}
           </div>
+          {/* Niveau affiché clairement */}
+          <div className="mb-3">
+            <Badge variant="outline" className="text-base px-4 py-1.5 border-blue-300 text-blue-700 bg-blue-50">
+              Niveau : 6e
+            </Badge>
+          </div>
           <p className="text-lg text-gray-600">
-            Programme officiel de 6e • {catalog?.total_chapters || 0} chapitres disponibles
+            {catalog?.total_chapters || 0} chapitres disponibles
             {isPro && <span className="text-purple-600 ml-2">• Générateurs premium activés</span>}
           </p>
         </div>
@@ -746,27 +754,67 @@ const ExerciseGeneratorPage = () => {
                 </CardDescription>
               </div>
               
-              {/* Toggle Mode Simple / Officiel */}
-              <div className="flex items-center gap-3 bg-gray-100 px-4 py-2 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-gray-500" />
-                  <Label htmlFor="view-mode" className="text-sm text-gray-600">Simple</Label>
+              {/* Toggle Mode Simple / Standard */}
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-3 bg-gray-100 px-4 py-2 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-gray-500" />
+                    <Label htmlFor="view-mode" className="text-sm text-gray-600">Simple</Label>
+                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Switch
+                            id="view-mode"
+                            checked={viewMode === "officiel"}
+                            onCheckedChange={(checked) => setViewMode(checked ? "officiel" : "simple")}
+                            disabled={!isPro}
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      {isPro && viewMode === "officiel" ? (
+                        <TooltipContent>
+                          <p>Aligné sur les attendus du programme. (Sources à documenter)</p>
+                        </TooltipContent>
+                      ) : !isPro ? (
+                        <TooltipContent>
+                          <p>Mode Standard disponible en version Pro</p>
+                        </TooltipContent>
+                      ) : null}
+                    </Tooltip>
+                  </TooltipProvider>
+                  <div className="flex items-center gap-2">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Label htmlFor="view-mode" className={`text-sm ${!isPro ? 'text-gray-400' : 'text-gray-600'} cursor-help`}>
+                            Standard (programme)
+                            {!isPro && <Crown className="h-3 w-3 inline ml-1 text-amber-500" />}
+                          </Label>
+                        </TooltipTrigger>
+                        {isPro && (
+                          <TooltipContent>
+                            <p>Aligné sur les attendus du programme. (Sources à documenter)</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
+                    <List className="h-4 w-4 text-gray-500" />
+                  </div>
                 </div>
-                <Switch
-                  id="view-mode"
-                  checked={viewMode === "officiel"}
-                  onCheckedChange={(checked) => setViewMode(checked ? "officiel" : "simple")}
-                />
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="view-mode" className="text-sm text-gray-600">Officiel</Label>
-                  <List className="h-4 w-4 text-gray-500" />
+                {/* Textes explicatifs sous le toggle */}
+                <div className="flex items-center gap-4 text-xs text-gray-500">
+                  <span>Simple : exercices guidés</span>
+                  <span className="text-gray-300">|</span>
+                  <span>Standard : difficulté normale</span>
                 </div>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              {/* Filtre par domaine (mode officiel uniquement) */}
+              {/* Filtre par domaine (mode Standard uniquement) */}
               {viewMode === "officiel" && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -866,12 +914,12 @@ const ExerciseGeneratorPage = () => {
                 {selectedItem.startsWith("macro:") ? (
                   <>
                     <Settings2 className="h-4 w-4 inline mr-2" />
-                    <strong>Mode simple :</strong> Un chapitre sera sélectionné automatiquement parmi le groupe
+                    <strong>Mode Simple :</strong> Un chapitre sera sélectionné automatiquement parmi le groupe (exercices guidés)
                   </>
                 ) : (
                   <>
                     <CheckCircle className="h-4 w-4 inline mr-2" />
-                    <strong>Code officiel :</strong> {selectedItem}
+                    <strong>Mode Standard :</strong> Code officiel {selectedItem} (difficulté normale)
                   </>
                 )}
               </div>
@@ -959,31 +1007,46 @@ const ExerciseGeneratorPage = () => {
 
                   {/* Actions */}
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => generateVariation(currentIndex)}
-                      disabled={loadingVariation}
-                    >
-                      {loadingVariation ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Shuffle className="h-4 w-4" />
-                      )}
-                      <span className="ml-2">Variation</span>
-                    </Button>
+                    {/* Variation - Masqué pour MVP gratuit */}
+                    {isPro && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => generateVariation(currentIndex)}
+                        disabled={loadingVariation}
+                      >
+                        {loadingVariation ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Shuffle className="h-4 w-4" />
+                        )}
+                        <span className="ml-2">Variation</span>
+                      </Button>
+                    )}
                     
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => downloadPDF(currentExercise)}
-                      disabled={true}
-                      className="opacity-60 cursor-not-allowed"
-                      title="Export PDF bientôt disponible"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="ml-2">PDF (bientôt)</span>
-                    </Button>
+                    {/* PDF - Désactivé avec tooltip clair */}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => downloadPDF(currentExercise)}
+                              disabled={true}
+                              className="opacity-60 cursor-not-allowed"
+                            >
+                              <Download className="h-4 w-4" />
+                              <span className="ml-2">PDF</span>
+                              {!isPro && <Crown className="h-3 w-3 ml-1 text-amber-500" />}
+                            </Button>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{isPro ? "Disponible prochainement" : "Export PDF disponible en version Pro"}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
 
@@ -1022,8 +1085,8 @@ const ExerciseGeneratorPage = () => {
 
                 {/* Figure SVG Énoncé (nouvelle API ou compatibilité) */}
                 {(currentExercise.figure_svg_enonce || currentExercise.figure_svg) && (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold mb-4 flex items-center gap-2 text-gray-900">
                       <svg className="h-5 w-5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                         <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -1032,7 +1095,7 @@ const ExerciseGeneratorPage = () => {
                       Figure
                     </h3>
                     <div 
-                      className="bg-white p-4 rounded-lg border flex justify-center"
+                      className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm flex justify-center"
                       dangerouslySetInnerHTML={{ __html: currentExercise.figure_svg_enonce || currentExercise.figure_svg }}
                       style={{ maxWidth: '100%', overflow: 'hidden' }}
                     />
@@ -1040,27 +1103,29 @@ const ExerciseGeneratorPage = () => {
                 )}
 
                 {/* Énoncé */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
+                <div className="mb-8">
+                  <h3 className="text-xl font-semibold mb-4 flex items-center gap-2 text-gray-900">
+                    <FileText className="h-5 w-5 text-blue-600" />
                     Énoncé
                   </h3>
-                  <div className="prose max-w-none bg-white p-4 rounded-lg border">
-                    <MathHtmlRenderer html={currentExercise.enonce_html} />
+                  <div className="prose prose-lg max-w-none bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+                    <div className="text-base leading-relaxed text-gray-800 space-y-3">
+                      <MathHtmlRenderer html={currentExercise.enonce_html} />
+                    </div>
                   </div>
                 </div>
 
                 {/* Solution */}
-                <details className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <summary className="cursor-pointer font-semibold text-green-900 flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5" />
+                <details className="bg-green-50 p-6 rounded-lg border border-green-200 shadow-sm">
+                  <summary className="cursor-pointer font-semibold text-green-900 flex items-center gap-2 text-lg mb-0 hover:text-green-700 transition-colors">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
                     Voir la correction
                   </summary>
                   
                   {/* Figure SVG Solution (si présente) */}
                   {currentExercise.figure_svg_solution && (
-                    <div className="mt-4 mb-4">
-                      <h4 className="text-sm font-medium text-green-800 mb-2 flex items-center gap-2">
+                    <div className="mt-6 mb-6">
+                      <h4 className="text-base font-medium text-green-800 mb-3 flex items-center gap-2">
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                           <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -1076,8 +1141,10 @@ const ExerciseGeneratorPage = () => {
                     </div>
                   )}
                   
-                  <div className="mt-4 prose max-w-none">
-                    <MathHtmlRenderer html={currentExercise.solution_html} />
+                  <div className="mt-6 prose prose-lg max-w-none">
+                    <div className="text-base leading-relaxed text-gray-800 space-y-3">
+                      <MathHtmlRenderer html={currentExercise.solution_html} />
+                    </div>
                   </div>
                 </details>
               </CardContent>
@@ -1095,8 +1162,8 @@ const ExerciseGeneratorPage = () => {
               </p>
               <p className="text-sm mt-2 text-gray-400">
                 {viewMode === "simple" 
-                  ? "Le mode simple regroupe les chapitres par thème" 
-                  : "Le mode officiel affiche les 28 chapitres du programme"
+                  ? "Le mode Simple regroupe les chapitres par thème (exercices guidés)" 
+                  : "Le mode Standard affiche les chapitres du programme (difficulté normale)"
                 }
               </p>
             </CardContent>

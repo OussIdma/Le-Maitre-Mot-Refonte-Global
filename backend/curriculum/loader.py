@@ -16,6 +16,7 @@ Usage:
 import json
 import os
 import logging
+import re
 from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
 from functools import lru_cache
@@ -318,6 +319,43 @@ def validate_curriculum() -> Dict[str, any]:
 
 
 # ============================================================================
+# FILTRAGE CHAPITRES DE TEST
+# ============================================================================
+
+def is_test_chapter(code_officiel: str) -> bool:
+    """
+    Détermine si un code_officiel est un chapitre de test.
+    
+    Critères:
+    - Contient "TEST" ou "QA" (insensible à la casse)
+    - Exemples: 6e_AA_TEST, 6e_TESTS_DYN, 6e_MIXED_QA
+    
+    Args:
+        code_officiel: Code officiel du chapitre (ex: "6e_AA_TEST")
+        
+    Returns:
+        True si c'est un chapitre de test, False sinon
+    """
+    if not code_officiel:
+        return False
+    code_upper = code_officiel.upper()
+    return bool(re.search(r'(TEST|QA)', code_upper))
+
+
+def should_show_test_chapters() -> bool:
+    """
+    Détermine si les chapitres de test doivent être affichés.
+    
+    Mode dev activé si:
+    - Variable d'environnement SHOW_TEST_CHAPTERS=true
+    
+    Returns:
+        True si les chapitres de test doivent être affichés, False sinon
+    """
+    return os.getenv("SHOW_TEST_CHAPTERS", "false").lower() == "true"
+
+
+# ============================================================================
 # CATALOGUE FRONTEND (API pour /generate)
 # ============================================================================
 
@@ -419,6 +457,9 @@ async def get_catalog(level: str = "6e", db=None) -> Dict:
                 logger.warning(f"[CATALOG] Impossible d'initialiser sync_service pour enrichissement DB: {e}")
                 # Continuer sans enrichissement DB plutôt que de planter
         
+        # Déterminer si on doit afficher les chapitres de test
+        show_test_chapters = should_show_test_chapters()
+        
         # Construire les domaines avec chapitres
         domains = []
         for domaine_name in sorted(index.by_domaine.keys()):
@@ -426,6 +467,9 @@ async def get_catalog(level: str = "6e", db=None) -> Dict:
             
             chapters_data = []
             for chapter in sorted(chapters_list, key=lambda c: c.code_officiel):
+                # Filtrer les chapitres de test si mode dev non activé
+                if not show_test_chapters and is_test_chapter(chapter.code_officiel):
+                    continue
                 # Source de vérité initiale : curriculum
                 generators_from_curriculum = chapter.exercise_types.copy()
                 generators_final = generators_from_curriculum.copy()
@@ -507,6 +551,13 @@ async def get_catalog(level: str = "6e", db=None) -> Dict:
         macro_groups = []
         for mg in raw_macro_groups:
             codes = mg.get("codes_officiels", [])
+            
+            # Filtrer les codes de test si mode dev non activé
+            if not show_test_chapters:
+                codes = [code for code in codes if not is_test_chapter(code)]
+                # Si tous les codes sont filtrés, exclure le macro group
+                if not codes:
+                    continue
             
             # Calculer le status du groupe (prod si au moins un chapitre est prod)
             statuses = []

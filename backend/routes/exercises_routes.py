@@ -784,18 +784,65 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 }
             )
         
+        # Vérifier si c'est un chapitre de test (interdit en mode public)
+        from curriculum.loader import is_test_chapter, should_show_test_chapters
+        if is_test_chapter(request.code_officiel) and not should_show_test_chapters():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "TEST_CHAPTER_FORBIDDEN",
+                    "error": "test_chapter_forbidden",
+                    "message": f"Le code officiel '{request.code_officiel}' est un chapitre de test et n'est pas accessible en mode public.",
+                    "hint": "Les chapitres de test sont réservés au développement. Activez SHOW_TEST_CHAPTERS=true pour y accéder.",
+                    "context": {
+                        "code_officiel": request.code_officiel,
+                        "is_test_chapter": True
+                    }
+                }
+            )
+        
         # Extraire les informations du référentiel
         request.niveau = curriculum_chapter.niveau
         # Toujours utiliser le libellé/officiel comme chapitre lisible, ne pas basculer sur un alias backend
         request.chapitre = curriculum_chapter.libelle or curriculum_chapter.code_officiel
         
         # ============================================================================
-        # P0: PIPELINE EXPLICITE - Routage selon pipeline du chapitre
+        # DÉTECTION CHAPITRES DE TEST - Routage déterministe pour chapitres de test
         # ============================================================================
-        # Si le chapitre a un pipeline défini, l'utiliser explicitement.
-        # Sinon, fallback sur l'ancien comportement (détection automatique).
+        # Chapitres de test connus qui utilisent le pipeline MIXED (exercices dynamiques)
+        TEST_CHAPTER_CODES = ["6E_AA_TEST", "6E_TESTS_DYN", "6E_MIXED_QA"]
+        normalized_code = request.code_officiel.upper().replace("-", "_")
         
-        pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
+        if normalized_code in TEST_CHAPTER_CODES:
+            # Chapitre de test connu : utiliser directement le pipeline MIXED
+            logger.info(f"[TEST_CHAPTER] Chapitre de test détecté: {request.code_officiel} → pipeline=MIXED")
+            pipeline_mode = "MIXED"
+        else:
+            # Vérifier si c'est un chapitre de test inconnu (pattern AA_* ou *_TEST)
+            if "_AA_" in normalized_code or normalized_code.endswith("_TEST") or "_TESTS_" in normalized_code:
+                # Chapitre de test inconnu : retourner 422 avec hint clair
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "TEST_CHAPTER_UNKNOWN",
+                        "error": "test_chapter_unknown",
+                        "message": f"Le code officiel '{request.code_officiel}' semble être un chapitre de test mais n'est pas configuré.",
+                        "hint": f"Chapitres de test connus: {', '.join(TEST_CHAPTER_CODES)}. Ajoutez '{normalized_code}' à la liste TEST_CHAPTER_CODES dans exercises_routes.py si c'est un nouveau chapitre de test.",
+                        "context": {
+                            "code_officiel": request.code_officiel,
+                            "normalized_code": normalized_code,
+                            "known_test_chapters": TEST_CHAPTER_CODES
+                        }
+                    }
+                )
+            
+            # ============================================================================
+            # P0: PIPELINE EXPLICITE - Routage selon pipeline du chapitre
+            # ============================================================================
+            # Si le chapitre a un pipeline défini, l'utiliser explicitement.
+            # Sinon, fallback sur l'ancien comportement (détection automatique).
+            
+            pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
         
         if pipeline_mode:
             logger.info(f"[PIPELINE] Chapitre {request.code_officiel} → pipeline={pipeline_mode} (explicite)")
