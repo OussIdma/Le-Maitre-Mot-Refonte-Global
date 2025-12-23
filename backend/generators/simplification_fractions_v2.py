@@ -102,7 +102,8 @@ class SimplificationFractionsV2Generator(BaseGenerator):
             exercise_type="FRACTIONS",
             svg_mode="AUTO",
             supports_double_svg=True,
-            pedagogical_tips="⚠️ Rappeler : PGCD divise numérateur ET dénominateur. Erreur fréquente : division d'un seul côté."
+            pedagogical_tips="⚠️ Rappeler : PGCD divise numérateur ET dénominateur. Erreur fréquente : division d'un seul côté.",
+            min_offer="free"  # P2.1 - Accessible en gratuit (stratégie commerciale: V2 améliore UX mais reste free)
         )
     
     @classmethod

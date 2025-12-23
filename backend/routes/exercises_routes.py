@@ -28,6 +28,9 @@ from curriculum.loader import get_chapter_by_official_code, CurriculumChapter
 from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
 from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
 from backend.services.tests_dyn_handler import is_tests_dyn_request, generate_tests_dyn_exercise, generate_tests_dyn_batch, get_available_generators
+from backend.generators.factory import GeneratorFactory  # P0.3 - Dispatch premium générique
+from backend.services.template_renderer import render_template  # P0.3 - Rendu HTML templates
+from backend.services.generator_template_service import get_template_service  # P1 - Templates DB
 from logger import get_logger
 from backend.observability import (
     get_request_context,
@@ -769,6 +772,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     
     curriculum_chapter: Optional[CurriculumChapter] = None
     exercise_types_override: Optional[List[MathExerciseType]] = None
+    filtered_premium_generators: List[str] = []  # P2.1 - Track des générateurs premium exclus
     
     if request.code_officiel:
         # Mode code_officiel : chercher dans le référentiel
@@ -1435,19 +1439,28 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         #   si des exercise_types configurés sont inconnus.
         if curriculum_chapter.exercise_types:
             try:
-                # Liste des générateurs premium à exclure en mode gratuit
-                premium_only_generators = ["DUREES_PREMIUM"]
-                
-                # Filtrer selon l'offre
+                # P2.1 - FILTRAGE DATA-DRIVEN DES GÉNÉRATEURS PREMIUM
+                # Au lieu d'une liste hardcodée, vérifier meta.min_offer pour chaque générateur
                 if request.offer == "pro":
                     # Mode PRO: tous les générateurs disponibles
                     filtered_types = curriculum_chapter.exercise_types
                 else:
-                    # Mode gratuit: exclure les générateurs premium explicites
-                    filtered_types = [
-                        et for et in curriculum_chapter.exercise_types
-                        if et not in premium_only_generators
-                    ]
+                    # Mode gratuit: exclure dynamiquement les générateurs avec min_offer="pro"
+                    filtered_types = []
+                    for et in curriculum_chapter.exercise_types:
+                        # Vérifier si c'est un générateur Factory
+                        gen_class = GeneratorFactory.get(et)
+                        if gen_class:
+                            gen_meta = gen_class.get_meta()
+                            required_offer = getattr(gen_meta, 'min_offer', 'free')
+                            if required_offer == "free":
+                                filtered_types.append(et)
+                            else:
+                                filtered_premium_generators.append(et)
+                                logger.info(f"[FILTER] Générateur {et} exclu (min_offer={required_offer}, user_offer=free)")
+                        else:
+                            # Pas un générateur Factory, inclure par défaut
+                            filtered_types.append(et)
                 
                 # Conversion stricte vers MathExerciseType
                 valid_types = []
@@ -1595,37 +1608,285 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         # V1-BE-002-FIX: Utiliser l'instance globale (performance)
         # Générer l'exercice avec le service math
         
-        # PREMIUM CHECK: Si offer=pro et générateur premium disponible
-        use_premium = False
-        premium_generators = []
+        # P0.3 - PREMIUM DISPATCH GÉNÉRIQUE via GeneratorFactory
+        use_premium_factory = False
+        selected_premium_generator = None
+        premium_result = None
         
         if request.offer == "pro" and request.code_officiel:
-            # Vérifier si le chapitre a des générateurs premium
-            # Note: get_chapter_by_official_code est déjà importé en haut du fichier
+            # Récupérer les informations du chapitre
             chapter_info = get_chapter_by_official_code(request.code_officiel)
+            
             if chapter_info and hasattr(chapter_info, 'exercise_types'):
-                # Chercher DUREES_PREMIUM dans les types
-                if "DUREES_PREMIUM" in chapter_info.exercise_types:
-                    use_premium = True
-                    premium_generators = ["DUREES_PREMIUM"]
-                    logger.info(f"🌟 Mode PREMIUM activé pour {request.code_officiel}")
+                # Filtrer les exercise_types pour ne garder que ceux enregistrés dans GeneratorFactory
+                available_factory_generators = list(GeneratorFactory._generators.keys())
+                factory_generator_keys = [gen_key for gen_key in chapter_info.exercise_types 
+                                         if gen_key in available_factory_generators]
+                
+                if factory_generator_keys:
+                    # Sélectionner un générateur de façon déterministe si seed fourni
+                    if request.seed is not None:
+                        # Déterministe : même seed → même générateur
+                        generator_index = request.seed % len(factory_generator_keys)
+                        selected_premium_generator = factory_generator_keys[generator_index]
+                    else:
+                        # Aléatoire (mais cohérent avec le comportement attendu)
+                        import random
+                        selected_premium_generator = random.choice(factory_generator_keys)
+                    
+                    # P2.1 - VÉRIFICATION DATA-DRIVEN DE L'OFFRE MINIMALE REQUISE
+                    generator_class = GeneratorFactory.get(selected_premium_generator)
+                    generator_meta = generator_class.get_meta() if generator_class else None
+                    required_offer = getattr(generator_meta, 'min_offer', 'free') if generator_meta else 'free'
+                    
+                    if required_offer == "pro" and request.offer != "pro":
+                        # Utilisateur free tente d'accéder à un générateur premium
+                        obs_logger.warning(
+                            "event=premium_required",
+                            event="premium_required",
+                            outcome="error",
+                            generator_key=selected_premium_generator,
+                            required_offer=required_offer,
+                            user_offer=request.offer,
+                            **ctx
+                        )
+                        raise HTTPException(
+                            status_code=403,
+                            detail={
+                                "error_code": "PREMIUM_REQUIRED",
+                                "error": "premium_required",
+                                "message": f"Ce générateur ({generator_meta.label}) est réservé à l'offre Pro.",
+                                "hint": "Passez à l'offre Pro pour accéder à ce contenu.",
+                                "context": {
+                                    "generator_key": selected_premium_generator,
+                                    "required_offer": required_offer,
+                                    "current_offer": request.offer
+                                }
+                            }
+                        )
+                    
+                    logger.info(f"🌟 Mode PREMIUM Factory activé pour {request.code_officiel} → {selected_premium_generator}")
+                    obs_logger.info(
+                        "event=premium_factory_selected",
+                        event="premium_factory_selected",
+                        outcome="in_progress",
+                        generator_key=selected_premium_generator,
+                        available_generators=factory_generator_keys,
+                        **ctx
+                    )
+                    
+                    try:
+                        # Appeler GeneratorFactory.generate()
+                        premium_result = GeneratorFactory.generate(
+                            key=selected_premium_generator,
+                            exercise_params={},
+                            overrides={
+                                'seed': request.seed,
+                                'grade': request.niveau,
+                                'difficulty': request.difficulte,
+                            },
+                            seed=request.seed
+                        )
+                        use_premium_factory = True
+                        
+                        obs_logger.info(
+                            "event=premium_factory_success",
+                            event="premium_factory_success",
+                            outcome="success",
+                            generator_key=selected_premium_generator,
+                            **ctx
+                        )
+                    except Exception as e:
+                        # Log l'erreur mais ne pas bloquer (fallback sur legacy)
+                        obs_logger.error(
+                            "event=premium_factory_error",
+                            event="premium_factory_error",
+                            outcome="error",
+                            reason="generation_failed",
+                            generator_key=selected_premium_generator,
+                            error_message=str(e),
+                            **ctx
+                        )
+                        logger.error(f"Erreur Factory {selected_premium_generator}: {e}")
+                        use_premium_factory = False
         
-        if use_premium and premium_generators:
-            # Utiliser le générateur premium
+        if use_premium_factory and premium_result:
+            # P0.3 - Construire la réponse directement depuis le générateur Factory
             obs_logger.info(
                 "event=mixed_decision",
                 event="mixed_decision",
                 outcome="in_progress",
-                chosen_path="premium",
+                chosen_path="premium_factory",
                 **ctx
             )
-            # Note: MathExerciseType est déjà importé en haut via math_models
-            specs = _math_service.generate_math_exercise_specs_with_types(
+            
+            # Récupérer les variables depuis premium_result
+            variables = premium_result.get("variables", {})
+            
+            # ============================================================================
+            # P1 - SÉLECTION TEMPLATE DB-FIRST + FALLBACK LEGACY
+            # ============================================================================
+            # Tenter de récupérer un template depuis la DB.
+            # Si trouvé : utiliser ce template (template_source="db")
+            # Sinon : fallback sur templates hardcodés legacy (template_source="legacy")
+            
+            template_source = "legacy"  # Par défaut
+            template_db_id = None
+            variant_id = premium_result.get("variant_id", "default")  # Extraire variant_id si disponible
+            
+            # Tenter de récupérer un template DB
+            try:
+                from server import db
+                template_service = get_template_service(db)
+                
+                db_template = await template_service.get_best_template(
+                    generator_key=selected_premium_generator,
+                    variant_id=variant_id,
+                    grade=request.niveau,
+                    difficulty=request.difficulte
+                )
+                
+                if db_template:
+                    # Template DB trouvé : utiliser celui-ci
+                    enonce_template = db_template.enonce_template_html
+                    solution_template = db_template.solution_template_html
+                    template_source = "db"
+                    template_db_id = db_template.id
+                    
+                    logger.info(
+                        f"[TEMPLATE_DB] Template DB trouvé: id={db_template.id}, "
+                        f"generator={selected_premium_generator}, variant={variant_id}, "
+                        f"grade={request.niveau}, difficulty={request.difficulte}"
+                    )
+                    obs_logger.info(
+                        "event=template_db_selected",
+                        event="template_db_selected",
+                        outcome="success",
+                        template_id=db_template.id,
+                        generator_key=selected_premium_generator,
+                        variant_id=variant_id,
+                        **ctx
+                    )
+                else:
+                    # Pas de template DB : fallback legacy
+                    logger.info(
+                        f"[TEMPLATE_LEGACY] Aucun template DB trouvé, fallback sur legacy pour "
+                        f"generator={selected_premium_generator}, variant={variant_id}"
+                    )
+                    obs_logger.info(
+                        "event=template_legacy_fallback",
+                        event="template_legacy_fallback",
+                        outcome="success",
+                        reason="no_db_template",
+                        generator_key=selected_premium_generator,
+                        variant_id=variant_id,
+                        **ctx
+                    )
+                    
+                    # P0.4 - Templates inline sécurisés (pas de {{{enonce}}}, seulement {{{tableau_html}}})
+                    # Ces templates sont cohérents avec ChapterExercisesAdminPage.js
+                    enonce_template = """<div class="exercise-enonce">
+  <p><strong>{{consigne}}</strong></p>
+  <p>{{enonce}}</p>
+  {{{tableau_html}}}
+</div>"""
+                    
+                    solution_template = """<div class="exercise-solution">
+  <h4 style="color: #2563eb; margin-bottom: 1rem;">{{methode}}</h4>
+  <div class="calculs" style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <pre style="white-space: pre-line; font-family: inherit; margin: 0;">{{calculs_intermediaires}}</pre>
+  </div>
+  <div class="solution-text" style="margin-bottom: 1rem;">
+    <p>{{solution}}</p>
+  </div>
+  <div class="reponse-finale" style="background: #dcfce7; padding: 0.75rem; border-left: 4px solid #22c55e; border-radius: 0.25rem;">
+    <p style="margin: 0;"><strong>Réponse finale :</strong> {{reponse_finale}}</p>
+  </div>
+</div>"""
+            
+            except Exception as e:
+                # En cas d'erreur DB, fallback silencieux sur legacy
+                logger.warning(
+                    f"[TEMPLATE_DB_ERROR] Erreur lors de la récupération du template DB, "
+                    f"fallback sur legacy: {e}"
+                )
+                obs_logger.warning(
+                    "event=template_db_error",
+                    event="template_db_error",
+                    outcome="warning",
+                    reason="db_error",
+                    error_message=str(e),
+                    generator_key=selected_premium_generator,
+                    **ctx
+                )
+                
+                # Templates legacy en fallback
+                enonce_template = """<div class="exercise-enonce">
+  <p><strong>{{consigne}}</strong></p>
+  <p>{{enonce}}</p>
+  {{{tableau_html}}}
+</div>"""
+                
+                solution_template = """<div class="exercise-solution">
+  <h4 style="color: #2563eb; margin-bottom: 1rem;">{{methode}}</h4>
+  <div class="calculs" style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <pre style="white-space: pre-line; font-family: inherit; margin: 0;">{{calculs_intermediaires}}</pre>
+  </div>
+  <div class="solution-text" style="margin-bottom: 1rem;">
+    <p>{{solution}}</p>
+  </div>
+  <div class="reponse-finale" style="background: #dcfce7; padding: 0.75rem; border-left: 4px solid #22c55e; border-radius: 0.25rem;">
+    <p style="margin: 0;"><strong>Réponse finale :</strong> {{reponse_finale}}</p>
+  </div>
+</div>"""
+            
+            # Rendu HTML avec les variables du générateur
+            enonce_html = render_template(enonce_template, variables)
+            solution_html = render_template(solution_template, variables)
+            
+            # Pas besoin de specs, on construit directement la réponse
+            duration_ms = int((time.time() - request_start) * 1000)
+            obs_logger.info(
+                "event=request_complete",
+                event="request_complete",
+                outcome="success",
+                duration_ms=duration_ms,
+                chosen_path="premium_factory",
+                generator_key=selected_premium_generator,
+                **ctx
+            )
+            
+            # Construire l'enonce_html et solution_html depuis premium_result
+            id_exercice = generate_exercise_id(request.niveau, request.chapitre)
+            pdf_token = id_exercice
+            
+            # Retourner immédiatement la réponse Factory
+            metadata = {
+                "is_premium": True,
+                "generator_key": selected_premium_generator,
+                "generator_code": f"{request.niveau}_{selected_premium_generator}",
+                "difficulte": request.difficulte,
+                "generation_duration_ms": duration_ms,
+                "seed": request.seed,
+                "variables": variables,  # Ajout des variables pour debug
+                "template_source": template_source,  # P1 - Traçabilité template (db | legacy)
+            }
+            
+            # Ajouter template_db_id si template DB utilisé
+            if template_db_id:
+                metadata["template_db_id"] = template_db_id
+            
+            return ExerciseGenerateResponse(
+                id_exercice=id_exercice,
                 niveau=request.niveau,
                 chapitre=request.chapitre,
-                difficulte=request.difficulte,
-                exercise_types=[MathExerciseType[g] for g in premium_generators],  # Accès par nom (clé)
-                nb_exercices=1
+                enonce_html=enonce_html,
+                solution_html=solution_html,
+                figure_svg=premium_result.get("figure_svg_enonce"),
+                figure_svg_enonce=premium_result.get("figure_svg_enonce"),
+                figure_svg_solution=premium_result.get("figure_svg_solution"),
+                pdf_token=pdf_token,
+                metadata=metadata
             )
         elif exercise_types_override and len(exercise_types_override) > 0:
             # Mode code_officiel : utiliser les types spécifiés dans le référentiel
@@ -1823,8 +2084,15 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         "generator_code": generator_code,
         # Champs PREMIUM
         "is_premium": use_premium if 'use_premium' in locals() else False,
-        "offer": request.offer
+        "offer": request.offer,
+        # P2.1 - Metadata de fallback premium
+        "premium_available": len(filtered_premium_generators) > 0,
     }
+    
+    # P2.1 - Ajouter les générateurs filtrés si présents
+    if filtered_premium_generators:
+        metadata["filtered_premium_generators"] = filtered_premium_generators
+        metadata["hint"] = "Certaines variantes premium ont été exclues (offre Pro requise)."
     
     # ============================================================================
     # 8. CONSTRUCTION DE LA RÉPONSE

@@ -130,3 +130,4 @@ Le script détecte automatiquement si `jq` est installé :
 - Le script ne modifie pas le comportement runtime du backend
 
 
+

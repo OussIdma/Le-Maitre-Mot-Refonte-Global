@@ -4930,6 +4930,14 @@ from backend.routes.generators_routes import router as generators_router
 app.include_router(generators_router, prefix="/api/v1/exercises", tags=["Generators"])
 app.include_router(generators_router, prefix="/api/admin/exercises", tags=["Admin Generators"])
 
+# Routes admin templates éditables (P1 - Templates MVP)
+from backend.routes.admin_template_routes import router as admin_template_router
+app.include_router(admin_template_router, tags=["Admin Templates"])
+
+# Routes admin exercices statiques (P1.5 - Partie 2/3)
+from backend.routes.admin_static_exercises_routes import router as admin_static_exercises_router
+app.include_router(admin_static_exercises_router, tags=["Admin Static Exercises"])
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

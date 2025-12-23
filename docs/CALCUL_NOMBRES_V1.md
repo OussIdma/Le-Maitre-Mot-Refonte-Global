@@ -257,3 +257,4 @@ Voir `backend/tests/test_calcul_nombres_v1.py` pour les tests unitaires complets
 pytest backend/tests/test_calcul_nombres_v1.py -v
 ```
 
+

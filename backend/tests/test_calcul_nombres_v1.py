@@ -314,3 +314,4 @@ class TestCalculNombresV1:
                     assert variables[var] != "", \
                         f"Variable {var} est vide pour {exercise_type} {grade}"
 
+

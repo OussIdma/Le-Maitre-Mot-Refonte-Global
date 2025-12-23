@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Switch } from '../ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   RefreshCw, 
   CheckCircle, 
@@ -53,9 +54,11 @@ import {
   ArrowLeft,
   Sparkles,
   PlayCircle,
-  Copy
+  Copy,
+  FileText
 } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useToast } from '../../hooks/use-toast';
 import GeneratorVariablesPanel from './GeneratorVariablesPanel';
 import DynamicPreviewModal from './DynamicPreviewModal';
 import GeneratorParamsForm from './GeneratorParamsForm';
@@ -91,6 +94,25 @@ const ChapterExercisesAdminPage = () => {
   // Filtres
   const [filterOffer, setFilterOffer] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  
+  // P1.5 - Onglets Statiques/Dynamiques
+  const [activeTab, setActiveTab] = useState('dynamiques');
+  const [staticExercises, setStaticExercises] = useState([]);
+  const [loadingStatic, setLoadingStatic] = useState(false);
+  const [staticError, setStaticError] = useState(null);
+  const [staticModalOpen, setStaticModalOpen] = useState(false);
+  const [staticModalMode, setStaticModalMode] = useState('create');
+  const [editingStatic, setEditingStatic] = useState(null);
+  const [staticFormData, setStaticFormData] = useState({
+    title: '',
+    difficulty: 'facile',
+    enonce_html: '',
+    solution_html: '',
+    tags: [],
+    order: null,
+    offer: 'free'
+  });
+  const { toast } = useToast();
   
   // Modal d'édition
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -246,6 +268,160 @@ const ChapterExercisesAdminPage = () => {
   useEffect(() => {
     fetchExercises();
   }, [fetchExercises]);
+
+  // P1.5 - Charger les exercices statiques
+  const fetchStaticExercises = useCallback(async () => {
+    if (!chapterCode) return;
+    
+    setLoadingStatic(true);
+    setStaticError(null);
+    
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/static-exercises`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setStaticExercises(data);
+    } catch (err) {
+      console.error('[Static] Erreur chargement:', err);
+      setStaticError(err.message);
+    } finally {
+      setLoadingStatic(false);
+    }
+  }, [chapterCode]);
+
+  // P1.5 - Charger les statiques quand l'onglet est actif
+  useEffect(() => {
+    if (activeTab === 'statiques') {
+      fetchStaticExercises();
+    }
+  }, [activeTab, fetchStaticExercises]);
+
+  // P1.5 - Handlers pour exercices statiques
+  const handleCreateStatic = () => {
+    setStaticModalMode('create');
+    setEditingStatic(null);
+    setStaticFormData({
+      title: '',
+      difficulty: 'facile',
+      enonce_html: '<p>Énoncé à compléter...</p>',
+      solution_html: '<p>Solution à compléter...</p>',
+      tags: [],
+      order: null,
+      offer: 'free'
+    });
+    setStaticModalOpen(true);
+  };
+
+  const handleEditStatic = (exercise) => {
+    setStaticModalMode('edit');
+    setEditingStatic(exercise);
+    setStaticFormData({
+      title: exercise.title || '',
+      difficulty: exercise.difficulty,
+      enonce_html: exercise.enonce_html,
+      solution_html: exercise.solution_html,
+      tags: exercise.tags || [],
+      order: exercise.order || null,
+      offer: exercise.offer || 'free'
+    });
+    setStaticModalOpen(true);
+  };
+
+  const handleSaveStatic = async () => {
+    try {
+      setSaving(true);
+      
+      if (staticModalMode === 'create') {
+        const response = await fetch(
+          `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/static-exercises`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staticFormData)
+          }
+        );
+        
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail?.message || 'Erreur création');
+        }
+        
+        toast({
+          title: "Exercice créé",
+          description: "L'exercice statique a été créé avec succès",
+        });
+      } else {
+        const response = await fetch(
+          `${BACKEND_URL}/api/v1/admin/static-exercises/${editingStatic.id}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(staticFormData)
+          }
+        );
+        
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail?.message || 'Erreur mise à jour');
+        }
+        
+        toast({
+          title: "Exercice mis à jour",
+          description: "L'exercice statique a été mis à jour avec succès",
+        });
+      }
+      
+      setStaticModalOpen(false);
+      fetchStaticExercises();
+    } catch (err) {
+      console.error('[Static] Erreur sauvegarde:', err);
+      toast({
+        title: "Erreur",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteStatic = async (exercise) => {
+    if (!window.confirm(`Supprimer l'exercice statique #${exercise.id} ?\n\nCette action est irréversible.`)) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/api/v1/admin/static-exercises/${exercise.id}`,
+        { method: 'DELETE' }
+      );
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail?.message || 'Erreur suppression');
+      }
+      
+      toast({
+        title: "Exercice supprimé",
+        description: "L'exercice statique a été supprimé avec succès",
+      });
+      
+      fetchStaticExercises();
+    } catch (err) {
+      console.error('[Static] Erreur suppression:', err);
+      toast({
+        title: "Erreur",
+        description: err.message,
+        variant: "destructive"
+      });
+    }
+  };
 
   // Effacer les messages
   useEffect(() => {
@@ -522,6 +698,47 @@ const ChapterExercisesAdminPage = () => {
   <li>{{step3}}</li>
   <li><strong>Résultat :</strong> {{fraction_reduite}}</li>
 </ol>`
+      };
+    }
+    if (generatorKey === 'RAISONNEMENT_MULTIPLICATIF_V1') {
+      return {
+        enonce: `<div class="exercise-enonce">
+  <p><strong>{{consigne}}</strong></p>
+  <p>{{enonce}}</p>
+  {{{tableau_html}}}
+</div>`,
+        solution: `<div class="exercise-solution">
+  <h4 style="color: #2563eb; margin-bottom: 1rem;">Méthode : {{methode}}</h4>
+  <div class="calculs" style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <pre style="white-space: pre-line; font-family: inherit; margin: 0;">{{calculs_intermediaires}}</pre>
+  </div>
+  <div class="solution-text" style="margin-bottom: 1rem;">
+    <p>{{solution}}</p>
+  </div>
+  <div class="reponse-finale" style="background: #dcfce7; padding: 0.75rem; border-left: 4px solid #22c55e; border-radius: 0.25rem;">
+    <p style="margin: 0;"><strong>Réponse finale :</strong> {{reponse_finale}}</p>
+  </div>
+</div>`
+      };
+    }
+    if (generatorKey === 'CALCUL_NOMBRES_V1') {
+      return {
+        enonce: `<div class="exercise-enonce">
+  <p><strong>{{consigne}}</strong></p>
+  <div class="enonce-content" style="font-size: 1.125rem; margin-top: 0.5rem;">{{enonce}}</div>
+</div>`,
+        solution: `<div class="exercise-solution">
+  <h4 style="color: #2563eb; margin-bottom: 1rem;">Correction</h4>
+  <div class="calculs" style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+    <pre style="white-space: pre-line; font-family: inherit; margin: 0;">{{calculs_intermediaires}}</pre>
+  </div>
+  <div class="solution-text" style="margin-bottom: 1rem;">
+    <p>{{solution}}</p>
+  </div>
+  <div class="reponse-finale" style="background: #dcfce7; padding: 0.75rem; border-left: 4px solid #22c55e; border-radius: 0.25rem;">
+    <p style="margin: 0;"><strong>Résultat :</strong> {{reponse_finale}}</p>
+  </div>
+</div>`
       };
     }
     return { enonce: '', solution: '' };
@@ -895,6 +1112,128 @@ const ChapterExercisesAdminPage = () => {
     const url = `/generate?code_officiel=${chapterCode}&difficulte=moyen`;
     window.open(url, '_blank');
   };
+
+  // P1.5 - Rendu de l'onglet Statiques
+  const renderStaticExercisesTab = () => {
+    if (loadingStatic) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
+          <span>Chargement des exercices statiques...</span>
+        </div>
+      );
+    }
+
+    if (staticError) {
+      return (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Erreur lors du chargement des exercices statiques : {staticError}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Header avec bouton Ajouter */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Exercices statiques</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Exercices rédigés manuellement avec contenu figé
+            </p>
+          </div>
+          <Button onClick={handleCreateStatic}>
+            <Plus className="h-4 w-4 mr-2" />
+            Ajouter un exercice statique
+          </Button>
+        </div>
+
+        {/* Liste des exercices statiques */}
+        {staticExercises.length === 0 ? (
+          <Card className="p-12 text-center">
+            <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+            <p className="text-gray-600 mb-4">Aucun exercice statique dans ce chapitre</p>
+            <Button variant="outline" onClick={handleCreateStatic}>
+              <Plus className="h-4 w-4 mr-2" />
+              Créer le premier exercice statique
+            </Button>
+          </Card>
+        ) : (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Titre / Énoncé</TableHead>
+                  <TableHead>Difficulté</TableHead>
+                  <TableHead>Ordre</TableHead>
+                  <TableHead>Mis à jour</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {staticExercises.map((exercise) => (
+                  <TableRow key={exercise.id}>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        📄 Statique
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-md">
+                        {exercise.title && (
+                          <div className="font-medium mb-1">{exercise.title}</div>
+                        )}
+                        <div 
+                          className="text-sm text-gray-600 line-clamp-2"
+                          dangerouslySetInnerHTML={{ 
+                            __html: (exercise.enonce_html || '').replace(/<[^>]+>/g, ' ').substring(0, 80) + '...' 
+                          }}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getDifficultyColor(exercise.difficulty)}>
+                        {exercise.difficulty}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{exercise.order || '—'}</TableCell>
+                    <TableCell className="text-sm text-gray-500">
+                      {exercise.updated_at 
+                        ? new Date(exercise.updated_at).toLocaleDateString('fr-FR')
+                        : '—'
+                      }
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditStatic(exercise)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteStatic(exercise)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </div>
+    );
+  };
   
   // Loading
   if (loading) {
@@ -1086,9 +1425,36 @@ const ChapterExercisesAdminPage = () => {
           );
         })()}
         
+        {/* P1.5 - Onglets Dynamiques / Statiques */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+            <TabsTrigger value="dynamiques" className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              🧩 Dynamiques (générés)
+            </TabsTrigger>
+            <TabsTrigger value="statiques" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              📄 Statiques (figés)
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Onglet Dynamiques */}
+          <TabsContent value="dynamiques" className="space-y-6">
+            {/* Bouton "Rédaction templates" */}
+            <div className="flex justify-end">
+              <Button 
+                variant="outline"
+                onClick={() => navigate(`/admin/templates?chapter=${chapterCode}`)}
+                className="flex items-center gap-2"
+              >
+                <Pencil className="h-4 w-4" />
+                ✨ Rédaction templates
+              </Button>
+            </div>
+        
         {/* Stats */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-gray-500">Total</CardTitle>
@@ -1307,6 +1673,13 @@ const ChapterExercisesAdminPage = () => {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* Onglet Statiques */}
+          <TabsContent value="statiques">
+            {renderStaticExercisesTab()}
+          </TabsContent>
+        </Tabs>
       </main>
       
       {/* Modal Création/Édition */}
@@ -2060,6 +2433,128 @@ const ChapterExercisesAdminPage = () => {
         templateVariants={formData.is_dynamic ? formData.template_variants : null}
         stableKey={editingExercise ? `${chapterCode}:${editingExercise.id}` : null}
       />
+
+      {/* P1.5 - Modal Exercice Statique */}
+      <Dialog open={staticModalOpen} onOpenChange={setStaticModalOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {staticModalMode === 'create' ? 'Créer un exercice statique' : 'Modifier l\'exercice statique'}
+            </DialogTitle>
+            <DialogDescription>
+              Exercice avec contenu figé (pas de génération aléatoire)
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {/* Titre */}
+            <div>
+              <Label>Titre (facultatif)</Label>
+              <Input
+                value={staticFormData.title}
+                onChange={(e) => setStaticFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Titre de l'exercice..."
+              />
+            </div>
+
+            {/* Difficulté et Order */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Difficulté *</Label>
+                <Select
+                  value={staticFormData.difficulty}
+                  onValueChange={(v) => setStaticFormData(prev => ({ ...prev, difficulty: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="facile">Facile</SelectItem>
+                    <SelectItem value="moyen">Moyen</SelectItem>
+                    <SelectItem value="difficile">Difficile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Ordre (optionnel)</Label>
+                <Input
+                  type="number"
+                  value={staticFormData.order || ''}
+                  onChange={(e) => setStaticFormData(prev => ({ 
+                    ...prev, 
+                    order: e.target.value ? parseInt(e.target.value) : null 
+                  }))}
+                  placeholder="1, 2, 3..."
+                />
+              </div>
+            </div>
+
+            {/* Énoncé */}
+            <div>
+              <Label>Énoncé (HTML) *</Label>
+              <Textarea
+                value={staticFormData.enonce_html}
+                onChange={(e) => setStaticFormData(prev => ({ ...prev, enonce_html: e.target.value }))}
+                placeholder="<p>Énoncé de l'exercice...</p>"
+                className="font-mono text-sm min-h-[150px]"
+              />
+            </div>
+
+            {/* Solution */}
+            <div>
+              <Label>Solution (HTML) *</Label>
+              <Textarea
+                value={staticFormData.solution_html}
+                onChange={(e) => setStaticFormData(prev => ({ ...prev, solution_html: e.target.value }))}
+                placeholder="<p>Solution détaillée...</p>"
+                className="font-mono text-sm min-h-[150px]"
+              />
+            </div>
+
+            {/* Tags */}
+            <div>
+              <Label>Tags (séparés par des virgules)</Label>
+              <Input
+                value={staticFormData.tags.join(', ')}
+                onChange={(e) => setStaticFormData(prev => ({ 
+                  ...prev, 
+                  tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)
+                }))}
+                placeholder="géométrie, calcul, ..."
+              />
+            </div>
+
+            {/* Aide */}
+            <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800">
+              <p className="font-medium mb-1">💡 HTML uniquement</p>
+              <p>Utilisez <code>&lt;p&gt;</code>, <code>&lt;strong&gt;</code>, <code>&lt;ul&gt;</code>, etc.</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setStaticModalOpen(false)}
+              disabled={saving}
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleSaveStatic} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sauvegarde...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {staticModalMode === 'create' ? 'Créer' : 'Enregistrer'}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -307,3 +307,4 @@ Voir `backend/tests/test_raisonnement_multiplicatif_v1.py` pour les tests unitai
 pytest backend/tests/test_raisonnement_multiplicatif_v1.py -v
 ```
 
+

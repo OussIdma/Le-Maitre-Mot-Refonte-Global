@@ -119,9 +119,17 @@ class GeneratorMeta:
     svg_mode: str = "AUTO"
     supports_double_svg: bool = True
     pedagogical_tips: Optional[str] = None
+    is_dynamic: bool = True  # P1.2 - Indique si c'est un générateur dynamique
+    supported_grades: Optional[List[str]] = None  # P1.2 - Grades supportés (ex: ["6e", "5e"])
+    supported_chapters: Optional[List[str]] = None  # P1.2 - Chapitres recommandés (ex: ["6e_SP03"])
+    min_offer: str = "free"  # P2.1 - Offre minimale requise : "free" | "pro"
     
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        # P1.2 - Si supported_grades n'est pas défini, utiliser niveaux par défaut
+        if self.supported_grades is None:
+            result['supported_grades'] = self.niveaux
+        return result
 
 
 class BaseGenerator(ABC):
@@ -149,6 +157,94 @@ class BaseGenerator(ABC):
         """Change le seed et réinitialise le RNG."""
         self._seed = seed
         self._rng = random.Random(seed)
+    
+    # ========================================================================
+    # HELPERS RNG DETERMINISTES (à utiliser dans les générateurs)
+    # ========================================================================
+    
+    def rng_choice(self, items, ctx: Optional[Dict[str, Any]] = None):
+        """
+        Choisit un élément aléatoire dans items en utilisant le RNG dédié.
+        
+        Args:
+            items: Liste/tuple à choisir
+            ctx: Contexte optionnel pour logging
+        
+        Returns:
+            Un élément de items
+        
+        Raises:
+            ValueError: Si items est vide
+        
+        Usage:
+            type_exo = self.rng_choice(["type_a", "type_b", "type_c"])
+        """
+        if not items:
+            raise ValueError(f"rng_choice() appelé sur une liste vide: context={ctx}")
+        
+        if len(items) == 1:
+            return items[0]
+        
+        return self._rng.choice(items)
+    
+    def rng_randrange(self, start: int, stop: Optional[int] = None, step: int = 1, ctx: Optional[Dict[str, Any]] = None) -> int:
+        """
+        Génère un entier aléatoire dans [start, stop) en utilisant le RNG dédié.
+        
+        Args:
+            start: Début du range (ou fin si stop est None)
+            stop: Fin du range (optionnel)
+            step: Pas (défaut 1)
+            ctx: Contexte optionnel pour logging
+        
+        Returns:
+            Un entier dans [start, stop)
+        
+        Raises:
+            ValueError: Si range est vide (start >= stop)
+        
+        Usage:
+            valeur = self.rng_randrange(10, 50)  # Entre 10 et 49
+            valeur = self.rng_randrange(100)     # Entre 0 et 99
+        """
+        # Normalisation comme random.randrange
+        if stop is None:
+            stop = start
+            start = 0
+        
+        if start >= stop:
+            raise ValueError(f"rng_randrange() appelé avec range vide: start={start}, stop={stop}, context={ctx}")
+        
+        return self._rng.randrange(start, stop, step)
+    
+    def rng_randint(self, a: int, b: int, ctx: Optional[Dict[str, Any]] = None) -> int:
+        """
+        Génère un entier aléatoire dans [a, b] (inclus) en utilisant le RNG dédié.
+        
+        Args:
+            a: Borne inférieure (incluse)
+            b: Borne supérieure (incluse)
+            ctx: Contexte optionnel pour logging
+        
+        Returns:
+            Un entier dans [a, b]
+        
+        Raises:
+            ValueError: Si a > b
+        
+        Usage:
+            valeur = self.rng_randint(1, 10)  # Entre 1 et 10 inclus
+        """
+        if not isinstance(a, int) or not isinstance(b, int):
+            raise TypeError(f"rng_randint(a, b) attend a:int et b:int, reçu a:{type(a).__name__}, b:{type(b).__name__}")
+        
+        if a > b:
+            raise ValueError(f"rng_randint(a, b) requiert a <= b, reçu a={a}, b={b}")
+        
+        return self._rng.randint(a, b)
+    
+    # Fin des helpers RNG
+    # ========================================================================
     
     @classmethod
     @abstractmethod

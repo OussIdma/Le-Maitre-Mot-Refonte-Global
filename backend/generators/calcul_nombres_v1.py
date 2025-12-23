@@ -39,6 +39,45 @@ from backend.observability import (
 class CalculNombresV1Generator(BaseGenerator):
     """Générateur d'exercices de calcul numérique pour 6e et 5e."""
     
+    # Pool de formulations alternatives (P0.1 - Variabilité)
+    _ENONCE_VARIANTS = {
+        "operations_simples": [
+            "Calculer :",
+            "Effectue le calcul suivant :",
+            "Calcule :",
+            "Détermine le résultat de :",
+        ],
+        "priorites_operatoires": [
+            "Calcule en respectant les priorités opératoires :",
+            "Effectue le calcul suivant (attention aux priorités) :",
+            "Détermine le résultat en appliquant les priorités :",
+            "Calcule (pense aux priorités des opérations) :",
+        ],
+        "decimaux": [
+            "Effectue l'opération avec les nombres décimaux :",
+            "Calcule avec des nombres décimaux :",
+            "Résous ce calcul décimal :",
+        ]
+    }
+    
+    _CONSIGNE_VARIANTS = {
+        "operations_simples": [
+            "Effectue le calcul et donne le résultat.",
+            "Calcule et indique le résultat.",
+            "Détermine le résultat de l'opération.",
+        ],
+        "priorites_operatoires": [
+            "Effectue le calcul en respectant les priorités opératoires.",
+            "Calcule en appliquant les règles de priorité.",
+            "Résous en respectant l'ordre des opérations.",
+        ],
+        "decimaux": [
+            "Effectue le calcul avec des nombres décimaux.",
+            "Calcule avec des nombres à virgule.",
+            "Résous cette opération décimale.",
+        ]
+    }
+    
     @classmethod
     def get_meta(cls) -> GeneratorMeta:
         return GeneratorMeta(
@@ -50,7 +89,11 @@ class CalculNombresV1Generator(BaseGenerator):
             exercise_type="CALCUL_NOMBRES",
             svg_mode="NONE",
             supports_double_svg=False,
-            pedagogical_tips="⚠️ Rappeler l'ordre des opérations : parenthèses → ×/÷ → +/-. Erreur fréquente : calculer de gauche à droite sans respecter les priorités."
+            pedagogical_tips="⚠️ Rappeler l'ordre des opérations : parenthèses → ×/÷ → +/-. Erreur fréquente : calculer de gauche à droite sans respecter les priorités.",
+            is_dynamic=True,  # P1.2 - Générateur dynamique
+            supported_grades=["6e", "5e"],  # P1.2 - Niveaux compatibles
+            supported_chapters=["6e_N04", "6e_N05", "6e_N06", "6e_SP01", "6e_SP03", "5e_N01", "5e_N02", "5e_N03", "5e_N04"],  # P1.2 - Chapitres recommandés
+            min_offer="pro"  # P2.1 - Générateur premium
         )
     
     @classmethod
@@ -86,6 +129,14 @@ class CalculNombresV1Generator(BaseGenerator):
                 description="Preset pédagogique",
                 default="standard",
                 options=["simple", "standard"],
+                required=False
+            ),
+            ParamSchema(
+                name="variant_id",
+                type=ParamType.ENUM,
+                description="Variant pédagogique (P1.1)",
+                default="A",
+                options=["A", "B", "C"],
                 required=False
             ),
             ParamSchema(
@@ -257,13 +308,13 @@ class CalculNombresV1Generator(BaseGenerator):
         if grade == "6e":
             # 6e : entiers naturels uniquement
             if difficulty == "facile":
-                a = safe_randrange(self._rng, 1, 50)
-                b = safe_randrange(self._rng, 1, 50)
-                operation = safe_random_choice(self._rng, ["+", "-"])
+                a = self.rng_randrange(1, 50)
+                b = self.rng_randrange(1, 50)
+                operation = self.rng_choice(["+", "-"])
             else:  # standard
-                a = safe_randrange(self._rng, 1, 100)
-                b = safe_randrange(self._rng, 1, 100)
-                operation = safe_random_choice(self._rng, ["+", "-", "×", "÷"])
+                a = self.rng_randrange(1, 100)
+                b = self.rng_randrange(1, 100)
+                operation = self.rng_choice(["+", "-", "×", "÷"])
         else:  # 5e
             # 5e : entiers et décimaux simples
             if difficulty == "facile":
@@ -272,18 +323,18 @@ class CalculNombresV1Generator(BaseGenerator):
                     a = round(self._rng.uniform(1, 20), 1)
                     b = round(self._rng.uniform(1, 20), 1)
                 else:
-                    a = safe_randrange(self._rng, 1, 50)
-                    b = safe_randrange(self._rng, 1, 50)
-                operation = safe_random_choice(self._rng, ["+", "-"])
+                    a = self.rng_randrange(1, 50)
+                    b = self.rng_randrange(1, 50)
+                operation = self.rng_choice(["+", "-"])
             else:  # standard
                 use_decimal = self._rng.random() < 0.5
                 if use_decimal:
                     a = round(self._rng.uniform(1, 50), 1)
                     b = round(self._rng.uniform(1, 50), 1)
                 else:
-                    a = safe_randrange(self._rng, 1, 100)
-                    b = safe_randrange(self._rng, 1, 100)
-                operation = safe_random_choice(self._rng, ["+", "-", "×", "÷"])
+                    a = self.rng_randrange(1, 100)
+                    b = self.rng_randrange(1, 100)
+                operation = self.rng_choice(["+", "-", "×", "÷"])
         
         # Calculer le résultat
         if operation == "+":
@@ -306,13 +357,14 @@ class CalculNombresV1Generator(BaseGenerator):
             else:
                 # Pour les entiers, s'assurer que a est un multiple de b
                 if a % b != 0:
-                    a = b * safe_randrange(self._rng, 2, 10)
+                    a = b * self.rng_randrange(2, 10)
                 resultat = a // b
             calcul_intermediaire = f"{a} ÷ {b} = {resultat}"
         
-        # Formater l'énoncé
-        enonce = f"Calculer : {a} {operation} {b}"
-        consigne = "Effectue le calcul et donne le résultat."
+        # Formater l'énoncé (P0.1 - Variant)
+        intro = self.rng_choice(self._ENONCE_VARIANTS["operations_simples"])
+        enonce = f"{intro} {a} {operation} {b}"
+        consigne = self.rng_choice(self._CONSIGNE_VARIANTS["operations_simples"])
         
         return {
             "enonce": enonce,
@@ -330,20 +382,20 @@ class CalculNombresV1Generator(BaseGenerator):
             # 6e : entiers uniquement
             if difficulty == "facile":
                 # Expression à 2 opérations sans parenthèses
-                a = safe_randrange(self._rng, 1, 20)
-                b = safe_randrange(self._rng, 1, 20)
-                c = safe_randrange(self._rng, 1, 20)
-                op1 = safe_random_choice(self._rng, ["+", "-"])
-                op2 = safe_random_choice(self._rng, ["+", "-"])
+                a = self.rng_randrange(1, 20)
+                b = self.rng_randrange(1, 20)
+                c = self.rng_randrange(1, 20)
+                op1 = self.rng_choice(["+", "-"])
+                op2 = self.rng_choice(["+", "-"])
                 expression = f"{a} {op1} {b} {op2} {c}"
             else:  # standard
                 # Expression à 2-3 opérations avec parenthèses possibles
                 use_parentheses = self._rng.random() < 0.5
-                a = safe_randrange(self._rng, 1, 30)
-                b = safe_randrange(self._rng, 1, 30)
-                c = safe_randrange(self._rng, 1, 30)
-                op1 = safe_random_choice(self._rng, ["+", "-", "×"])
-                op2 = safe_random_choice(self._rng, ["+", "-", "×"])
+                a = self.rng_randrange(1, 30)
+                b = self.rng_randrange(1, 30)
+                c = self.rng_randrange(1, 30)
+                op1 = self.rng_choice(["+", "-", "×"])
+                op2 = self.rng_choice(["+", "-", "×"])
                 
                 if use_parentheses:
                     expression = f"({a} {op1} {b}) {op2} {c}"
@@ -358,11 +410,11 @@ class CalculNombresV1Generator(BaseGenerator):
                     b = round(self._rng.uniform(1, 20), 1)
                     c = round(self._rng.uniform(1, 20), 1)
                 else:
-                    a = safe_randrange(self._rng, 1, 20)
-                    b = safe_randrange(self._rng, 1, 20)
-                    c = safe_randrange(self._rng, 1, 20)
-                op1 = safe_random_choice(self._rng, ["+", "-"])
-                op2 = safe_random_choice(self._rng, ["+", "-"])
+                    a = self.rng_randrange(1, 20)
+                    b = self.rng_randrange(1, 20)
+                    c = self.rng_randrange(1, 20)
+                op1 = self.rng_choice(["+", "-"])
+                op2 = self.rng_choice(["+", "-"])
                 expression = f"{a} {op1} {b} {op2} {c}"
             else:  # standard
                 use_decimal = self._rng.random() < 0.5
@@ -372,11 +424,11 @@ class CalculNombresV1Generator(BaseGenerator):
                     b = round(self._rng.uniform(1, 30), 1)
                     c = round(self._rng.uniform(1, 30), 1)
                 else:
-                    a = safe_randrange(self._rng, 1, 30)
-                    b = safe_randrange(self._rng, 1, 30)
-                    c = safe_randrange(self._rng, 1, 30)
-                op1 = safe_random_choice(self._rng, ["+", "-", "×"])
-                op2 = safe_random_choice(self._rng, ["+", "-", "×"])
+                    a = self.rng_randrange(1, 30)
+                    b = self.rng_randrange(1, 30)
+                    c = self.rng_randrange(1, 30)
+                op1 = self.rng_choice(["+", "-", "×"])
+                op2 = self.rng_choice(["+", "-", "×"])
                 
                 if use_parentheses:
                     expression = f"({a} {op1} {b}) {op2} {c}"
@@ -535,8 +587,9 @@ class CalculNombresV1Generator(BaseGenerator):
                 calculs = f"On respecte les priorités : × et ÷ avant + et -\n"
                 calculs += f"Résultat : {resultat}"
         
-        enonce = f"Calculer : {expression}"
-        consigne = "Effectue le calcul en respectant les priorités opératoires."
+        intro = self.rng_choice(self._ENONCE_VARIANTS["priorites_operatoires"])
+        enonce = f"{intro} {expression}"
+        consigne = self.rng_choice(self._CONSIGNE_VARIANTS["priorites_operatoires"])
         
         return {
             "enonce": enonce,
@@ -567,7 +620,7 @@ class CalculNombresV1Generator(BaseGenerator):
             )
         
         # 5e uniquement
-        exercise_subtype = safe_random_choice(self._rng, ["comparaison", "calcul", "arrondi"])
+        exercise_subtype = self.rng_choice(["comparaison", "calcul", "arrondi"])
         
         if exercise_subtype == "comparaison":
             a = round(self._rng.uniform(1, 100), 1)
@@ -582,14 +635,15 @@ class CalculNombresV1Generator(BaseGenerator):
                 signe = "="
                 reponse = f"{a} = {b}"
             
-            enonce = f"Comparer : {a} et {b}"
+            intro = self.rng_choice(self._ENONCE_VARIANTS["decimaux"])
+            enonce = f"{intro}\n\nComparer : {a} et {b}"
             calculs = f"On compare les parties entières puis les décimales.\n{a} {signe} {b}"
-            consigne = "Compare les deux nombres décimaux."
+            consigne = self.rng_choice(self._CONSIGNE_VARIANTS["decimaux"])
             
         elif exercise_subtype == "calcul":
             a = round(self._rng.uniform(1, 50), 1)
             b = round(self._rng.uniform(1, 50), 1)
-            operation = safe_random_choice(self._rng, ["+", "-", "×"])
+            operation = self.rng_choice(["+", "-", "×"])
             
             if operation == "+":
                 resultat = round(a + b, 1)
@@ -600,14 +654,15 @@ class CalculNombresV1Generator(BaseGenerator):
             else:  # ×
                 resultat = round(a * b, 2)
             
-            enonce = f"Calculer : {a} {operation} {b}"
+            intro = self.rng_choice(self._ENONCE_VARIANTS["decimaux"])
+            enonce = f"{intro}\n\nCalculer : {a} {operation} {b}"
             calculs = f"{a} {operation} {b} = {resultat}"
-            consigne = "Effectue le calcul avec des nombres décimaux."
+            consigne = self.rng_choice(self._CONSIGNE_VARIANTS["decimaux"])
             reponse = str(resultat)
             
         else:  # arrondi
             nombre = round(self._rng.uniform(1, 100), 2)
-            precision = safe_random_choice(self._rng, [0, 1])
+            precision = self.rng_choice([0, 1])
             if precision == 0:
                 resultat = round(nombre)
                 consigne = f"Arrondir {nombre} à l'unité."
@@ -617,7 +672,8 @@ class CalculNombresV1Generator(BaseGenerator):
                 consigne = f"Arrondir {nombre} au dixième."
                 calculs = f"L'arrondi de {nombre} au dixième est {resultat}."
             
-            enonce = f"Arrondir : {nombre}"
+            intro = self.rng_choice(self._ENONCE_VARIANTS["decimaux"])
+            enonce = f"{intro}\n\nArrondir : {nombre}"
             reponse = str(resultat)
         
         return {

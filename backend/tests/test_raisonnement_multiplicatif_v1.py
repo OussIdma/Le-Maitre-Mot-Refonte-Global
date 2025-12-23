@@ -326,4 +326,47 @@ class TestRaisonnementMultiplicatifV1:
                 # Vérifier que donnees est un dict
                 assert isinstance(variables["donnees"], dict), \
                     f"Variable donnees n'est pas un dict pour {exercise_type} {grade}"
+    
+    def test_p04_separation_tableau_html_enonce(self):
+        """
+        P0.4 - Test sécurité: tableau_html séparé de enonce.
+        
+        Vérifications:
+        - tableau_html contient "<table"
+        - enonce ne contient PAS "<table"
+        - enonce est du texte simple (avec éventuellement <br>)
+        """
+        generator = RaisonnementMultiplicatifV1Generator(seed=42)
+        params = {
+            "exercise_type": "proportionnalite_tableau",
+            "difficulty": "moyen",
+            "grade": "6e",
+            "seed": 42
+        }
+        
+        result = generator.generate(params)
+        variables = result["variables"]
+        
+        # 1. tableau_html doit exister et contenir "<table"
+        assert "tableau_html" in variables, "Variable tableau_html manquante"
+        assert variables["tableau_html"] is not None, "tableau_html est None"
+        assert "<table" in variables["tableau_html"], "tableau_html ne contient pas <table"
+        
+        # 2. enonce ne doit PAS contenir "<table"
+        assert "enonce" in variables, "Variable enonce manquante"
+        assert variables["enonce"] is not None, "enonce est None"
+        assert "<table" not in variables["enonce"], "❌ SÉCURITÉ: enonce contient <table (injection HTML possible)"
+        
+        # 3. enonce peut contenir des <br> mais pas de structure HTML complexe
+        # (on autorise <br> car c'est sûr et simple)
+        enonce_lower = variables["enonce"].lower()
+        forbidden_tags = ["<div", "<script", "<iframe", "<style", "<input", "<form"]
+        for tag in forbidden_tags:
+            assert tag not in enonce_lower, f"❌ SÉCURITÉ: enonce contient {tag}"
+        
+        # 4. tableau_html doit être bien formé (fermeture de balise)
+        assert "</table>" in variables["tableau_html"], "tableau_html mal formé: pas de </table>"
+        
+        print("✅ P0.4 - Séparation tableau_html/enonce validée")
+
 

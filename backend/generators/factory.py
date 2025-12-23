@@ -66,7 +66,11 @@ class GeneratorFactory:
     
     @classmethod
     def list_all(cls) -> List[Dict[str, Any]]:
-        """Liste tous les générateurs avec leurs métadonnées."""
+        """
+        Liste tous les générateurs avec leurs métadonnées.
+        
+        P1.2: Inclut is_dynamic, supported_grades, supported_chapters pour le filtrage UI.
+        """
         result = []
         for key, gen_class in cls._generators.items():
             meta = gen_class.get_meta()
@@ -80,7 +84,11 @@ class GeneratorFactory:
                 "svg_mode": meta.svg_mode,
                 "supports_double_svg": meta.supports_double_svg,
                 "param_count": len(gen_class.get_schema()),
-                "preset_count": len(gen_class.get_presets())
+                "preset_count": len(gen_class.get_presets()),
+                # P1.2 - Métadonnées pour filtrage
+                "is_dynamic": getattr(meta, 'is_dynamic', True),  # Par défaut True pour compatibilité
+                "supported_grades": getattr(meta, 'supported_grades', meta.niveaux),  # Fallback sur niveaux
+                "supported_chapters": getattr(meta, 'supported_chapters', [])  # Optionnel
             })
         return result
     
