@@ -80,3 +80,6 @@ class GeneratorTemplateValidateResponse(BaseModel):
     preview: Optional[dict] = None  # {enonce_html, solution_html, variables}
     error_message: Optional[str] = None
 
+
+
+

@@ -219,3 +219,6 @@ def test_validate_template_combined_errors(test_client):
     assert len(data["detail"]["missing_placeholders"]) > 0
     assert len(data["detail"]["html_security_errors"]) > 0
 
+
+
+

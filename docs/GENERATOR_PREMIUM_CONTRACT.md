@@ -598,3 +598,6 @@ En cas de doute sur le contrat:
 
 **RÈGLE D'OR**: En cas de doute, privilégier la SIMPLICITÉ et la SÉCURITÉ.
 
+
+
+

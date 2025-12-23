@@ -600,3 +600,6 @@ docker compose up -d --build frontend
 
 **Prochaine étape**: Valider P2.1 et P2.2 avec l'équipe, puis développer.
 
+
+
+

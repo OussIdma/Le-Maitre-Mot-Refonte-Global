@@ -12,11 +12,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Alert, AlertDescription } from "./components/ui/alert";
-import { BookOpen, FileText, Download, Shuffle, Loader2, GraduationCap, AlertCircle, CheckCircle, Crown, CreditCard, LogIn, LogOut, Mail, RefreshCw } from "lucide-react";
+import { BookOpen, FileText, Download, Shuffle, Loader2, GraduationCap, AlertCircle, CheckCircle, Crown, CreditCard, LogIn, LogOut, Mail, RefreshCw, Lock, KeyRound } from "lucide-react";
+import { useToast } from "./hooks/use-toast";
 import TemplateSettings from "./components/TemplateSettings";
 import DocumentWizard from "./components/wizard/DocumentWizard";
 import SheetBuilderPage from "./components/SheetBuilderPage";
 import MySheetsPage from "./components/MySheetsPage";
+import MyExercisesPage from "./components/MyExercisesPage";
 import ProSettingsPage from "./components/ProSettingsPage";
 import ExerciseGeneratorPage from "./components/ExerciseGeneratorPage";
 import CurriculumAdminSimplePage from "./components/admin/CurriculumAdminSimplePage";
@@ -24,6 +26,13 @@ import ChapterExercisesAdminPage from "./components/admin/ChapterExercisesAdminP
 import GeneratorTemplatesAdminPage from "./components/admin/GeneratorTemplatesAdminPage";
 import LandingPage from "./components/LandingPage";
 import NavBar from "./components/NavBar";
+import CheckoutPage from "./components/CheckoutPage";
+import ResetPasswordPage from "./components/ResetPasswordPage";
+import PricingPage from "./components/PricingPage";
+import UpgradeProModal, { trackPremiumEvent } from "./components/UpgradeProModal";
+import { Toaster } from "./components/ui/toaster";
+import { LoginProvider } from "./contexts/LoginContext";
+import GlobalLoginModal from "./components/GlobalLoginModal";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -194,6 +203,8 @@ function LoginVerify() {
       const response = await axios.post(`${API}/auth/verify-login`, {
         token: token,
         device_id: deviceId
+      }, {
+        withCredentials: true // P0 UX: Inclure les cookies httpOnly
       });
 
       // Store session token and user info
@@ -203,8 +214,13 @@ function LoginVerify() {
 
       console.log('✅ Login verification successful');
       setSuccess(true);
+      
+      // P0 UX: Rediriger vers returnTo si présent
+      const returnTo = sessionStorage.getItem('postLoginRedirect') || '/';
+      sessionStorage.removeItem('postLoginRedirect'); // Nettoyer après utilisation
+      
       setTimeout(() => {
-        navigate('/');
+        navigate(returnTo);
       }, 2000);
 
     } catch (error) {
@@ -262,6 +278,7 @@ function LoginVerify() {
 }
 
 function MainApp() {
+  const { openLogin, closeLogin } = useLogin();
   const [catalog, setCatalog] = useState([]);
   const [catalogStats, setCatalogStats] = useState(null); // Add catalog stats
   const [selectedMatiere, setSelectedMatiere] = useState("");
@@ -308,9 +325,18 @@ function MainApp() {
   // Login modal for existing Pro users
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [loginEmailSent, setLoginEmailSent] = useState(false);
+  const [loginTab, setLoginTab] = useState("magic"); // "magic" or "password"
+  
+  // Reset password modal
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  
+  const { toast } = useToast();
   
   // Export states
   const [exportingSubject, setExportingSubject] = useState(false);
@@ -575,6 +601,14 @@ function MainApp() {
       // Refresh quota
       await fetchQuotaStatus();
       
+      // P2.3: Check if this was the 4th export (quota exhausted)
+      const newQuota = await axios.get(`${API}/quota/check?guest_id=${guestId}`).catch(() => null);
+      if (newQuota && newQuota.data.exports_remaining === 0 && !isPro) {
+        trackPremiumEvent('premium_cta_clicked', { context: 'export', trigger: 'quota_exhausted' });
+        setUpgradeContext('export');
+        setShowUpgradeModal(true);
+      }
+      
     } catch (error) {
       console.error("Erreur lors de l'export:", error);
       
@@ -593,7 +627,7 @@ function MainApp() {
           setProStatusChecked(true);
           
           alert('Votre session a expiré ou a été fermée depuis un autre appareil. Veuillez vous reconnecter.');
-          setShowLoginModal(true);
+          openLogin();
           return;
         } else if (error.response?.status === 402) {
           const errorData = error.response.data;
@@ -734,6 +768,20 @@ function MainApp() {
     };
   }, [sessionToken]);
 
+  // P0 UX: Gérer returnTo depuis les query params
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const returnTo = searchParams.get('returnTo');
+    const shouldLogin = searchParams.get('login') === 'true';
+    
+    if (shouldLogin && returnTo) {
+      sessionStorage.setItem('postLoginRedirect', returnTo);
+      openLogin();
+      // Nettoyer l'URL
+      window.history.replaceState({}, '', location.pathname);
+    }
+  }, [location]);
+
   const initializeAuth = () => {
     // Check for session token (new method)
     const storedSessionToken = localStorage.getItem('lemaitremot_session_token');
@@ -765,8 +813,18 @@ function MainApp() {
       setIsPro(true);
       setProStatusChecked(true);
       
+      // P0 UX: Si on vient d'une page protégée, rediriger vers returnTo
       if (!silent) {
         console.log('✅ Session valid - user is Pro:', response.data.email);
+        
+        // Vérifier si on doit rediriger après validation de session
+        const returnTo = sessionStorage.getItem('postLoginRedirect');
+        if (returnTo && window.location.pathname === '/') {
+          sessionStorage.removeItem('postLoginRedirect');
+          setTimeout(() => {
+            navigate(returnTo);
+          }, 100);
+        }
       }
       
     } catch (error) {
@@ -789,7 +847,7 @@ function MainApp() {
         if (!silent) {
           console.log('Session expired - user needs to login again');
           alert('Votre session a expiré. Vous avez peut-être été déconnecté depuis un autre appareil.');
-          setShowLoginModal(true);
+          openLogin();
         } else {
           console.log('Session invalidated silently (probably from another device)');
         }
@@ -807,12 +865,130 @@ function MainApp() {
       setLoginEmailSent(true);
       console.log('✅ Magic link sent to:', email);
       
+      toast({
+        title: "Email envoyé",
+        description: "Si un compte existe, un email vous a été envoyé.",
+      });
+      
     } catch (error) {
       console.error('Error requesting login:', error);
       const errorMsg = error.response?.data?.detail || 'Erreur lors de l\'envoi du lien de connexion';
-      alert(errorMsg);
+      toast({
+        title: "Erreur",
+        description: errorMsg,
+        variant: "destructive"
+      });
     } finally {
       setLoginLoading(false);
+    }
+  };
+
+  // P2: Password login handler
+  const handlePasswordLogin = async () => {
+    if (!loginEmail || !loginPassword) return;
+    
+    setLoginLoading(true);
+    try {
+      // Generate device ID
+      const deviceId = localStorage.getItem('lemaitremot_device_id') || generateDeviceId();
+      localStorage.setItem('lemaitremot_device_id', deviceId);
+      
+      const response = await axios.post(`${API}/auth/login-password`, {
+        email: loginEmail,
+        password: loginPassword
+      }, {
+        headers: {
+          'X-Device-ID': deviceId
+        },
+        withCredentials: true // P0 UX: Inclure les cookies httpOnly
+      });
+      
+      // Store session token and user info
+      const sessionToken = response.data.session_token;
+      localStorage.setItem('lemaitremot_session_token', sessionToken);
+      localStorage.setItem('lemaitremot_user_email', loginEmail);
+      localStorage.setItem('lemaitremot_login_method', 'session');
+      
+      setSessionToken(sessionToken);
+      setUserEmail(loginEmail);
+      setIsPro(true);
+      closeLogin();
+      
+      // P0 UX: Rediriger vers returnTo si présent
+      const returnTo = sessionStorage.getItem('postLoginRedirect');
+      if (returnTo) {
+        sessionStorage.removeItem('postLoginRedirect'); // Nettoyer après utilisation
+        setTimeout(() => {
+          navigate(returnTo);
+        }, 100);
+      }
+      
+      toast({
+        title: "Connexion réussie",
+        description: "Vous êtes maintenant connecté.",
+      });
+      
+      console.log('✅ Password login successful');
+      
+    } catch (error) {
+      console.error('Error in password login:', error);
+      const status = error.response?.status;
+      const errorMsg = error.response?.data?.detail || 'Erreur lors de la connexion';
+      
+      if (status === 400) {
+        toast({
+          title: "Mot de passe non défini",
+          description: errorMsg,
+          variant: "destructive"
+        });
+      } else if (status === 401) {
+        toast({
+          title: "Erreur de connexion",
+          description: "Email ou mot de passe incorrect",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Erreur",
+          description: errorMsg,
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setLoginLoading(false);
+      setLoginPassword(""); // Clear password for security
+    }
+  };
+
+  // P2: Reset password request handler
+  const handleResetPasswordRequest = async () => {
+    if (!resetEmail) return;
+    
+    setResetLoading(true);
+    try {
+      await axios.post(`${API}/auth/reset-password-request`, {
+        email: resetEmail
+      });
+      
+      toast({
+        title: "Email envoyé",
+        description: "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.",
+      });
+      
+      setShowResetModal(false);
+      setResetEmail("");
+      
+    } catch (error) {
+      console.error('Error requesting password reset:', error);
+      // Always show success message (neutral response)
+      toast({
+        title: "Email envoyé",
+        description: "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.",
+      });
+      setShowResetModal(false);
+      setResetEmail("");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -966,7 +1142,7 @@ function MainApp() {
                         <Button 
                           variant="link" 
                           className="p-0 h-auto text-orange-600 underline" 
-                          onClick={() => setShowLoginModal(true)}
+                          onClick={() => openLogin()}
                         >
                           Se connecter
                         </Button>
@@ -985,7 +1161,7 @@ function MainApp() {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={() => setShowLoginModal(true)}
+                    onClick={() => openLogin()}
                     className="text-xs flex items-center"
                   >
                     <LogIn className="h-3 w-3 mr-1" />
@@ -1231,104 +1407,66 @@ function MainApp() {
           </DialogContent>
         </Dialog>
 
-        {/* Login Modal */}
-        <Dialog open={showLoginModal} onOpenChange={(open) => {
-          setShowLoginModal(open);
+        {/* Login Modal maintenant géré globalement via GlobalLoginModal */}
+        
+        {/* Reset Password Modal */}
+        <Dialog open={showResetModal} onOpenChange={(open) => {
+          setShowResetModal(open);
           if (!open) {
-            setLoginEmail("");
-            setLoginEmailSent(false);
-            setLoginLoading(false);
+            setResetEmail("");
+            setResetLoading(false);
           }
         }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center text-center">
-                <LogIn className="mr-2 h-6 w-6 text-blue-600" />
-                Connexion Pro
+                <Lock className="mr-2 h-6 w-6 text-blue-600" />
+                Mot de passe oublié
               </DialogTitle>
               <DialogDescription className="text-center">
-                {loginEmailSent 
-                  ? "Vérifiez votre boîte email"
-                  : "Entrez votre email pour recevoir un lien de connexion"
-                }
+                Entrez votre email pour recevoir un lien de réinitialisation
               </DialogDescription>
             </DialogHeader>
             
-            {!loginEmailSent ? (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Adresse email de votre compte Pro</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder="votre@email.fr"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                  />
-                </div>
-                
-                <Button 
-                  onClick={() => requestLogin(loginEmail)}
-                  disabled={!loginEmail || loginLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                >
-                  {loginLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Envoi en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="mr-2 h-4 w-4" />
-                      Envoyer le lien de connexion
-                    </>
-                  )}
-                </Button>
-                
-                <div className="text-center">
-                  <p className="text-xs text-gray-500 mb-2">
-                    Pas encore Pro ?
-                  </p>
-                  <Button 
-                    variant="link" 
-                    onClick={() => {
-                      setShowLoginModal(false);
-                      setShowPaymentModal(true);
-                    }}
-                    className="text-blue-600 p-0 h-auto"
-                  >
-                    Créer un compte Pro
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 text-center">
-                <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Mail className="h-8 w-8 text-blue-600" />
-                </div>
-                
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Email envoyé !</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Nous avons envoyé un lien de connexion à <strong>{loginEmail}</strong>
-                  </p>
-                  <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
-                    💡 <strong>Conseil :</strong> Vérifiez vos spams si vous ne recevez pas l'email dans les 2 minutes.
-                  </div>
-                </div>
-                
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setLoginEmailSent(false);
-                    setLoginEmail("");
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">Adresse email</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="votre@email.fr"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && resetEmail && !resetLoading) {
+                      handleResetPasswordRequest();
+                    }
                   }}
-                  className="w-full"
-                >
-                  Changer d'email
-                </Button>
+                />
               </div>
-            )}
+              
+              <Button 
+                onClick={handleResetPasswordRequest}
+                disabled={!resetEmail || resetLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                {resetLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Envoyer l'email
+                  </>
+                )}
+              </Button>
+              
+              <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
+                💡 Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -1412,11 +1550,18 @@ function NotFoundPage() {
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
+      <LoginProvider>
+        <Toaster />
+        <GlobalUpgradeModal />
+        <GlobalLoginModal />
+        <Routes>
         {/* Routes spéciales sans NavBar */}
         <Route path="/success" element={<PaymentSuccess />} />
         <Route path="/cancel" element={<PaymentCancel />} />
         <Route path="/login/verify" element={<LoginVerify />} />
+        <Route path="/checkout" element={<CheckoutPage />} /> {/* P0: Secure checkout page */}
+        <Route path="/reset-password" element={<ResetPasswordPage />} /> {/* P2: Reset password page */}
+        <Route path="/pricing" element={<PricingPage />} /> {/* P2.3: Pricing page */}
         
         {/* Routes principales avec NavBar */}
         <Route path="/" element={
@@ -1454,6 +1599,11 @@ function App() {
             <MySheetsPage />
           </AppWithNav>
         } />
+        <Route path="/mes-exercices" element={
+          <AppWithNav>
+            <MyExercisesPage />
+          </AppWithNav>
+        } /> {/* P3.0: Bibliothèque d'exercices */}
         <Route path="/pro/settings" element={
           <AppWithNav>
             <ProSettingsPage />
@@ -1487,7 +1637,33 @@ function App() {
         {/* Catch-all: rediriger vers /generer */}
         <Route path="/*" element={<RedirectToGenerer />} />
       </Routes>
+      </LoginProvider>
     </BrowserRouter>
+  );
+}
+
+// P2.3: Global Upgrade Pro Modal (outside router for global access)
+function GlobalUpgradeModal() {
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeContext, setUpgradeContext] = useState('general');
+
+  // Listen for custom events to open modal
+  useEffect(() => {
+    const handleOpenModal = (event) => {
+      setUpgradeContext(event.detail?.context || 'general');
+      setShowUpgradeModal(true);
+    };
+    
+    window.addEventListener('openUpgradeModal', handleOpenModal);
+    return () => window.removeEventListener('openUpgradeModal', handleOpenModal);
+  }, []);
+
+  return (
+    <UpgradeProModal
+      isOpen={showUpgradeModal}
+      onClose={() => setShowUpgradeModal(false)}
+      context={upgradeContext}
+    />
   );
 }
 

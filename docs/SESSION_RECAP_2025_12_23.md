@@ -391,3 +391,6 @@ curl -X POST http://localhost:8000/api/v1/exercises/generate \
 **Statut global** : ✅ **SESSION RÉUSSIE**  
 **Prochaine action** : 🔴 **P2.1 (CRITIQUE)**
 
+
+
+

@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
+import { useLogin } from "../contexts/LoginContext";
 import { Badge } from "./ui/badge";
 import { 
   GraduationCap, 
@@ -17,6 +18,16 @@ import {
 function Header({ isPro, userEmail, onLogin, onLogout }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { openLogin } = useLogin();
+  
+  // Si onLogin n'est pas fourni, utiliser le contexte
+  const handleLoginClick = () => {
+    if (onLogin) {
+      onLogin();
+    } else {
+      openLogin(location.pathname);
+    }
+  };
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -128,7 +139,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               <Button
                 variant="default"
                 size="sm"
-                onClick={onLogin}
+                onClick={handleLoginClick}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <LogIn className="h-4 w-4 mr-2" />

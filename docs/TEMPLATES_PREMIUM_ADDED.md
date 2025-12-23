@@ -187,3 +187,6 @@ curl -X POST http://localhost:8000/api/v1/exercises/generate \
 **Date :** 2025-12-22  
 **Statut :** ✅ Templates frontend ajoutés - Backend corrections requises pour test complet
 
+
+
+

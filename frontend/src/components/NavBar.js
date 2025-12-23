@@ -51,6 +51,22 @@ function NavBar() {
               Générer
             </Button>
 
+            <Button
+              variant={isActive('/mes-exercices') ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => navigate('/mes-exercices')}
+            >
+              Mes exercices
+            </Button>
+
+            <Button
+              variant={isActive('/sheets') ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => navigate('/sheets')}
+            >
+              Mes fiches
+            </Button>
+
             {/* Admin link - seulement si on est déjà sur une page admin ou si accessible */}
             {isAdminPage && (
               <Button

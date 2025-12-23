@@ -11,7 +11,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 from backend.emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -34,6 +34,10 @@ from backend.routes.math_routes import generate_math_exercises_new_architecture
 import requests
 import latex2mathml.converter
 from backend.logger import get_logger, log_execution_time, log_ai_generation, log_schema_processing, log_user_context, log_quota_check
+# P0 - Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from backend.curriculum_data import (
     CURRICULUM_DATA, 
     get_available_subjects, 
@@ -440,8 +444,15 @@ def _compute_build_id() -> str:
 
 APP_BUILD_ID = os.environ.get("APP_BUILD_ID", _compute_build_id())
 
+# P0 - Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 # Create the main app without a prefix
 app = FastAPI()
+
+# P0 - Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ============================================================================
 # GLOBAL EXCEPTION HANDLERS - Garantir JSON même en cas d'erreur non catchée
@@ -708,6 +719,22 @@ class VerifyLoginRequest(BaseModel):
     token: str
     device_id: str
 
+# P2: Password auth models
+class SetPasswordRequest(BaseModel):
+    password: str
+    password_confirm: str
+
+class LoginPasswordRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordConfirmRequest(BaseModel):
+    token: str
+    new_password: str
+
 class UserTemplate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_email: EmailStr
@@ -762,9 +789,14 @@ class EnhancedExportRequest(BaseModel):
 class CheckoutRequest(BaseModel):
     package_id: str  # "monthly" or "yearly"
     origin_url: str
-    email: Optional[str] = None
+    email: Optional[str] = None  # P0: Deprecated, use session instead
     nom: Optional[str] = None
     etablissement: Optional[str] = None
+
+class PreCheckoutRequest(BaseModel):
+    """P0: Request to initiate secure checkout (email validation first)"""
+    email: EmailStr
+    package_id: str  # "monthly" or "yearly"
 
 class CatalogItem(BaseModel):
     name: str
@@ -1312,42 +1344,334 @@ async def send_magic_link_email(email: str, token: str):
         logger.error(f"Error sending magic link email: {e}")
         return False
 
-async def create_login_session(email: str, device_id: str):
-    """Create a new login session and invalidate old ones"""
+async def send_checkout_confirmation_email(email: str, token: str, package: dict):
+    """
+    P0: Send checkout confirmation email with magic link.
+    User must click link to confirm email before payment.
+    """
+    try:
+        brevo_api_key = os.environ.get('BREVO_API_KEY')
+        sender_email = os.environ.get('BREVO_SENDER_EMAIL')
+        sender_name = os.environ.get('BREVO_SENDER_NAME', 'Le Maître Mot')
+        
+        if not brevo_api_key or not sender_email:
+            logger.error("Brevo credentials not configured")
+            return False
+        
+        # Generate checkout link URL
+        frontend_url = os.environ.get('FRONTEND_URL', 'https://math-exercise-sync.preview.emergentagent.com')
+        checkout_link = f"{frontend_url}/checkout?token={token}"
+        
+        # Email content
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); padding: 2rem; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="color: white; margin: 0; font-size: 1.5rem;">Le Maître Mot</h1>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Confirmez votre abonnement Pro</p>
+            </div>
+            
+            <div style="background: white; padding: 2rem; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h2 style="color: #1f2937; margin-top: 0;">Presque terminé !</h2>
+                <p style="color: #4b5563; line-height: 1.6;">
+                    Vous avez choisi l'abonnement <strong>{package['name']}</strong> ({package['amount']}€/{package['duration']}).
+                </p>
+                <p style="color: #4b5563; line-height: 1.6;">
+                    Pour finaliser votre inscription, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous.
+                </p>
+                
+                <div style="text-align: center; margin: 2rem 0;">
+                    <a href="{checkout_link}" 
+                       style="background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); 
+                              color: white;
+                              text-decoration: none;
+                              padding: 1rem 2rem;
+                              border-radius: 8px;
+                              font-weight: bold;
+                              display: inline-block;">
+                        ✅ Confirmer mon email et payer
+                    </a>
+                </div>
+                
+                <div style="background: #f3f4f6; padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">
+                        <strong>⏱️ Important :</strong> Ce lien est valide pendant 15 minutes.
+                        Vous serez ensuite redirigé vers le paiement sécurisé Stripe.
+                    </p>
+                </div>
+                
+                <div style="background: #dcfce7; padding: 1rem; border-radius: 6px; margin: 1.5rem 0; border-left: 4px solid #22c55e;">
+                    <p style="margin: 0; font-size: 0.875rem; color: #166534;">
+                        <strong>🔒 Sécurité :</strong> En confirmant votre email d'abord, nous garantissons que votre abonnement
+                        sera bien lié à la bonne adresse.
+                    </p>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 0.875rem; line-height: 1.4;">
+                    Si vous n'avez pas demandé cet abonnement, ignorez cet email.
+                </p>
+                
+                <div style="border-top: 1px solid #e5e7eb; margin-top: 2rem; padding-top: 1rem;">
+                    <p style="color: #9ca3af; font-size: 0.75rem; margin: 0; text-align: center;">
+                        Le Maître Mot - Générateur de documents pédagogiques
+                    </p>
+                </div>
+            </div>
+        </div>
+        """
+        
+        headers = {
+            'accept': 'application/json',
+            'api-key': brevo_api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            'sender': {
+                'name': sender_name,
+                'email': sender_email
+            },
+            'to': [
+                {
+                    'email': email,
+                    'name': email.split('@')[0]
+                }
+            ],
+            'subject': f'✅ Confirmez votre email - Abonnement {package["name"]}',
+            'htmlContent': html_content
+        }
+        
+        response = requests.post(
+            'https://api.brevo.com/v3/smtp/email',
+            headers=headers,
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code == 201:
+            logger.info(f"Checkout confirmation email sent successfully to {email}")
+            return True
+        else:
+            logger.error(f"Failed to send checkout email: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending checkout confirmation email: {e}")
+        return False
+
+async def send_password_reset_email(email: str, token: str):
+    """
+    P2: Send password reset email with magic link.
+    User must click link to reset password.
+    """
+    try:
+        brevo_api_key = os.environ.get('BREVO_API_KEY')
+        sender_email = os.environ.get('BREVO_SENDER_EMAIL')
+        sender_name = os.environ.get('BREVO_SENDER_NAME', 'Le Maître Mot')
+        
+        if not brevo_api_key or not sender_email:
+            logger.error("Brevo credentials not configured")
+            return False
+        
+        # Generate reset link URL
+        frontend_url = os.environ.get('FRONTEND_URL', 'https://math-exercise-sync.preview.emergentagent.com')
+        reset_link = f"{frontend_url}/reset-password?token={token}"
+        
+        # Email content
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); padding: 2rem; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="color: white; margin: 0; font-size: 1.5rem;">Le Maître Mot</h1>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Réinitialisation de mot de passe</p>
+            </div>
+            
+            <div style="background: white; padding: 2rem; border-radius: 0 0 8px 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h2 style="color: #1f2937; margin-top: 0;">Réinitialiser votre mot de passe</h2>
+                <p style="color: #4b5563; line-height: 1.6;">
+                    Vous avez demandé à réinitialiser le mot de passe de votre compte Le Maître Mot Pro.
+                    Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe.
+                </p>
+                
+                <div style="text-align: center; margin: 2rem 0;">
+                    <a href="{reset_link}" 
+                       style="background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); 
+                              color: white;
+                              text-decoration: none;
+                              padding: 1rem 2rem;
+                              border-radius: 8px;
+                              font-weight: bold;
+                              display: inline-block;">
+                        🔐 Réinitialiser mon mot de passe
+                    </a>
+                </div>
+                
+                <div style="background: #f3f4f6; padding: 1rem; border-radius: 6px; margin: 1.5rem 0;">
+                    <p style="margin: 0; font-size: 0.875rem; color: #6b7280;">
+                        <strong>⏱️ Important :</strong> Ce lien est valide pendant 15 minutes et ne peut être utilisé qu'une seule fois.
+                    </p>
+                </div>
+                
+                <div style="background: #fef3c7; padding: 1rem; border-radius: 6px; margin: 1.5rem 0; border-left: 4px solid #f59e0b;">
+                    <p style="margin: 0; font-size: 0.875rem; color: #92400e;">
+                        <strong>🔒 Sécurité :</strong> Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
+                        Votre compte reste sécurisé.
+                    </p>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 0.875rem; line-height: 1.4;">
+                    Vous pouvez également continuer à utiliser le lien magique pour vous connecter.
+                </p>
+                
+                <div style="border-top: 1px solid #e5e7eb; margin-top: 2rem; padding-top: 1rem;">
+                    <p style="color: #9ca3af; font-size: 0.75rem; margin: 0; text-align: center;">
+                        Le Maître Mot - Générateur de documents pédagogiques
+                    </p>
+                </div>
+            </div>
+        </div>
+        """
+        
+        headers = {
+            'accept': 'application/json',
+            'api-key': brevo_api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            'sender': {
+                'name': sender_name,
+                'email': sender_email
+            },
+            'to': [
+                {
+                    'email': email,
+                    'name': email.split('@')[0]
+                }
+            ],
+            'subject': '🔐 Réinitialisation de votre mot de passe Le Maître Mot Pro',
+            'htmlContent': html_content
+        }
+        
+        response = requests.post(
+            'https://api.brevo.com/v3/smtp/email',
+            headers=headers,
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code == 201:
+            logger.info(f"Password reset email sent successfully to {email}")
+            return True
+        else:
+            logger.error(f"Failed to send password reset email: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending password reset email: {e}")
+        return False
+
+def extract_device_info(request: Request) -> dict:
+    """
+    P1: Extract device information from HTTP request headers.
+    Returns dict with browser, OS, device_type, ip_address.
+    """
+    user_agent = request.headers.get("User-Agent", "")
+    ip_address = request.client.host if request.client else None
+    
+    # Simple parsing (can be enhanced with user-agents library if needed)
+    device_info = {
+        "ip_address": ip_address,
+        "user_agent": user_agent
+    }
+    
+    # Detect browser
+    if "Chrome" in user_agent and "Edg" not in user_agent:
+        device_info["browser"] = "Chrome"
+    elif "Firefox" in user_agent:
+        device_info["browser"] = "Firefox"
+    elif "Safari" in user_agent and "Chrome" not in user_agent:
+        device_info["browser"] = "Safari"
+    elif "Edg" in user_agent:
+        device_info["browser"] = "Edge"
+    else:
+        device_info["browser"] = "Unknown"
+    
+    # Detect OS
+    if "Windows" in user_agent:
+        device_info["os"] = "Windows"
+    elif "Mac" in user_agent or "macOS" in user_agent:
+        device_info["os"] = "macOS"
+    elif "Linux" in user_agent:
+        device_info["os"] = "Linux"
+    elif "Android" in user_agent:
+        device_info["os"] = "Android"
+    elif "iOS" in user_agent or "iPhone" in user_agent or "iPad" in user_agent:
+        device_info["os"] = "iOS"
+    else:
+        device_info["os"] = "Unknown"
+    
+    # Detect device type
+    if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
+        device_info["device_type"] = "mobile"
+    elif "iPad" in user_agent or ("Tablet" in user_agent):
+        device_info["device_type"] = "tablet"
+    else:
+        device_info["device_type"] = "desktop"
+    
+    return device_info
+
+async def create_login_session(email: str, device_id: str, device_info: Optional[dict] = None):
+    """
+    P1: Create a new login session with multi-device support (max 3 sessions).
+    
+    If user already has 3 active sessions, the oldest one is automatically removed.
+    """
     try:
         # Generate secure session token
         session_token = str(uuid.uuid4()) + "-" + str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        now = datetime.now(timezone.utc)
+        
+        # P1: Count active sessions (non-expired) for this user
+        active_sessions_count = await db.login_sessions.count_documents({
+            "user_email": email,
+            "expires_at": {"$gt": now.isoformat()}
+        })
+        
+        logger.info(f"User {email} has {active_sessions_count} active session(s)")
+        
+        # P1: If user has 3 or more active sessions, remove the oldest one
+        if active_sessions_count >= 3:
+            # Find oldest session (by created_at)
+            oldest_session = await db.login_sessions.find_one(
+                {"user_email": email, "expires_at": {"$gt": now.isoformat()}},
+                sort=[("created_at", 1)]  # ASC: oldest first
+            )
+            
+            if oldest_session:
+                await db.login_sessions.delete_one({"_id": oldest_session["_id"]})
+                logger.info(
+                    f"P1: Removed oldest session for {email} (device: {oldest_session.get('device_id', 'unknown')}) "
+                    f"to make room for new session (max 3 sessions)"
+                )
         
         # Create new session data
-        session = LoginSession(
-            user_email=email,
-            session_token=session_token,
-            device_id=device_id,
-            expires_at=expires_at
+        session_dict = {
+            "user_email": email,
+            "session_token": session_token,
+            "device_id": device_id,
+            "device_info": device_info or {},  # P1: Store device info (browser, OS, etc.)
+            "expires_at": expires_at.isoformat(),
+            "created_at": now.isoformat(),
+            "last_used": now.isoformat()
+        }
+        
+        # Insert new session
+        await db.login_sessions.insert_one(session_dict)
+        
+        logger.info(
+            f"P1: Created new session for {email} on device {device_id} "
+            f"(total active sessions: {active_sessions_count + 1 if active_sessions_count < 3 else 3})"
         )
-        
-        session_dict = session.dict()
-        session_dict['expires_at'] = session_dict['expires_at'].isoformat()
-        session_dict['created_at'] = session_dict['created_at'].isoformat()
-        session_dict['last_used'] = session_dict['last_used'].isoformat()
-        
-        # Remove all existing sessions for this user (single device policy)
-        delete_result = await db.login_sessions.delete_many({"user_email": email})
-        logger.info(f"Deleted {delete_result.deleted_count} existing sessions for {email}")
-        
-        # Use upsert to handle race conditions - replace existing session atomically
-        upsert_result = await db.login_sessions.replace_one(
-            {"user_email": email},
-            session_dict,
-            upsert=True
-        )
-        logger.info(f"Created new session for {email} on device {device_id}")
-        
-        if upsert_result.matched_count > 0:
-            logger.info(f"Replaced existing session for {email}")
-        else:
-            logger.info(f"Created new session for {email}")
         
         # Update user's last_login
         await db.pro_users.update_one(
@@ -1355,7 +1679,6 @@ async def create_login_session(email: str, device_id: str):
             {"$set": {"last_login": datetime.now(timezone.utc)}}
         )
         
-        logger.info(f"Login session created successfully for {email} - all previous sessions invalidated")
         return session_token
         
     except Exception as e:
@@ -3373,107 +3696,109 @@ async def generate_document(request: GenerateRequest):
         raise HTTPException(status_code=500, detail="Erreur lors de la génération du document")
 
 @api_router.post("/auth/request-login")
-async def request_login(request: LoginRequest):
-    """Request a magic link for Pro user login"""
+@limiter.limit("5/15minutes")  # P0: Rate limit - 5 requests per 15 minutes
+async def request_login(request_body: LoginRequest, request: Request):
+    """
+    Request a magic link for Pro user login.
+    P0: Returns neutral response (always 200) to prevent email enumeration.
+    P0: Rate limited to 5 req/15min per IP.
+    """
+    ip_address = request.client.host if request.client else None
+    auth_service = SecureAuthService(db)
+    
     try:
         # Check if user exists and is Pro
-        is_pro, user = await check_user_pro_status(request.email)
+        is_pro, user = await check_user_pro_status(request_body.email)
         
-        if not is_pro:
-            # Don't reveal if user exists or not for security
-            raise HTTPException(
-                status_code=404, 
-                detail="Utilisateur Pro non trouvé ou abonnement expiré"
+        if is_pro:
+            # Generate secure magic link token (hashed in DB)
+            raw_token, token_hash = await auth_service.create_magic_link(
+                email=request_body.email,
+                action="login"
+            )
+            
+            # Send magic link email (or log in local dev)
+            environment = os.environ.get('ENVIRONMENT', 'development')
+            if environment == 'development':
+                # Mode local: Log the magic link
+                frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+                magic_link = f"{frontend_url}/login/verify?token={raw_token}"
+                logger.info(f"🔗 MAGIC LINK (dev): {magic_link}")
+                logger.info(f"   Email: {request_body.email}")
+            else:
+                # Production: Send email
+                email_sent = await send_magic_link_email(request_body.email, raw_token)
+                if not email_sent:
+                    logger.error(f"Failed to send magic link to {request_body.email}")
+                    # Still return 200 for security
+            
+            # Log successful attempt
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="request_login",
+                success=True,
+                ip_address=ip_address
+            )
+        else:
+            # User not Pro or doesn't exist: Log but don't reveal
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="request_login",
+                success=False,
+                ip_address=ip_address,
+                error_msg="User not Pro or doesn't exist"
             )
         
-        # Generate magic link token (short-lived, 15 minutes)
-        magic_token = str(uuid.uuid4()) + "-magic-" + str(int(datetime.now(timezone.utc).timestamp()))
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
-        
-        # Store magic token temporarily
-        await db.magic_tokens.insert_one({
-            "token": magic_token,
-            "email": request.email,
-            "expires_at": expires_at,
-            "used": False,
-            "created_at": datetime.now(timezone.utc)
-        })
-        
-        # Send magic link email
-        email_sent = await send_magic_link_email(request.email, magic_token)
-        
-        if not email_sent:
-            raise HTTPException(
-                status_code=500,
-                detail="Erreur lors de l'envoi de l'email"
-            )
-        
+        # P0 SECURITY: Always return 200 with neutral message
+        # This prevents email enumeration attacks
         return {
-            "message": "Lien de connexion envoyé par email",
-            "email": request.email
+            "message": "Si un compte Pro existe pour cette adresse, un lien de connexion a été envoyé",
+            "success": True
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error in request login: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Erreur lors de la demande de connexion"
+        # Log error attempt
+        await auth_service.log_auth_attempt(
+            email=request_body.email,
+            action="request_login",
+            success=False,
+            ip_address=ip_address,
+            error_msg=str(e)
         )
+        # Still return 200 for security
+        return {
+            "message": "Si un compte Pro existe pour cette adresse, un lien de connexion a été envoyé",
+            "success": True
+        }
 
 @api_router.post("/auth/verify-login")
-async def verify_login(request: VerifyLoginRequest):
-    """Verify magic link token and create session"""
+@limiter.limit("10/15minutes")  # P0: Rate limit - 10 requests per 15 minutes
+async def verify_login(request_body: VerifyLoginRequest, response: Response, request: Request):
+    """
+    Verify magic link token and create session.
+    P0: Uses hashed tokens + sets httpOnly cookie.
+    P0: Rate limited to 10 req/15min per IP.
+    """
+    auth_service = SecureAuthService(db)
+    
     try:
-        logger.info(f"Attempting to verify login with token: {request.token[:20]}...")
+        logger.info("Attempting to verify login token...")
         
-        # Find magic token
-        magic_token_doc = await db.magic_tokens.find_one({
-            "token": request.token,
-            "used": False
-        })
+        # Verify token using secure hash comparison
+        token_doc = await auth_service.verify_magic_token(
+            raw_token=request_body.token,
+            expected_action="login"
+        )
         
-        if not magic_token_doc:
-            logger.warning(f"Magic token not found or already used: {request.token[:20]}...")
-            
-            # Check if token exists but is used
-            used_token = await db.magic_tokens.find_one({"token": request.token})
-            if used_token:
-                logger.info("Token exists but is already used")
-                raise HTTPException(
-                    status_code=400,
-                    detail="Token déjà utilisé"
-                )
-            else:
-                logger.info("Token does not exist in database")
-                raise HTTPException(
-                    status_code=400,
-                    detail="Token invalide"
-                )
-        
-        logger.info(f"Magic token found for email: {magic_token_doc.get('email')}")
-        
-        # Check token expiration
-        expires_at = magic_token_doc.get('expires_at')
-        if isinstance(expires_at, str):
-            expires_at = datetime.fromisoformat(expires_at).replace(tzinfo=timezone.utc)
-        elif isinstance(expires_at, datetime) and expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-            
-        now = datetime.now(timezone.utc)
-        
-        if expires_at < now:
-            logger.warning(f"Token expired: expires_at={expires_at}, now={now}")
-            # Token expired
-            await db.magic_tokens.delete_one({"token": request.token})
+        if not token_doc:
             raise HTTPException(
                 status_code=400,
-                detail="Token expiré"
+                detail="Token invalide ou expiré"
             )
         
-        email = magic_token_doc.get('email')
-        logger.info(f"Token is valid for email: {email}")
+        email = token_doc.get('email')
+        logger.info(f"Token valid for email: {email}")
         
         # Verify user is still Pro
         is_pro, user = await check_user_pro_status(email)
@@ -3484,17 +3809,16 @@ async def verify_login(request: VerifyLoginRequest):
                 detail="Abonnement Pro expiré"
             )
         
-        logger.info(f"User {email} confirmed as Pro")
+        # Mark token as used (prevents replay attacks)
+        token_hash = auth_service.hash_token(request_body.token)
+        await auth_service.mark_token_used(token_hash)
+        logger.info(f"Token marked as used for {email}")
         
-        # Mark token as used
-        await db.magic_tokens.update_one(
-            {"token": request.token},
-            {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}}
-        )
-        logger.info(f"Magic token marked as used for {email}")
+        # P1: Extract device info from request
+        device_info = extract_device_info(request)
         
-        # Create login session
-        session_token = await create_login_session(email, request.device_id)
+        # Create login session with device info
+        session_token = await create_login_session(email, request.device_id, device_info)
         
         if not session_token:
             logger.error("Failed to create login session")
@@ -3503,12 +3827,26 @@ async def verify_login(request: VerifyLoginRequest):
                 detail="Erreur lors de la création de la session"
             )
         
-        logger.info(f"Login session created successfully for {email}")
+        # P0 SECURITY: Set session in httpOnly cookie
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        is_secure = environment == 'production'
+        
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=is_secure,  # True in production (HTTPS only)
+            samesite="lax",  # CSRF protection
+            max_age=86400,  # 24 hours
+            path="/"
+        )
+        
+        logger.info(f"Login session created successfully for {email} (cookie set)")
         
         return {
             "message": "Connexion réussie",
             "email": email,
-            "session_token": session_token,
+            "session_token": session_token,  # Also return for backward compat
             "expires_in": "24h"
         }
         
@@ -3516,6 +3854,122 @@ async def verify_login(request: VerifyLoginRequest):
         raise
     except Exception as e:
         logger.error(f"Error in verify login: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la vérification du token"
+        )
+
+@api_router.post("/auth/verify-checkout-token")
+@limiter.limit("10/15minutes")  # Rate limit - 10 requests per 15 minutes
+async def verify_checkout_token(request_body: VerifyLoginRequest, response: Response, request: Request):
+    """
+    Verify checkout magic link token (action="pre_checkout") and create temporary session.
+    Used for new user registration flow before payment.
+    """
+    auth_service = SecureAuthService(db)
+    
+    try:
+        logger.info("Attempting to verify checkout token...")
+        
+        # Verify token with action="pre_checkout" (not "login")
+        token_doc = await auth_service.verify_magic_token(
+            raw_token=request_body.token,
+            expected_action="pre_checkout"  # ✅ Vérifier action="pre_checkout"
+        )
+        
+        if not token_doc:
+            raise HTTPException(
+                status_code=400,
+                detail="Lien invalide ou expiré"
+            )
+        
+        email = token_doc.get('email')
+        metadata = token_doc.get('metadata', {})
+        package_id = metadata.get('package_id', 'monthly')
+        
+        logger.info(f"Checkout token valid for email: {email}, package: {package_id}")
+        
+        # Mark token as used (prevents replay attacks)
+        token_hash = auth_service.hash_token(request_body.token)
+        await auth_service.mark_token_used(token_hash)
+        logger.info(f"Token marked as used for {email}")
+        
+        # ✅ EN MODE DÉVELOPPEMENT : Créer automatiquement l'utilisateur Pro
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        if environment == 'development':
+            # Vérifier si l'utilisateur existe déjà
+            is_pro, existing_user = await check_user_pro_status(email)
+            
+            if not is_pro:
+                # Créer l'utilisateur Pro automatiquement en mode dev
+                package = PRICING_PACKAGES[package_id]
+                now = datetime.now(timezone.utc)
+                
+                # Calculer la date d'expiration
+                if package["duration"] == "monthly":
+                    expires = now + timedelta(days=30)
+                else:  # yearly
+                    expires = now + timedelta(days=365)
+                
+                # Créer l'utilisateur Pro
+                pro_user = ProUser(
+                    email=email,
+                    nom=None,
+                    etablissement=None,
+                    subscription_type=package["duration"],
+                    subscription_expires=expires,
+                    last_login=None
+                )
+                
+                # Sauvegarder dans la base de données (upsert)
+                await db.pro_users.update_one(
+                    {"email": email},
+                    {"$set": pro_user.dict()},
+                    upsert=True
+                )
+                
+                logger.info(f"✅ DEV MODE: Pro user auto-created for {email} - {package['duration']} subscription expires {expires.strftime('%d/%m/%Y %H:%M')}")
+        
+        # P1: Extract device info from request
+        device_info = extract_device_info(request)
+        
+        # Create session (user now has pro_users account in dev mode)
+        session_token = await create_login_session(email, request_body.device_id, device_info)
+        
+        if not session_token:
+            logger.error("Failed to create login session for checkout")
+            raise HTTPException(
+                status_code=500,
+                detail="Erreur lors de la création de la session"
+            )
+        
+        # P0 SECURITY: Set session in httpOnly cookie
+        is_secure = environment == 'production'
+        
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax",
+            max_age=86400,  # 24 hours
+            path="/"
+        )
+        
+        logger.info(f"Checkout session created successfully for {email} (cookie set)")
+        
+        return {
+            "message": "Token vérifié",
+            "email": email,
+            "package_id": package_id,
+            "session_token": session_token,  # Also return for backward compat
+            "expires_in": "24h"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying checkout token: {e}")
         raise HTTPException(
             status_code=500,
             detail="Erreur lors de la vérification du token"
@@ -3887,7 +4341,7 @@ async def check_quota_status(guest_id: str):
     return result
 @api_router.get("/auth/session/validate")
 async def validate_session(request: Request):
-    """Validate current session and return user info"""
+    """Validate current session and return user info (legacy endpoint)"""
     try:
         session_token = request.headers.get("X-Session-Token")
         
@@ -3930,6 +4384,616 @@ async def validate_session(request: Request):
         raise HTTPException(
             status_code=500,
             detail="Erreur lors de la validation de session"
+        )
+
+@api_router.get("/auth/me")
+async def get_current_user(request: Request):
+    """
+    P0: Get current user info from session (cookie or header).
+    Replaces /auth/session/validate with better design.
+    """
+    try:
+        # Try cookie first (P0 secure), fallback to header (backward compat)
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Non authentifié"
+            )
+        
+        email = await validate_session_token(session_token)
+        
+        if not email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Check if user is still Pro
+        is_pro, user = await check_user_pro_status(email)
+        
+        if not is_pro:
+            # Clean up session if user is no longer Pro
+            await db.login_sessions.delete_one({"session_token": session_token})
+            raise HTTPException(
+                status_code=403,
+                detail="Abonnement Pro expiré"
+            )
+        
+        return {
+            "email": email,
+            "is_pro": True,
+            "subscription_type": user.get('subscription_type'),
+            "subscription_expires": user.get('subscription_expires'),
+            "nom": user.get('nom'),
+            "etablissement": user.get('etablissement'),
+            "last_login": user.get('last_login')
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la récupération de l'utilisateur"
+        )
+
+@api_router.get("/auth/sessions")
+async def get_user_sessions(request: Request):
+    """
+    P1: Get all active sessions for the current user.
+    Returns list of sessions with device info.
+    """
+    try:
+        # Get session token from cookie or header
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Non authentifié"
+            )
+        
+        # Validate session and get email
+        email = await validate_session_token(session_token)
+        if not email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Get all active sessions for this user
+        now = datetime.now(timezone.utc)
+        sessions_cursor = db.login_sessions.find({
+            "user_email": email,
+            "expires_at": {"$gt": now.isoformat()}
+        }).sort("created_at", -1)  # Most recent first
+        
+        sessions = []
+        current_session_id = None
+        
+        async for session_doc in sessions_cursor:
+            # Parse dates
+            created_at = session_doc.get("created_at")
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            
+            last_used = session_doc.get("last_used")
+            if isinstance(last_used, str):
+                last_used = datetime.fromisoformat(last_used.replace('Z', '+00:00'))
+            
+            device_info = session_doc.get("device_info", {})
+            
+            session_data = {
+                "session_id": str(session_doc["_id"]),
+                "device_id": session_doc.get("device_id", "unknown"),
+                "device_type": device_info.get("device_type", "unknown"),
+                "browser": device_info.get("browser", "unknown"),
+                "os": device_info.get("os", "unknown"),
+                "ip_address": device_info.get("ip_address"),
+                "created_at": created_at.isoformat() if created_at else None,
+                "last_used": last_used.isoformat() if last_used else None,
+                "is_current": session_doc.get("session_token") == session_token
+            }
+            
+            sessions.append(session_data)
+            
+            # Track current session
+            if session_data["is_current"]:
+                current_session_id = session_data["session_id"]
+        
+        logger.info(f"P1: Retrieved {len(sessions)} active sessions for {email}")
+        
+        return {
+            "sessions": sessions,
+            "current_session_id": current_session_id,
+            "total": len(sessions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user sessions: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la récupération des sessions"
+        )
+
+@api_router.delete("/auth/sessions/{session_id}")
+async def delete_user_session(session_id: str, request: Request):
+    """
+    P1: Delete a specific session.
+    User can only delete their own sessions, and cannot delete the current session.
+    """
+    try:
+        # Get session token from cookie or header
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Non authentifié"
+            )
+        
+        # Validate session and get email
+        email = await validate_session_token(session_token)
+        if not email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Find the session to delete
+        from bson import ObjectId
+        try:
+            session_obj_id = ObjectId(session_id)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="ID de session invalide"
+            )
+        
+        session_to_delete = await db.login_sessions.find_one({
+            "_id": session_obj_id,
+            "user_email": email  # P1: Security - only delete own sessions
+        })
+        
+        if not session_to_delete:
+            raise HTTPException(
+                status_code=404,
+                detail="Session non trouvée ou vous n'avez pas l'autorisation"
+            )
+        
+        # P1: Prevent deleting current session
+        if session_to_delete.get("session_token") == session_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible de supprimer la session actuelle. Déconnectez-vous depuis un autre appareil."
+            )
+        
+        # Delete the session
+        delete_result = await db.login_sessions.delete_one({"_id": session_obj_id})
+        
+        if delete_result.deleted_count > 0:
+            logger.info(
+                f"P1: User {email} deleted session {session_id} "
+                f"(device: {session_to_delete.get('device_id', 'unknown')})"
+            )
+            return {
+                "message": "Session supprimée avec succès",
+                "session_id": session_id
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="Session non trouvée"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting session: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la suppression de la session"
+        )
+
+# ============================================================================
+# P2 BUNDLE - HYBRID AUTH (Password optional)
+# ============================================================================
+
+@api_router.post("/auth/set-password")
+@limiter.limit("5/15minutes")  # P2: Rate limit - 5 requests per 15 minutes
+async def set_password(request_body: SetPasswordRequest, request: Request):
+    """
+    P2: Set password for Pro user account (requires active session).
+    Password is optional - magic link remains the default auth method.
+    """
+    try:
+        # Get session token from cookie or header
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Session requise pour définir un mot de passe"
+            )
+        
+        # Validate session and get email
+        email = await validate_session_token(session_token)
+        if not email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Verify user is Pro
+        is_pro, user = await check_user_pro_status(email)
+        if not is_pro:
+            raise HTTPException(
+                status_code=403,
+                detail="Abonnement Pro requis"
+            )
+        
+        # Validate password confirmation match
+        if request_body.password != request_body.password_confirm:
+            raise HTTPException(
+                status_code=400,
+                detail="Les mots de passe ne correspondent pas"
+            )
+        
+        # Validate password strength
+        is_valid, error_msg = validate_password_strength(request_body.password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+        
+        # Hash password
+        password_hash = hash_password(request_body.password)
+        
+        # Update user in database
+        await db.pro_users.update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "password_hash": password_hash,
+                    "password_set_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        logger.info(f"P2: Password set successfully for {email}")
+        
+        # Log auth attempt (success)
+        auth_service = SecureAuthService(db)
+        ip_address = request.client.host if request.client else None
+        await auth_service.log_auth_attempt(
+            email=email,
+            action="set_password",
+            success=True,
+            ip_address=ip_address
+        )
+        
+        return {
+            "message": "Mot de passe défini avec succès"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting password: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la définition du mot de passe"
+        )
+
+@api_router.post("/auth/login-password")
+@limiter.limit("10/15minutes")  # P2: Rate limit - 10 requests per 15 minutes
+async def login_password(request_body: LoginPasswordRequest, response: Response, request: Request):
+    """
+    P2: Login with email + password (hybrid auth).
+    Requires password to be set first (via /auth/set-password).
+    Magic link remains the default auth method.
+    """
+    auth_service = SecureAuthService(db)
+    ip_address = request.client.host if request.client else None
+    
+    try:
+        # Find user in database
+        user = await db.pro_users.find_one({"email": request_body.email})
+        
+        if not user:
+            # P2: Neutral response (anti-enumeration)
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="login_password",
+                success=False,
+                ip_address=ip_address,
+                error_msg="User not found"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Email ou mot de passe incorrect"
+            )
+        
+        # Check if password is set
+        password_hash = user.get("password_hash")
+        if not password_hash:
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="login_password",
+                success=False,
+                ip_address=ip_address,
+                error_msg="Password not set"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Aucun mot de passe défini pour ce compte. Utilisez le lien magique pour vous connecter."
+            )
+        
+        # Verify password
+        if not verify_password(request_body.password, password_hash):
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="login_password",
+                success=False,
+                ip_address=ip_address,
+                error_msg="Invalid password"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Email ou mot de passe incorrect"
+            )
+        
+        # Verify user is still Pro
+        is_pro, _ = await check_user_pro_status(request_body.email)
+        if not is_pro:
+            raise HTTPException(
+                status_code=403,
+                detail="Abonnement Pro expiré"
+            )
+        
+        # Generate device ID (if not provided, create one)
+        device_id = request.headers.get("X-Device-ID") or f"device-{uuid.uuid4()}"
+        
+        # Extract device info
+        device_info = extract_device_info(request)
+        
+        # Create login session (P1: multi-device support)
+        session_token = await create_login_session(
+            request_body.email,
+            device_id,
+            device_info
+        )
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=500,
+                detail="Erreur lors de la création de la session"
+            )
+        
+        # P0 SECURITY: Set session in httpOnly cookie
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        is_secure = environment == 'production'
+        
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax",
+            max_age=86400,  # 24 hours
+            path="/"
+        )
+        
+        # Log successful login
+        await auth_service.log_auth_attempt(
+            email=request_body.email,
+            action="login_password",
+            success=True,
+            ip_address=ip_address
+        )
+        
+        logger.info(f"P2: Password login successful for {request_body.email}")
+        
+        return {
+            "message": "Connexion réussie",
+            "email": request_body.email,
+            "session_token": session_token,  # Also return for backward compat
+            "expires_in": "24h"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in password login: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la connexion"
+        )
+
+@api_router.post("/auth/reset-password-request")
+@limiter.limit("5/15minutes")  # P2: Rate limit - 5 requests per 15 minutes
+async def reset_password_request(request_body: ResetPasswordRequest, request: Request):
+    """
+    P2: Request password reset (sends magic link with reset action).
+    Always returns 200 (neutral response) for security.
+    """
+    ip_address = request.client.host if request.client else None
+    auth_service = SecureAuthService(db)
+    
+    try:
+        # Check if user exists and is Pro
+        is_pro, user = await check_user_pro_status(request_body.email)
+        
+        if is_pro and user:
+            # Check if password is set (only reset if password exists)
+            password_hash = user.get("password_hash")
+            
+            if password_hash:
+                # Generate secure magic link token for password reset
+                raw_token, token_hash = await auth_service.create_magic_link(
+                    email=request_body.email,
+                    action="reset_password"
+                )
+                
+                # Send reset email
+                environment = os.environ.get('ENVIRONMENT', 'development')
+                frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+                reset_link = f"{frontend_url}/reset-password?token={raw_token}"
+                
+                if environment == 'development':
+                    # Mode local: Log the reset link
+                    logger.info(f"🔗 PASSWORD RESET LINK (dev): {reset_link}")
+                    logger.info(f"   Email: {request_body.email}")
+                else:
+                    # Production: Send email via Brevo
+                    email_sent = await send_password_reset_email(
+                        email=request_body.email,
+                        token=raw_token
+                    )
+                    if not email_sent:
+                        logger.error(f"Failed to send password reset email to {request_body.email}")
+                
+                # Log successful attempt
+                await auth_service.log_auth_attempt(
+                    email=request_body.email,
+                    action="reset_password_request",
+                    success=True,
+                    ip_address=ip_address
+                )
+            else:
+                # Password not set - log but don't reveal
+                await auth_service.log_auth_attempt(
+                    email=request_body.email,
+                    action="reset_password_request",
+                    success=False,
+                    ip_address=ip_address,
+                    error_msg="Password not set"
+                )
+        else:
+            # User not Pro or doesn't exist - log but don't reveal
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="reset_password_request",
+                success=False,
+                ip_address=ip_address,
+                error_msg="User not Pro or doesn't exist"
+            )
+        
+        # P2 SECURITY: Always return 200 (neutral response)
+        return {
+            "message": "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé",
+            "success": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in reset password request: {e}")
+        await auth_service.log_auth_attempt(
+            email=request_body.email,
+            action="reset_password_request",
+            success=False,
+            ip_address=ip_address,
+            error_msg=str(e)
+        )
+        # Still return 200 for security
+        return {
+            "message": "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé",
+            "success": True
+        }
+
+@api_router.post("/auth/reset-password-confirm")
+@limiter.limit("5/15minutes")  # P2: Rate limit - 5 requests per 15 minutes
+async def reset_password_confirm(request_body: ResetPasswordConfirmRequest, request: Request):
+    """
+    P2: Confirm password reset with token and set new password.
+    """
+    auth_service = SecureAuthService(db)
+    ip_address = request.client.host if request.client else None
+    
+    try:
+        # Verify token using secure hash comparison
+        token_doc = await auth_service.verify_magic_token(
+            raw_token=request_body.token,
+            expected_action="reset_password"
+        )
+        
+        if not token_doc:
+            raise HTTPException(
+                status_code=400,
+                detail="Token invalide ou expiré"
+            )
+        
+        email = token_doc.get('email')
+        logger.info(f"P2: Password reset token valid for {email}")
+        
+        # Verify user is still Pro
+        is_pro, user = await check_user_pro_status(email)
+        if not is_pro:
+            raise HTTPException(
+                status_code=403,
+                detail="Abonnement Pro expiré"
+            )
+        
+        # Validate password strength
+        is_valid, error_msg = validate_password_strength(request_body.new_password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+        
+        # Hash new password
+        password_hash = hash_password(request_body.new_password)
+        
+        # Mark token as used (prevents replay attacks)
+        token_hash = auth_service.hash_token(request_body.token)
+        await auth_service.mark_token_used(token_hash)
+        
+        # Update user password
+        await db.pro_users.update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "password_hash": password_hash,
+                    "password_set_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        logger.info(f"P2: Password reset successful for {email}")
+        
+        # Log successful reset
+        await auth_service.log_auth_attempt(
+            email=email,
+            action="reset_password_confirm",
+            success=True,
+            ip_address=ip_address
+        )
+        
+        return {
+            "message": "Mot de passe réinitialisé avec succès"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in reset password confirm: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la réinitialisation du mot de passe"
         )
 async def check_quota_status(guest_id: str):
     """Check current quota status for guest user"""
@@ -4513,18 +5577,167 @@ async def export_pdf_advanced(request: EnhancedExportRequest, http_request: Requ
         logger.error(f"Error exporting advanced PDF: {e}")
         raise HTTPException(status_code=500, detail="Erreur lors de l'export PDF avancé")
 
-@api_router.post("/checkout/session")
-async def create_checkout_session(request: CheckoutRequest, http_request: Request):
-    """Create Stripe checkout session"""
+# ============================================================================
+# P0 BUNDLE - SECURE CHECKOUT FLOW
+# ============================================================================
+
+@api_router.post("/auth/pre-checkout")
+@limiter.limit("3/15minutes")  # P0: Rate limit - 3 requests per 15 minutes
+async def pre_checkout(request_body: PreCheckoutRequest, request: Request):
+    """
+    P0: Initiate secure checkout by validating email BEFORE Stripe.
+    Sends magic link to user to verify email before payment.
+    
+    Rate limited to prevent abuse.
+    Always returns 200 (neutral response) for security.
+    """
+    ip_address = request.client.host if request.client else None
+    auth_service = SecureAuthService(db)
+    
     try:
         # Validate package
-        if request.package_id not in PRICING_PACKAGES:
+        if request_body.package_id not in PRICING_PACKAGES:
+            # Still return 200 for security
+            logger.warning(f"Invalid package_id attempted: {request_body.package_id}")
+            return {
+                "message": "Si un compte Pro existe pour cette adresse, un lien de confirmation a été envoyé",
+                "success": True
+            }
+        
+        # Check if email is already subscribed
+        is_pro, existing_user = await check_user_pro_status(request_body.email)
+        
+        if is_pro:
+            # User already Pro: log but don't reveal
+            logger.info(f"Pre-checkout attempted for existing Pro user: {request_body.email}")
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="pre_checkout",
+                success=False,
+                ip_address=ip_address,
+                error_msg="Already subscribed"
+            )
+            # Neutral response
+            return {
+                "message": "Si un compte Pro existe pour cette adresse, un lien de confirmation a été envoyé",
+                "success": True
+            }
+        
+        # Generate secure magic link token for checkout
+        raw_token, token_hash = await auth_service.create_magic_link(
+            email=request_body.email,
+            action="pre_checkout",
+            metadata={"package_id": request_body.package_id}
+        )
+        
+        # Send email with magic link
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+        checkout_link = f"{frontend_url}/checkout?token={raw_token}"
+        
+        logger.info(f"🔍 Environment détecté: {environment}, Frontend URL: {frontend_url}")
+        
+        if environment == 'development':
+            # Mode local: Log the checkout link
+            logger.info(f"🔗 CHECKOUT LINK (dev): {checkout_link}")
+            logger.info(f"   Email: {request_body.email}")
+            logger.info(f"   Package: {request_body.package_id}")
+            
+            # ✅ Retourner le lien dans la réponse pour le frontend
+            # Log successful attempt
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="pre_checkout",
+                success=True,
+                ip_address=ip_address
+            )
+            
+            response_data = {
+                "message": "Un lien de confirmation a été envoyé à votre adresse email. Veuillez consulter votre boîte de réception.",
+                "success": True,
+                "dev_mode": True,  # Indicateur pour le frontend
+                "checkout_link": checkout_link,  # ✅ Le lien complet
+                "email": request_body.email,
+                "package_id": request_body.package_id
+            }
+            logger.info(f"📤 Retour dev mode avec checkout_link: {checkout_link}")
+            return response_data
+        else:
+            # Production: Send email
+            package = PRICING_PACKAGES[request_body.package_id]
+            email_sent = await send_checkout_confirmation_email(
+                email=request_body.email,
+                token=raw_token,
+                package=package
+            )
+            if not email_sent:
+                logger.error(f"Failed to send checkout email to {request_body.email}")
+                # Still return 200 for security
+        
+        # Log successful attempt
+        await auth_service.log_auth_attempt(
+            email=request_body.email,
+            action="pre_checkout",
+            success=True,
+            ip_address=ip_address
+        )
+        
+        # Neutral response
+        return {
+            "message": "Un lien de confirmation a été envoyé à votre adresse email. Veuillez consulter votre boîte de réception.",
+            "success": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in pre-checkout: {e}")
+        await auth_service.log_auth_attempt(
+            email=request.email,
+            action="pre_checkout",
+            success=False,
+            ip_address=ip_address,
+            error_msg=str(e)
+        )
+        # Neutral response even on error
+        return {
+            "message": "Un lien de confirmation a été envoyé à votre adresse email. Veuillez consulter votre boîte de réception.",
+            "success": True
+        }
+
+@api_router.post("/checkout/session")
+@limiter.limit("3/1hour")  # P0: Rate limit - 3 requests per hour
+async def create_checkout_session(request_body: CheckoutRequest, request: Request):
+    """
+    Create Stripe checkout session.
+    P0: NOW REQUIRES SESSION (no email in request body).
+    Use /auth/pre-checkout first to validate email.
+    """
+    try:
+        # P0: Get email from session (cookie or header)
+        session_token = request.cookies.get("session_token")
+        if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+        
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Session requise. Veuillez utiliser /auth/pre-checkout d'abord."
+            )
+        
+        # Validate session and get email
+        email = await validate_session_token(session_token)
+        if not email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Validate package
+        if request_body.package_id not in PRICING_PACKAGES:
             raise HTTPException(status_code=400, detail="Package invalide")
         
         # Check if email is already subscribed (anti-duplicate protection)
-        if request.email:
-            is_pro, existing_user = await check_user_pro_status(request.email)
-            if is_pro and existing_user:
+        is_pro, existing_user = await check_user_pro_status(email)
+        if is_pro and existing_user:
                 subscription_expires = existing_user.get("subscription_expires")
                 subscription_type = existing_user.get("subscription_type", "inconnu")
                 
@@ -4538,7 +5751,7 @@ async def create_checkout_session(request: CheckoutRequest, http_request: Reques
                 
                 formatted_date = expires_date.strftime("%d/%m/%Y")
                 
-                logger.info(f"Duplicate subscription attempt for {request.email} - already Pro until {formatted_date}")
+                logger.info(f"Duplicate subscription attempt for {email} - already Pro until {formatted_date}")
                 
                 raise HTTPException(
                     status_code=409,  # Conflict
@@ -4551,25 +5764,25 @@ async def create_checkout_session(request: CheckoutRequest, http_request: Reques
                     }
                 )
         
-        package = PRICING_PACKAGES[request.package_id]
-        logger.info(f"Creating checkout session for package: {package}")
+        package = PRICING_PACKAGES[request_body.package_id]
+        logger.info(f"Creating checkout session for package: {package} - User: {email}")
         
         # Initialize Stripe
-        host_url = str(http_request.base_url).rstrip('/')
+        host_url = str(request.base_url).rstrip('/')
         webhook_url = f"{host_url}/api/webhook/stripe"
         stripe_checkout = StripeCheckout(api_key=stripe_secret_key, webhook_url=webhook_url)
         
         # Build URLs from frontend origin
-        success_url = f"{request.origin_url}/success?session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{request.origin_url}/cancel"
+        success_url = f"{request_body.origin_url}/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{request_body.origin_url}/cancel"
         
-        # Prepare metadata
+        # P0: Prepare metadata with email from session (NOT from request body)
         metadata = {
-            "package_id": request.package_id,
-            "email": request.email or "",
-            "nom": request.nom or "",
-            "etablissement": request.etablissement or "",
-            "source": "lemaitremot_web"
+            "package_id": request_body.package_id,
+            "email": email,  # P0: Email from validated session
+            "nom": request_body.nom or "",
+            "etablissement": request_body.etablissement or "",
+            "source": "lemaitremot_web_p0_secure"
         }
         
         # Create checkout session request
@@ -4585,12 +5798,13 @@ async def create_checkout_session(request: CheckoutRequest, http_request: Reques
         session = await stripe_checkout.create_checkout_session(checkout_request)
         
         # Store transaction
+        # ✅ P0: Email from validated session, NOT from request body
         transaction = PaymentTransaction(
             session_id=session.session_id,
             amount=package["amount"],
             currency=package["currency"],
             package_id=request.package_id,
-            email=request.email,
+            email=email,  # ✅ From session, not request.email
             metadata=metadata,
             payment_status="pending",
             session_status="initiated"
@@ -4789,6 +6003,220 @@ async def get_user_status(email: str):
         logger.error(f"Error getting user status: {e}")
         return {"is_pro": False, "account_type": "guest"}
 
+# ============================================================================
+# P3.0 BUNDLE - USER EXERCISES LIBRARY (Bibliothèque d'exercices)
+# ============================================================================
+
+class UserExerciseSaveRequest(BaseModel):
+    """Modèle pour sauvegarder un exercice généré"""
+    exercise_uid: str = Field(..., description="UUID unique de l'exercice")
+    generator_key: Optional[str] = Field(None, description="Clé du générateur utilisé")
+    code_officiel: str = Field(..., description="Code officiel du chapitre (ex: 6e_N08)")
+    difficulty: str = Field(..., description="Difficulté (facile, moyen, difficile)")
+    seed: Optional[int] = Field(None, description="Seed utilisé pour la génération")
+    variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Variables générées")
+    enonce_html: str = Field(..., description="Énoncé HTML de l'exercice")
+    solution_html: str = Field(..., description="Solution HTML de l'exercice")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Métadonnées additionnelles")
+
+@api_router.post("/user/exercises")
+async def save_user_exercise(
+    request_body: UserExerciseSaveRequest,
+    request: Request
+):
+    """
+    P3.0: Sauvegarder un exercice généré dans la bibliothèque utilisateur.
+    Requiert une session active.
+    """
+    try:
+        # Valider la session
+        session_token = request.headers.get("X-Session-Token")
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentification requise pour sauvegarder un exercice"
+            )
+        
+        user_email = await validate_session_token(session_token)
+        if not user_email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Vérifier si l'exercice existe déjà (doublon)
+        existing = await db.user_exercises.find_one({
+            "user_email": user_email,
+            "exercise_uid": request_body.exercise_uid
+        })
+        
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Cet exercice est déjà sauvegardé"
+            )
+        
+        # Créer le document
+        exercise_doc = {
+            "user_email": user_email,
+            "exercise_uid": request_body.exercise_uid,
+            "generator_key": request_body.generator_key,
+            "code_officiel": request_body.code_officiel,
+            "difficulty": request_body.difficulty,
+            "seed": request_body.seed,
+            "variables": request_body.variables or {},
+            "enonce_html": request_body.enonce_html,
+            "solution_html": request_body.solution_html,
+            "metadata": request_body.metadata or {},
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        
+        await db.user_exercises.insert_one(exercise_doc)
+        
+        logger.info(
+            f"P3.0: Exercice sauvegardé pour {user_email} - exercise_uid={request_body.exercise_uid}, code_officiel={request_body.code_officiel}"
+        )
+        
+        return {
+            "success": True,
+            "message": "Exercice sauvegardé avec succès",
+            "exercise_uid": request_body.exercise_uid
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde de l'exercice: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la sauvegarde de l'exercice"
+        )
+
+@api_router.get("/user/exercises")
+async def get_user_exercises(
+    request: Request,
+    code_officiel: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    limit: int = 50
+):
+    """
+    P3.0: Récupérer la liste des exercices sauvegardés de l'utilisateur.
+    Requiert une session active.
+    """
+    try:
+        # Valider la session
+        session_token = request.headers.get("X-Session-Token")
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentification requise"
+            )
+        
+        user_email = await validate_session_token(session_token)
+        if not user_email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Construire la requête
+        query = {"user_email": user_email}
+        
+        if code_officiel:
+            query["code_officiel"] = code_officiel
+        
+        if difficulty:
+            query["difficulty"] = difficulty
+        
+        # Récupérer les exercices (triés par date DESC)
+        cursor = db.user_exercises.find(query).sort("created_at", -1).limit(limit)
+        exercises = await cursor.to_list(length=limit)
+        
+        # Nettoyer les _id MongoDB pour la réponse
+        for ex in exercises:
+            ex["id"] = str(ex.pop("_id"))
+            # Convertir datetime en ISO string
+            if isinstance(ex.get("created_at"), datetime):
+                ex["created_at"] = ex["created_at"].isoformat()
+            if isinstance(ex.get("updated_at"), datetime):
+                ex["updated_at"] = ex["updated_at"].isoformat()
+        
+        logger.info(
+            f"P3.0: Liste exercices récupérée pour {user_email} - count={len(exercises)}, filters={{code_officiel={code_officiel}, difficulty={difficulty}}}"
+        )
+        
+        return {
+            "exercises": exercises,
+            "count": len(exercises)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des exercices: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la récupération des exercices"
+        )
+
+@api_router.delete("/user/exercises/{exercise_uid}")
+async def delete_user_exercise(
+    exercise_uid: str,
+    http_request: Request
+):
+    """
+    P3.0: Supprimer un exercice sauvegardé.
+    Requiert une session active et ownership de l'exercice.
+    """
+    try:
+        # Valider la session
+        session_token = http_request.headers.get("X-Session-Token")
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentification requise"
+            )
+        
+        user_email = await validate_session_token(session_token)
+        if not user_email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # Vérifier ownership et supprimer
+        result = await db.user_exercises.delete_one({
+            "user_email": user_email,
+            "exercise_uid": exercise_uid
+        })
+        
+        if result.deleted_count == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="Exercice non trouvé ou vous n'avez pas les droits pour le supprimer"
+            )
+        
+        logger.info(
+            f"P3.0: Exercice supprimé pour {user_email}",
+            exercise_uid=exercise_uid
+        )
+        
+        return {
+            "success": True,
+            "message": "Exercice supprimé avec succès",
+            "exercise_uid": exercise_uid
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'exercice: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la suppression de l'exercice"
+        )
+
 @api_router.get("/documents")
 @log_execution_time("get_documents")
 async def get_documents(guest_id: str = None):
@@ -4937,6 +6365,16 @@ app.include_router(admin_template_router, tags=["Admin Templates"])
 # Routes admin exercices statiques (P1.5 - Partie 2/3)
 from backend.routes.admin_static_exercises_routes import router as admin_static_exercises_router
 app.include_router(admin_static_exercises_router, tags=["Admin Static Exercises"])
+
+# P0 - Import secure auth service
+from backend.services.secure_auth_service import SecureAuthService
+
+# P2 - Import password auth service
+from backend.services.auth_password_service import (
+    hash_password,
+    verify_password,
+    validate_password_strength
+)
 
 app.add_middleware(
     CORSMiddleware,

@@ -79,3 +79,6 @@ La page `/generer` affichait initialement un exercice à la fois avec pagination
 - Les erreurs sont gérées proprement avec arrêt du batch (pas de spinner infini)
 
 
+
+
+

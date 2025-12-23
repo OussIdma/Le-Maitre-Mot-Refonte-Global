@@ -39,7 +39,9 @@ import MathRenderer from "./MathRenderer";
 import { useToast } from "../hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
-import { Trash2, RefreshCw } from "lucide-react";
+import { Trash2, RefreshCw, Save, Check } from "lucide-react";
+import PremiumUpsellModal from "./PremiumUpsellModal";
+import UpgradeProModal, { trackPremiumEvent } from "./UpgradeProModal";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API_V1 = `${BACKEND_URL}/api/v1/exercises`;
@@ -164,6 +166,27 @@ const ExerciseGeneratorPage = () => {
   // État pour le warning batch (pool insuffisant)
   const [batchWarning, setBatchWarning] = useState(null);
   
+  // P3.0: États pour la sauvegarde d'exercices
+  const [savedExercises, setSavedExercises] = useState(new Set()); // Set d'exercise_uid sauvegardés
+  const [savingExerciseId, setSavingExerciseId] = useState(null); // exercise_uid en cours de sauvegarde
+  
+  // État pour la modal Premium Upsell
+  
+  // Track premium badges viewed (P2.2)
+  useEffect(() => {
+    exercises.forEach((exercise, index) => {
+      if (exercise.metadata?.premium_available && 
+          !exercise.metadata?.is_premium && 
+          !isPro) {
+        trackPremiumEvent('premium_badge_viewed', {
+          exercise_id: exercise.id_exercice,
+          generator_key: exercise.metadata?.generator_key,
+          index: index
+        });
+      }
+    });
+  }, [exercises, isPro]); // eslint-disable-line react-hooks/exhaustive-deps
+  
   // Initialiser l'authentification PRO
   useEffect(() => {
     const storedSessionToken = localStorage.getItem('lemaitremot_session_token');
@@ -174,8 +197,120 @@ const ExerciseGeneratorPage = () => {
       setUserEmail(storedEmail);
       setIsPro(true);
       console.log('🌟 Mode PRO activé:', storedEmail);
+      
+      // P3.0: Charger les exercices sauvegardés pour marquer ceux déjà sauvegardés
+      loadSavedExercises(storedSessionToken);
     }
   }, []);
+  
+  // P3.0: Charger les exercices sauvegardés pour vérifier lesquels sont déjà sauvegardés
+  const loadSavedExercises = async (sessionToken) => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/api/user/exercises`, {
+        headers: {
+          'X-Session-Token': sessionToken
+        }
+      });
+      
+      const savedUids = new Set(response.data.exercises.map(ex => ex.exercise_uid));
+      setSavedExercises(savedUids);
+      console.log('📚 Exercices sauvegardés chargés:', savedUids.size);
+    } catch (error) {
+      console.error('Erreur chargement exercices sauvegardés:', error);
+      // Ne pas bloquer si erreur
+    }
+  };
+  
+  // P3.0: Sauvegarder un exercice
+  const handleSaveExercise = async (exercise) => {
+    const sessionToken = localStorage.getItem('lemaitremot_session_token');
+    
+    if (!sessionToken) {
+      toast({
+        title: "Authentification requise",
+        description: "Veuillez vous connecter pour sauvegarder un exercice",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Vérifier si déjà sauvegardé
+    if (savedExercises.has(exercise.id_exercice)) {
+      toast({
+        title: "Déjà sauvegardé",
+        description: "Cet exercice est déjà dans votre bibliothèque",
+        variant: "default"
+      });
+      return;
+    }
+    
+    setSavingExerciseId(exercise.id_exercice);
+    
+    try {
+      // Préparer les données pour la sauvegarde
+      const saveData = {
+        exercise_uid: exercise.id_exercice,
+        generator_key: exercise.metadata?.generator_key || null,
+        code_officiel: exercise.metadata?.code_officiel || selectedItem,
+        difficulty: exercise.metadata?.difficulte || difficulte,
+        seed: exercise.metadata?.seed || null,
+        variables: exercise.metadata?.variables || {},
+        enonce_html: exercise.enonce_html,
+        solution_html: exercise.solution_html,
+        metadata: {
+          niveau: exercise.niveau,
+          chapitre: exercise.chapitre,
+          ...exercise.metadata
+        }
+      };
+      
+      const response = await axios.post(
+        `${BACKEND_URL}/api/user/exercises`,
+        saveData,
+        {
+          headers: {
+            'X-Session-Token': sessionToken
+          }
+        }
+      );
+      
+      // Marquer comme sauvegardé
+      setSavedExercises(prev => new Set([...prev, exercise.id_exercice]));
+      
+      toast({
+        title: "✅ Exercice sauvegardé",
+        description: "L'exercice a été ajouté à votre bibliothèque",
+        variant: "default"
+      });
+      
+    } catch (error) {
+      console.error('Erreur sauvegarde exercice:', error);
+      
+      if (error.response?.status === 401) {
+        toast({
+          title: "Session expirée",
+          description: "Veuillez vous reconnecter",
+          variant: "destructive"
+        });
+      } else if (error.response?.status === 409) {
+        // Déjà sauvegardé
+        setSavedExercises(prev => new Set([...prev, exercise.id_exercice]));
+        toast({
+          title: "Déjà sauvegardé",
+          description: "Cet exercice est déjà dans votre bibliothèque",
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Erreur",
+          description: "Impossible de sauvegarder l'exercice",
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setSavingExerciseId(null);
+    }
+  };
 
   // Charger le catalogue au montage et quand le niveau change
   useEffect(() => {
@@ -282,6 +417,31 @@ const ExerciseGeneratorPage = () => {
     setError(null);
     setBatchSeed(null);
   }, [viewMode]);
+
+  // ========================================================================
+  // Tracking Premium (P2.2)
+  // ========================================================================
+  const trackPremiumEvent = useCallback((eventName, metadata = {}) => {
+    console.log(`🎯 Premium Event: ${eventName}`, metadata);
+    // TODO: Intégrer avec système de tracking existant (analytics, Mixpanel, etc.)
+    // Pour l'instant, simple console.log
+  }, []);
+
+  // P2.3: Upgrade Pro Modal state
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeContext, setUpgradeContext] = useState('generator');
+
+  // Handlers modal Premium
+  const handleOpenPremiumModal = useCallback((context = 'generator') => {
+    trackPremiumEvent('premium_cta_clicked', { context });
+    setUpgradeContext(context);
+    setShowUpgradeModal(true);
+  }, []);
+
+
+  // ========================================================================
+  // Fin Tracking Premium
+  // ========================================================================
 
   // Fonction pour choisir un code_officiel depuis un macro group (avec rotation)
   const selectCodeFromMacro = useCallback((codes) => {
@@ -1131,6 +1291,34 @@ const ExerciseGeneratorPage = () => {
                         </Badge>
                       )}
                     </div>
+                    
+                    {/* P3.0: Bouton Sauvegarder */}
+                    {isPro && (
+                      <Button
+                        onClick={() => handleSaveExercise(exercise)}
+                        disabled={savingExerciseId === exercise.id_exercice || savedExercises.has(exercise.id_exercice)}
+                        variant={savedExercises.has(exercise.id_exercice) ? "outline" : "default"}
+                        size="sm"
+                        className={savedExercises.has(exercise.id_exercice) ? "border-green-300 text-green-700" : ""}
+                      >
+                        {savingExerciseId === exercise.id_exercice ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sauvegarde...
+                          </>
+                        ) : savedExercises.has(exercise.id_exercice) ? (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            Sauvegardé ✅
+                          </>
+                        ) : (
+                          <>
+                            <Save className="mr-2 h-4 w-4" />
+                            Sauvegarder
+                          </>
+                        )}
+                      </Button>
+                    )}
                   </div>
 
                   {/* Figure SVG Énoncé (nouvelle API ou compatibilité) */}
@@ -1205,6 +1393,44 @@ const ExerciseGeneratorPage = () => {
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
+
+                  {/* ========================================================================
+                      P2.2 - Badge Premium + CTA contextuel
+                      Afficher UNIQUEMENT si :
+                      - premium_available === true
+                      - is_premium === false (exercice gratuit)
+                      - isPro === false (utilisateur non Pro)
+                      ======================================================================== */}
+                  {exercise.metadata?.premium_available && 
+                   !exercise.metadata?.is_premium && 
+                   !isPro && (
+                    <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1 flex-shrink-0">
+                          <Crown className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 border border-purple-300">
+                              💎 Version Premium disponible
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-gray-700 mb-3">
+                            {exercise.metadata?.hint || "Certaines variantes avancées sont disponibles en version Pro."}
+                          </p>
+                          <Button
+                            onClick={handleOpenPremiumModal}
+                            variant="outline"
+                            size="sm"
+                            className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                          >
+                            <Crown className="mr-2 h-4 w-4" />
+                            Débloquer en Pro
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -1228,6 +1454,13 @@ const ExerciseGeneratorPage = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* P2.3 - Modal Upgrade Pro */}
+        <UpgradeProModal
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          context={upgradeContext}
+        />
       </div>
     </div>
   );

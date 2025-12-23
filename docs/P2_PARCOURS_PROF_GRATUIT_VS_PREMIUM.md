@@ -518,3 +518,6 @@ curl -X POST http://localhost:8000/api/v1/exercises/generate \
 
 **Prochaine étape** : Valider les priorités P2.1 et P2.2 avec l'équipe produit.
 
+
+
+

@@ -279,3 +279,6 @@ Modifier `backend/routes/exercises_routes.py` pour que les générateurs premium
 **Contributeurs :** Équipe IA + Expert Pédagogie + Architecte Système  
 **Révision :** Tests complets passés ✅
 
+
+
+

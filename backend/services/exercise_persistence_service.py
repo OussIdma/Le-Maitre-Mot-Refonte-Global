@@ -240,8 +240,10 @@ class ExercisePersistenceService:
         count = await self.collection.count_documents({"chapter_code": chapter_upper})
         
         if count == 0:
-            # Charger depuis le fichier Python existant
+            # Charger depuis le fichier Python existant (seulement pour chapitres pilotes)
             await self._load_from_python_file(chapter_upper)
+            # Recompter après chargement éventuel
+            count = await self.collection.count_documents({"chapter_code": chapter_upper})
         
         # Créer les index (idempotent, mais coûteux → éviter si possible)
         try:
@@ -613,7 +615,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         exercises = await self.collection.find(
             query,
             {"_id": 0}
-        ).sort("id", 1).to_list(100)
+        ).sort("id", 1).to_list(1000)  # Augmenter la limite pour les chapitres avec beaucoup d'exercices
         
         return exercises
     
@@ -898,6 +900,14 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             return True
         
         return False
+    
+    async def find_exercise_by_id_anywhere(self, exercise_id: int) -> Optional[Dict[str, Any]]:
+        """Trouve un exercice par son ID dans n'importe quel chapitre"""
+        exercise = await self.collection.find_one(
+            {"id": exercise_id},
+            {"_id": 0}
+        )
+        return exercise
     
     async def get_stats(self, chapter_code: str) -> Dict[str, Any]:
         """

@@ -24,14 +24,30 @@ async def init_database_indexes():
         
         print("🔧 Initializing database indexes for Le Maître Mot...")
         
-        # 1. Unique index on login_sessions.user_email (one session per user)
-        print("Creating unique index on login_sessions.user_email...")
+        # P1: Remove old unique constraint (allow multi-device)
+        print("Removing old unique constraint on login_sessions.user_email...")
+        try:
+            await db.login_sessions.drop_index("unique_user_session")
+            print("✅ Old unique constraint removed")
+        except Exception as e:
+            print(f"  Note: Index may not exist: {e}")
+        
+        # P1: Non-unique index on login_sessions.user_email (for multi-device support)
+        print("Creating non-unique index on login_sessions.user_email...")
         await db.login_sessions.create_index(
-            "user_email", 
-            unique=True,
-            name="unique_user_session"
+            "user_email",
+            unique=False,  # P1: Allow multiple sessions per user
+            name="user_email_index"
         )
-        print("✅ Unique session per user index created")
+        print("✅ User email index created (multi-device enabled)")
+        
+        # P1: Compound index for efficient sorting (user_email, created_at)
+        print("Creating compound index on login_sessions (user_email, created_at)...")
+        await db.login_sessions.create_index(
+            [("user_email", 1), ("created_at", 1)],
+            name="user_email_created_at_compound"
+        )
+        print("✅ Compound index created (for session ordering)")
         
         # 2. TTL index on login_sessions.expires_at (auto-cleanup expired sessions)
         print("Creating TTL index on login_sessions.expires_at...")
@@ -91,7 +107,7 @@ async def init_database_indexes():
         
         print("\n🎉 Database initialization completed successfully!")
         print("Security measures in place:")
-        print("  ✅ One session per user (unique constraint)")
+        print("  ✅ Multi-device support (max 3 sessions per user - P1)")
         print("  ✅ Automatic session cleanup on expiry")
         print("  ✅ Automatic magic token cleanup")
         print("  ✅ Pro user email uniqueness")

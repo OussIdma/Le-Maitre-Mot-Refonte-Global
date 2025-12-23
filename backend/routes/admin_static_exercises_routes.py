@@ -135,14 +135,42 @@ async def list_static_exercises_by_chapter(
             chapter_code=code_officiel
         )
         
-        # Récupérer les exercices du chapitre
-        all_exercises = await service.get_all_by_chapter(code_officiel)
+        # Normaliser le code du chapitre (uppercase, remplacer - par _)
+        code_normalized = code_officiel.upper().replace("-", "_")
         
-        # Filtrer les exercices statiques (is_dynamic=False ou absent)
+        # Récupérer les exercices du chapitre
+        all_exercises = await service.get_exercises(chapter_code=code_normalized)
+        
+        obs_logger.info(
+            f"[ADMIN] {len(all_exercises)} exercices totaux récupérés pour {code_normalized}",
+            chapter_code=code_normalized,
+            total_count=len(all_exercises)
+        )
+        
+        # Filtrer les exercices statiques
+        # Utiliser le même filtre que dans exercises_routes.py : is_dynamic is not True
+        # Cela inclut les exercices où is_dynamic est False, None, ou absent
         static_exercises = [
             ex for ex in all_exercises
-            if not ex.get("is_dynamic", False) and not ex.get("generator_key")
+            if ex.get("is_dynamic") is not True
         ]
+        
+        # Log pour debug
+        if len(all_exercises) > 0:
+            obs_logger.info(
+                f"[ADMIN] Filtrage exercices statiques: {len(static_exercises)}/{len(all_exercises)}",
+                chapter_code=code_normalized,
+                static_count=len(static_exercises),
+                total_count=len(all_exercises),
+                sample_exercises=[
+                    {
+                        "id": ex.get("id"),
+                        "is_dynamic": ex.get("is_dynamic"),
+                        "generator_key": ex.get("generator_key")
+                    }
+                    for ex in all_exercises[:3]  # Premier 3 pour debug
+                ]
+            )
         
         # Trier par order puis id
         static_exercises.sort(key=lambda ex: (ex.get("order") or 999999, ex.get("id", 0)))
@@ -165,10 +193,33 @@ async def list_static_exercises_by_chapter(
             ))
         
         obs_logger.info(
-            f"[ADMIN] {len(results)} exercices statiques trouvés",
+            f"[ADMIN] {len(results)} exercices statiques trouvés sur {len(all_exercises)} totaux",
             chapter_code=code_officiel,
-            count=len(results)
+            static_count=len(results),
+            total_count=len(all_exercises),
+            normalized_code=code_normalized
         )
+        
+        # Log les premiers exercices pour debug
+        if len(all_exercises) > 0 and len(results) == 0:
+            obs_logger.warning(
+                f"[ADMIN] Aucun exercice statique trouvé mais {len(all_exercises)} exercices totaux. Exemple du premier exercice:",
+                chapter_code=code_officiel,
+                normalized_code=code_normalized,
+                first_exercise_sample={
+                    "id": all_exercises[0].get("id"),
+                    "is_dynamic": all_exercises[0].get("is_dynamic"),
+                    "generator_key": all_exercises[0].get("generator_key"),
+                    "chapter_code": all_exercises[0].get("chapter_code")
+                }
+            )
+        elif len(all_exercises) == 0:
+            obs_logger.info(
+                f"[ADMIN] Aucun exercice trouvé dans MongoDB pour {code_officiel} (normalisé: {code_normalized}). "
+                f"Les exercices statiques doivent être créés via l'interface admin.",
+                chapter_code=code_officiel,
+                normalized_code=code_normalized
+            )
         
         return results
         
@@ -219,8 +270,8 @@ async def update_static_exercise(
             exercise_id=exercise_id
         )
         
-        # Récupérer l'exercice existant
-        existing = await service.get_by_id(exercise_id)
+        # Récupérer l'exercice existant (chercher dans tous les chapitres)
+        existing = await service.find_exercise_by_id_anywhere(exercise_id)
         
         if not existing:
             raise HTTPException(
@@ -228,6 +279,18 @@ async def update_static_exercise(
                 detail={
                     "error_code": "EXERCISE_NOT_FOUND",
                     "message": f"Exercice {exercise_id} introuvable",
+                    "exercise_id": exercise_id
+                }
+            )
+        
+        # Obtenir le chapter_code de l'exercice existant
+        chapter_code = existing.get("chapter_code")
+        if not chapter_code:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "MISSING_CHAPTER_CODE",
+                    "message": f"L'exercice {exercise_id} n'a pas de chapter_code",
                     "exercise_id": exercise_id
                 }
             )
@@ -267,30 +330,21 @@ async def update_static_exercise(
                 }
             )
         
-        # Préparer les données de mise à jour (ne mettre que les champs fournis)
-        update_dict = {}
-        if update_data.title is not None:
-            update_dict["title"] = update_data.title
-        if update_data.difficulty is not None:
-            update_dict["difficulty"] = update_data.difficulty
-        if update_data.enonce_html is not None:
-            update_dict["enonce_html"] = update_data.enonce_html
-        if update_data.solution_html is not None:
-            update_dict["solution_html"] = update_data.solution_html
-        if update_data.tags is not None:
-            update_dict["tags"] = update_data.tags
-        if update_data.order is not None:
-            update_dict["order"] = update_data.order
-        if update_data.exercise_type is not None:
-            update_dict["exercise_type"] = update_data.exercise_type
-        if update_data.offer is not None:
-            update_dict["offer"] = update_data.offer
+        # Convertir StaticExerciseUpdate en ExerciseUpdateRequest
+        from backend.services.exercise_persistence_service import ExerciseUpdateRequest
         
-        # Ajouter updated_at
-        update_dict["updated_at"] = datetime.utcnow()
+        update_request = ExerciseUpdateRequest(
+            title=update_data.title,
+            difficulty=update_data.difficulty,
+            offer=update_data.offer,
+            enonce_html=update_data.enonce_html,
+            solution_html=update_data.solution_html,
+            exercise_type=update_data.exercise_type,
+            is_dynamic=False  # Forcer statique
+        )
         
         # Mettre à jour en base
-        updated_exercise = await service.update(exercise_id, update_dict)
+        updated_exercise = await service.update_exercise(chapter_code, exercise_id, update_request)
         
         if not updated_exercise:
             raise HTTPException(
@@ -390,25 +444,22 @@ async def create_static_exercise(
                 }
             )
         
-        # Préparer les données pour la création
-        exercise_dict = {
-            "chapter_code": code_officiel,
-            "title": create_data.title,
-            "difficulty": create_data.difficulty,
-            "enonce_html": create_data.enonce_html,
-            "solution_html": create_data.solution_html,
-            "tags": create_data.tags,
-            "order": create_data.order,
-            "exercise_type": create_data.exercise_type,
-            "offer": create_data.offer,
-            "is_dynamic": False,  # IMPORTANT: Marquer comme statique
-            "needs_svg": False,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
+        # Convertir StaticExerciseCreate en ExerciseCreateRequest
+        from backend.services.exercise_persistence_service import ExerciseCreateRequest
+        
+        create_request = ExerciseCreateRequest(
+            title=create_data.title,
+            difficulty=create_data.difficulty,
+            offer=create_data.offer,
+            enonce_html=create_data.enonce_html,
+            solution_html=create_data.solution_html,
+            exercise_type=create_data.exercise_type,
+            is_dynamic=False,  # IMPORTANT: Marquer comme statique
+            needs_svg=False
+        )
         
         # Créer en base
-        created_exercise = await service.create(exercise_dict)
+        created_exercise = await service.create_exercise(code_officiel, create_request)
         
         if not created_exercise:
             raise HTTPException(
@@ -484,8 +535,8 @@ async def delete_static_exercise(
             exercise_id=exercise_id
         )
         
-        # Récupérer l'exercice existant
-        existing = await service.get_by_id(exercise_id)
+        # Récupérer l'exercice existant (chercher dans tous les chapitres)
+        existing = await service.find_exercise_by_id_anywhere(exercise_id)
         
         if not existing:
             raise HTTPException(
@@ -493,6 +544,18 @@ async def delete_static_exercise(
                 detail={
                     "error_code": "EXERCISE_NOT_FOUND",
                     "message": f"Exercice {exercise_id} introuvable",
+                    "exercise_id": exercise_id
+                }
+            )
+        
+        # Obtenir le chapter_code de l'exercice existant
+        chapter_code = existing.get("chapter_code")
+        if not chapter_code:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "MISSING_CHAPTER_CODE",
+                    "message": f"L'exercice {exercise_id} n'a pas de chapter_code",
                     "exercise_id": exercise_id
                 }
             )
@@ -512,7 +575,7 @@ async def delete_static_exercise(
             )
         
         # Supprimer
-        deleted = await service.delete(exercise_id)
+        deleted = await service.delete_exercise(chapter_code, exercise_id)
         
         if not deleted:
             raise HTTPException(

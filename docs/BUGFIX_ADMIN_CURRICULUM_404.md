@@ -196,3 +196,6 @@ GET    /api/v1/admin/curriculum/options (générateurs disponibles, domaines, et
 **Temps passé :** ~1h  
 **Impact utilisateur :** ✅ Page admin accessible, prête à être utilisée
 
+
+
+

@@ -268,3 +268,6 @@ const CurriculumAdminSimplePage = () => {
 
 export default CurriculumAdminSimplePage;
 
+
+
+

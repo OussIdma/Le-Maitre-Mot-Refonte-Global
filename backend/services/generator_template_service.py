@@ -327,3 +327,6 @@ def get_template_service(db: AsyncIOMotorDatabase) -> GeneratorTemplateService:
     """Factory pour créer le service de templates"""
     return GeneratorTemplateService(db)
 
+
+
+

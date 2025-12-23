@@ -315,3 +315,6 @@ class TestCalculNombresV1:
                         f"Variable {var} est vide pour {exercise_type} {grade}"
 
 
+
+
+
