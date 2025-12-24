@@ -359,9 +359,12 @@ async def migrate_exercises(
                 continue
             
             # Mettre à jour le chapter_code avec le code normalisé
-            ex["chapter_code"] = normalized_code
+            # IMPORTANT: Utiliser le format UPPERCASE pour compatibilité avec ExercisePersistenceService
+            # qui normalise avec .upper() dans get_exercises()
+            chapter_code_upper = normalized_code.upper().replace("-", "_")
+            ex["chapter_code"] = chapter_code_upper
             
-            # Calculer l'UID
+            # Calculer l'UID (utiliser le code normalisé pour stabilité)
             exercise_uid = compute_exercise_uid(
                 chapter_code=normalized_code,
                 enonce_html=ex["enonce_html"],
@@ -369,7 +372,7 @@ async def migrate_exercises(
                 difficulty=ex.get("difficulty", "moyen")
             )
             
-            # Vérifier si l'exercice existe déjà
+            # Vérifier si l'exercice existe déjà (par UID, indépendant du format chapter_code)
             existing = await collection.find_one({"exercise_uid": exercise_uid})
             
             if existing:
@@ -432,16 +435,7 @@ async def main():
     
     args = parser.parse_args()
     
-    # Validation des arguments
-    if not args.dry_run and not args.apply:
-        logger.error("❌ Vous devez spécifier --dry-run ou --apply")
-        sys.exit(1)
-    
-    if args.dry_run and args.apply:
-        logger.error("❌ Vous ne pouvez pas utiliser --dry-run et --apply en même temps")
-        sys.exit(1)
-    
-    # Connexion MongoDB
+    # Connexion MongoDB (nécessaire même pour --analyze)
     mongo_url = os.environ.get('MONGO_URL')
     db_name = os.environ.get('DB_NAME', 'le_maitre_mot_db')
     
@@ -454,10 +448,19 @@ async def main():
     db = client[db_name]
     
     try:
-        # Mode analyse uniquement
+        # Mode analyse uniquement (peut être utilisé seul)
         if args.analyze:
             await analyze_legacy_exercises(db=db, chapter_code=args.chapter)
             return
+        
+        # Validation des arguments pour la migration
+        if not args.dry_run and not args.apply:
+            logger.error("❌ Vous devez spécifier --dry-run ou --apply")
+            sys.exit(1)
+        
+        if args.dry_run and args.apply:
+            logger.error("❌ Vous ne pouvez pas utiliser --dry-run et --apply en même temps")
+            sys.exit(1)
         
         # Lancer la migration
         mode = "DRY-RUN" if args.dry_run else "APPLY"

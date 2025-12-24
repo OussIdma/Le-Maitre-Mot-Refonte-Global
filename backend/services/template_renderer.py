@@ -16,11 +16,12 @@ from typing import Dict, Any, Optional
 
 def render_template(template: str, variables: Dict[str, Any]) -> str:
     """
-    Remplace les placeholders {{var}} par leurs valeurs.
+    Remplace les placeholders {{var}} et {{{var}}} par leurs valeurs.
     
     Règles:
-    - Format: {{nom_variable}}
-    - Espaces autorisés: {{ nom_variable }} 
+    - Format double moustaches: {{nom_variable}} → texte échappé (sécurité)
+    - Format triple moustaches: {{{nom_variable}}} → HTML non échappé (injection directe)
+    - Espaces autorisés: {{ nom_variable }} ou {{{ nom_variable }}}
     - Si variable absente: laisse le placeholder intact
     - Valeurs numériques formatées intelligemment (pas de .0 inutile)
     
@@ -37,7 +38,8 @@ def render_template(template: str, variables: Dict[str, Any]) -> str:
     if not variables:
         return template
     
-    def replace_placeholder(match):
+    def replace_placeholder_double(match):
+        """Remplace {{variable}} (double moustaches)"""
         var_name = match.group(1).strip()
         
         if var_name in variables:
@@ -56,10 +58,30 @@ def render_template(template: str, variables: Dict[str, Any]) -> str:
         # Variable non trouvée - laisser le placeholder
         return match.group(0)
     
-    # Pattern: {{ variable }} avec espaces optionnels
-    pattern = r'\{\{\s*(\w+)\s*\}\}'
+    def replace_placeholder_triple(match):
+        """Remplace {{{variable}}} (triple moustaches - HTML non échappé)"""
+        var_name = match.group(1).strip()
+        
+        if var_name in variables:
+            value = variables[var_name]
+            
+            # Triple moustaches = HTML non échappé (injection directe)
+            # Pas de formatage numérique spécial pour HTML
+            return str(value)
+        
+        # Variable non trouvée - laisser le placeholder
+        return match.group(0)
     
-    return re.sub(pattern, replace_placeholder, template)
+    # Pattern 1: Triple moustaches {{{ variable }}} (HTML non échappé)
+    # Doit être traité AVANT les doubles pour éviter les conflits
+    pattern_triple = r'\{\{\{\s*(\w+)\s*\}\}\}'
+    result = re.sub(pattern_triple, replace_placeholder_triple, template)
+    
+    # Pattern 2: Double moustaches {{ variable }} (texte échappé)
+    pattern_double = r'\{\{\s*(\w+)\s*\}\}'
+    result = re.sub(pattern_double, replace_placeholder_double, result)
+    
+    return result
 
 
 def validate_template(template: str, required_variables: Optional[list] = None) -> Dict[str, Any]:

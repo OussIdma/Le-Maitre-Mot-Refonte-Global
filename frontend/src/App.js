@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import "./App.css";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, useSearchParams, useNavigate, useLocation } from "react-router-dom";
@@ -18,6 +19,8 @@ import TemplateSettings from "./components/TemplateSettings";
 import DocumentWizard from "./components/wizard/DocumentWizard";
 import SheetBuilderPage from "./components/SheetBuilderPage";
 import MySheetsPage from "./components/MySheetsPage";
+import MySheetsPageP31 from "./components/MySheetsPageP31";
+import SheetEditPageP31 from "./components/SheetEditPageP31";
 import MyExercisesPage from "./components/MyExercisesPage";
 import ProSettingsPage from "./components/ProSettingsPage";
 import ExerciseGeneratorPage from "./components/ExerciseGeneratorPage";
@@ -37,6 +40,21 @@ import GlobalLoginModal from "./components/GlobalLoginModal";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+// P3.1: Redirection vers nouveau système "Mes fiches"
+function RedirectToNewSheets() {
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    navigate('/mes-fiches', { replace: true });
+  }, [navigate]);
+  
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+    </div>
+  );
+}
 
 // Configure axios global timeout (15 seconds)
 axios.defaults.timeout = 15000;
@@ -279,6 +297,7 @@ function LoginVerify() {
 }
 
 function MainApp() {
+  const { t } = useTranslation();
   const { openLogin, closeLogin } = useLogin();
   const [catalog, setCatalog] = useState([]);
   const [catalogStats, setCatalogStats] = useState(null); // Add catalog stats
@@ -925,8 +944,8 @@ function MainApp() {
       }
       
       toast({
-        title: "Connexion réussie",
-        description: "Vous êtes maintenant connecté.",
+        title: t('login.loginSuccess'),
+        description: t('login.loginSuccessDesc'),
       });
       
       console.log('✅ Password login successful');
@@ -938,19 +957,19 @@ function MainApp() {
       
       if (status === 400) {
         toast({
-          title: "Mot de passe non défini",
+          title: t('login.passwordNotSet'),
           description: errorMsg,
           variant: "destructive"
         });
       } else if (status === 401) {
         toast({
-          title: "Erreur de connexion",
-          description: "Email ou mot de passe incorrect",
+          title: t('login.loginError'),
+          description: t('login.incorrectCredentials'),
           variant: "destructive"
         });
       } else {
         toast({
-          title: "Erreur",
+          title: t('errors.generic'),
           description: errorMsg,
           variant: "destructive"
         });
@@ -972,8 +991,8 @@ function MainApp() {
       });
       
       toast({
-        title: "Email envoyé",
-        description: "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.",
+        title: t('login.emailSent'),
+        description: t('login.emailSentDesc'),
       });
       
       setShowResetModal(false);
@@ -983,8 +1002,8 @@ function MainApp() {
       console.error('Error requesting password reset:', error);
       // Always show success message (neutral response)
       toast({
-        title: "Email envoyé",
-        description: "Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.",
+        title: t('login.emailSent'),
+        description: t('login.emailSentDesc'),
       });
       setShowResetModal(false);
       setResetEmail("");
@@ -1422,20 +1441,20 @@ function MainApp() {
             <DialogHeader>
               <DialogTitle className="flex items-center text-center">
                 <Lock className="mr-2 h-6 w-6 text-blue-600" />
-                Mot de passe oublié
+                {t('login.forgotPassword')}
               </DialogTitle>
               <DialogDescription className="text-center">
-                Entrez votre email pour recevoir un lien de réinitialisation
+                {t('login.resetPasswordDescription')}
               </DialogDescription>
             </DialogHeader>
             
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="reset-email">Adresse email</Label>
+                <Label htmlFor="reset-email">{t('login.emailAddress')}</Label>
                 <Input
                   id="reset-email"
                   type="email"
-                  placeholder="votre@email.fr"
+                  placeholder={t('login.emailPlaceholder')}
                   value={resetEmail}
                   onChange={(e) => setResetEmail(e.target.value)}
                   onKeyDown={(e) => {
@@ -1454,18 +1473,18 @@ function MainApp() {
                 {resetLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Envoi en cours...
+                    {t('actions.sendingEmail')}
                   </>
                 ) : (
                   <>
                     <Mail className="mr-2 h-4 w-4" />
-                    Envoyer l'email
+                    {t('login.sendEmail')}
                   </>
                 )}
               </Button>
               
               <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
-                💡 Si un compte Pro avec mot de passe existe pour cette adresse, un lien de réinitialisation a été envoyé.
+                {t('login.resetInfo')}
               </div>
             </div>
           </DialogContent>
@@ -1585,19 +1604,32 @@ function App() {
         <Route path="/generate" element={<RedirectToGenerer />} />
         
         {/* Routes existantes avec NavBar */}
+        {/* P3.1: Redirection ancien builder vers nouveau système */}
         <Route path="/builder" element={
           <AppWithNav>
-            <SheetBuilderPage />
+            <RedirectToNewSheets />
           </AppWithNav>
         } />
         <Route path="/builder/:sheetId" element={
           <AppWithNav>
-            <SheetBuilderPage />
+            <RedirectToNewSheets />
           </AppWithNav>
         } />
+        {/* Legacy route - redirige vers nouveau */}
         <Route path="/sheets" element={
           <AppWithNav>
-            <MySheetsPage />
+            <RedirectToNewSheets />
+          </AppWithNav>
+        } />
+        {/* P3.1: Nouveau système "Mes fiches" */}
+        <Route path="/mes-fiches" element={
+          <AppWithNav>
+            <MySheetsPageP31 />
+          </AppWithNav>
+        } />
+        <Route path="/mes-fiches/:sheet_uid" element={
+          <AppWithNav>
+            <SheetEditPageP31 />
           </AppWithNav>
         } />
         <Route path="/mes-exercices" element={

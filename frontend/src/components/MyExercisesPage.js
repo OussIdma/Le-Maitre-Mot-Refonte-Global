@@ -526,17 +526,23 @@ function MyExercisesPage() {
                   
                   <TabsContent value="enonce" className="mt-4">
                     <div className="prose prose-lg max-w-none bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                      <div className="text-base leading-relaxed text-gray-800 space-y-3">
-                        <MathHtmlRenderer html={selectedExercise.enonce_html} />
-                      </div>
+                      <div 
+                        className="text-base leading-relaxed text-gray-800 space-y-3"
+                        // P3.0.1: HTML trusted from backend templates; do not render user-provided raw HTML
+                        // Le HTML provient de nos templates backend (P0.4), donc safe
+                        dangerouslySetInnerHTML={{ __html: selectedExercise.enonce_html || '' }}
+                      />
                     </div>
                   </TabsContent>
                   
                   <TabsContent value="solution" className="mt-4">
                     <div className="prose prose-lg max-w-none bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm">
-                      <div className="text-base leading-relaxed text-gray-800 space-y-3">
-                        <MathHtmlRenderer html={selectedExercise.solution_html} />
-                      </div>
+                      <div 
+                        className="text-base leading-relaxed text-gray-800 space-y-3"
+                        // P3.0.1: HTML trusted from backend templates; do not render user-provided raw HTML
+                        // Le HTML provient de nos templates backend (P0.4), donc safe
+                        dangerouslySetInnerHTML={{ __html: selectedExercise.solution_html || '' }}
+                      />
                     </div>
                   </TabsContent>
                 </Tabs>

@@ -4,10 +4,12 @@
 
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import { GraduationCap } from "lucide-react";
 
 function NavBar() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -29,7 +31,7 @@ function NavBar() {
           >
             <GraduationCap className="h-8 w-8 text-blue-600 mr-2" />
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Le Maître Mot</h1>
+              <h1 className="text-xl font-bold text-gray-900">{t('nav.appName')}</h1>
             </div>
           </div>
 
@@ -40,7 +42,7 @@ function NavBar() {
               size="sm"
               onClick={() => navigate('/')}
             >
-              Accueil
+              {t('nav.home')}
             </Button>
 
             <Button
@@ -48,7 +50,7 @@ function NavBar() {
               size="sm"
               onClick={() => navigate('/generer')}
             >
-              Générer
+              {t('nav.generate')}
             </Button>
 
             <Button
@@ -56,7 +58,7 @@ function NavBar() {
               size="sm"
               onClick={() => navigate('/mes-exercices')}
             >
-              Mes exercices
+              {t('nav.myExercises')}
             </Button>
 
             <Button
@@ -64,7 +66,7 @@ function NavBar() {
               size="sm"
               onClick={() => navigate('/sheets')}
             >
-              Mes fiches
+              {t('nav.mySheets')}
             </Button>
 
             {/* Admin link - seulement si on est déjà sur une page admin ou si accessible */}
@@ -74,7 +76,7 @@ function NavBar() {
                 size="sm"
                 onClick={() => navigate('/admin/curriculum')}
               >
-                Admin
+                {t('nav.admin')}
               </Button>
             )}
           </div>

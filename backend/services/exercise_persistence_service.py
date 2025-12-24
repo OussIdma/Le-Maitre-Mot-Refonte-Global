@@ -11,6 +11,7 @@ Architecture:
 
 import os
 import logging
+import hashlib
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -239,11 +240,15 @@ class ExercisePersistenceService:
         # Compter les exercices existants pour ce chapitre
         count = await self.collection.count_documents({"chapter_code": chapter_upper})
         
+        # P0 - DÉSACTIVATION LEGACY : Ne plus charger depuis fichiers Python
+        # Les exercices legacy ont été migrés en DB (migration P3.2)
+        # DB est maintenant la source de vérité unique
+        # if count == 0:
+        #     await self._load_from_python_file(chapter_upper)
+        #     count = await self.collection.count_documents({"chapter_code": chapter_upper})
+        
         if count == 0:
-            # Charger depuis le fichier Python existant (seulement pour chapitres pilotes)
-            await self._load_from_python_file(chapter_upper)
-            # Recompter après chargement éventuel
-            count = await self.collection.count_documents({"chapter_code": chapter_upper})
+            logger.info(f"[P0] Aucun exercice en DB pour {chapter_upper}. DB est la source unique (legacy désactivé).")
         
         # Créer les index (idempotent, mais coûteux → éviter si possible)
         try:
@@ -259,75 +264,19 @@ class ExercisePersistenceService:
         logger.info(f"Exercices service initialisé pour {chapter_upper} avec {count} exercices")
     
     async def _load_from_python_file(self, chapter_code: str) -> None:
-        """Charge les exercices depuis le fichier Python existant"""
-        # Déterminer le fichier source
-        file_mapping = {
-            "6E_GM07": "gm07_exercises.py",
-            "6E_GM08": "gm08_exercises.py",
-            "6E_TESTS_DYN": "tests_dyn_exercises.py",
-        }
+        """
+        P0 - DÉSACTIVÉ : Chargement depuis fichiers Python legacy
         
-        filename = file_mapping.get(chapter_code)
-        if not filename:
-            logger.warning(f"Pas de fichier source pour {chapter_code}")
-            return
+        Les exercices legacy ont été migrés en DB (migration P3.2).
+        DB est maintenant la source de vérité unique.
         
-        filepath = os.path.join(DATA_DIR, filename)
-        if not os.path.exists(filepath):
-            logger.warning(f"Fichier non trouvé: {filepath}")
-            return
-        
-        # Importer dynamiquement le module
-        try:
-            if chapter_code == "6E_GM07":
-                from data.gm07_exercises import GM07_EXERCISES as exercises
-            elif chapter_code == "6E_GM08":
-                from data.gm08_exercises import GM08_EXERCISES as exercises
-            elif chapter_code == "6E_TESTS_DYN":
-                from data.tests_dyn_exercises import TESTS_DYN_EXERCISES as exercises
-            else:
-                logger.warning(f"Import non supporté pour {chapter_code}")
-                return
-            
-            # Insérer les exercices
-            docs = []
-            for ex in exercises:
-                doc = {
-                    "chapter_code": chapter_code,
-                    "id": ex["id"],
-                    "family": ex["family"],
-                    "difficulty": ex["difficulty"],
-                    "offer": ex["offer"],
-                    "enonce_html": ex.get("enonce_html", ""),
-                    "solution_html": ex.get("solution_html", ""),
-                    "needs_svg": ex.get("needs_svg", False),
-                    "variables": ex.get("variables"),
-                    "exercise_type": ex.get("exercise_type"),
-                    "svg_enonce_brief": ex.get("svg_enonce_brief"),
-                    "svg_solution_brief": ex.get("svg_solution_brief"),
-                    # Champs dynamiques
-                    "is_dynamic": ex.get("is_dynamic", False),
-                    "generator_key": ex.get("generator_key"),
-                    "enonce_template_html": ex.get("enonce_template_html"),
-                    "solution_template_html": ex.get("solution_template_html"),
-                    "variables_schema": ex.get("variables_schema"),
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
-                }
-                docs.append(doc)
-            
-            if docs:
-                await self.collection.insert_many(docs)
-                logger.info(f"Chargé {len(docs)} exercices pour {chapter_code}")
-        
-        except ImportError as e:
-            error_msg = f"Impossible d'importer le module pour {chapter_code}: {e}"
-            logger.error(f"Erreur import module {chapter_code}: {e}")
-            raise ValueError(error_msg)
-        except Exception as e:
-            error_msg = f"Erreur lors du chargement des exercices {chapter_code}: {e}"
-            logger.error(f"Erreur chargement exercices {chapter_code}: {e}")
-            raise ValueError(error_msg)
+        Cette méthode est conservée pour référence mais ne fait plus rien.
+        """
+        logger.warning(
+            f"[P0] _load_from_python_file désactivé pour {chapter_code}. "
+            f"Les exercices doivent être en DB (migration P3.2 terminée)."
+        )
+        return
     
     async def _sync_to_python_file(self, chapter_code: str) -> None:
         """
@@ -674,10 +623,37 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         )
         next_id = (max_doc["id"] + 1) if max_doc else 1
         
+        # P0 - Calculer exercise_uid pour éviter l'erreur E11000 (duplicate key sur null)
+        # Pour les exercices dynamiques, utiliser les templates
+        # Pour les exercices statiques, utiliser l'énoncé/solution HTML
+        if request.is_dynamic:
+            # Exercice dynamique : utiliser les templates
+            enonce_content = request.enonce_template_html or ""
+            solution_content = request.solution_template_html or ""
+        else:
+            # Exercice statique : utiliser l'énoncé/solution HTML
+            enonce_content = request.enonce_html or ""
+            solution_content = request.solution_html or ""
+        
+        # Calculer l'UID stable (même logique que migration)
+        normalized_enonce = enonce_content.strip().lower()
+        normalized_solution = solution_content.strip().lower()
+        unique_string = f"{chapter_upper}|{normalized_enonce}|{normalized_solution}|{request.difficulty.lower()}"
+        exercise_uid = hashlib.sha256(unique_string.encode('utf-8')).hexdigest()
+        
+        # Vérifier si un exercice avec le même UID existe déjà
+        existing = await self.collection.find_one({"exercise_uid": exercise_uid})
+        if existing:
+            raise ValueError(
+                f"Un exercice identique existe déjà (UID={exercise_uid[:8]}...). "
+                f"Modifiez légèrement l'énoncé ou la solution pour créer un nouvel exercice."
+            )
+        
         # Créer le document
         doc = {
             "chapter_code": chapter_upper,
             "id": next_id,
+            "exercise_uid": exercise_uid,  # P0 - UID calculé pour éviter duplicate key
             "title": request.title,
             "family": request.family.upper() if request.family else None,
             "exercise_type": exercise_type_resolved,
@@ -826,6 +802,43 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         if not update_data:
             del existing["_id"]
             return existing
+        
+        # P0 - Recalculer exercise_uid si le contenu a changé
+        # (pour éviter les doublons et maintenir la cohérence)
+        content_changed = any(key in update_data for key in [
+            "enonce_html", "solution_html", "enonce_template_html", 
+            "solution_template_html", "difficulty", "is_dynamic"
+        ])
+        
+        if content_changed or not existing.get("exercise_uid"):
+            # Recalculer l'UID avec les nouvelles valeurs
+            is_dynamic = update_data.get("is_dynamic", existing.get("is_dynamic", False))
+            if is_dynamic:
+                enonce_content = update_data.get("enonce_template_html", existing.get("enonce_template_html", "")) or ""
+                solution_content = update_data.get("solution_template_html", existing.get("solution_template_html", "")) or ""
+            else:
+                enonce_content = update_data.get("enonce_html", existing.get("enonce_html", "")) or ""
+                solution_content = update_data.get("solution_html", existing.get("solution_html", "")) or ""
+            
+            normalized_enonce = enonce_content.strip().lower()
+            normalized_solution = solution_content.strip().lower()
+            difficulty = update_data.get("difficulty", existing.get("difficulty", "moyen")).lower()
+            unique_string = f"{chapter_upper}|{normalized_enonce}|{normalized_solution}|{difficulty}"
+            new_exercise_uid = hashlib.sha256(unique_string.encode('utf-8')).hexdigest()
+            
+            # Vérifier si le nouvel UID existe déjà (sauf pour cet exercice)
+            existing_uid = await self.collection.find_one({
+                "exercise_uid": new_exercise_uid,
+                "_id": {"$ne": existing.get("_id")}
+            })
+            if existing_uid:
+                logger.warning(
+                    f"[UPDATE] UID collision détectée pour exercice #{exercise_id} "
+                    f"(nouvel UID={new_exercise_uid[:8]}... existe déjà). "
+                    "L'UID ne sera pas mis à jour pour éviter les doublons."
+                )
+            else:
+                update_data["exercise_uid"] = new_exercise_uid
         
         update_data["updated_at"] = datetime.now(timezone.utc)
         

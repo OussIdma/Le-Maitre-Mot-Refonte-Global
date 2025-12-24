@@ -25,8 +25,9 @@ from backend.services.curriculum_service import curriculum_service
 from backend.services.math_generation_service import MathGenerationService
 from backend.services.geometry_render_service import GeometryRenderService
 from curriculum.loader import get_chapter_by_official_code, CurriculumChapter
-from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
-from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
+# P0 - SUPPRESSION IMPORTS LEGACY : GM07/GM08 gérés par pipeline normal
+# from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
+# from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
 from backend.services.tests_dyn_handler import is_tests_dyn_request, generate_tests_dyn_exercise, generate_tests_dyn_batch, get_available_generators
 from backend.generators.factory import GeneratorFactory  # P0.3 - Dispatch premium générique
 from backend.services.template_renderer import render_template  # P0.3 - Rendu HTML templates
@@ -45,6 +46,145 @@ logger = get_logger()
 obs_logger = get_obs_logger('PIPELINE')
 
 router = APIRouter()
+
+# ============================================================================
+# P0 - HELPER PIPELINE SIMPLIFIÉ : DYNAMIC → STATIC fallback
+# ============================================================================
+
+async def generate_exercise_with_fallback(
+    chapter_code: str,
+    exercise_service,
+    request: ExerciseGenerateRequest,
+    ctx: dict,
+    request_start: float
+) -> dict:
+    """
+    Pipeline simplifié P0 : Essaie DYNAMIC, fallback STATIC si échec.
+    
+    Returns:
+        Exercice généré (dynamique ou statique)
+    
+    Raises:
+        HTTPException si aucun exercice disponible
+    """
+    from backend.services.tests_dyn_handler import format_dynamic_exercise
+    
+    # 1. Essayer DYNAMIC d'abord
+    try:
+        exercises = await exercise_service.get_exercises(
+            chapter_code=chapter_code,
+            offer=request.offer if hasattr(request, 'offer') else None,
+            difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+        )
+        dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+        
+        if len(dynamic_exercises) > 0:
+            selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
+            timestamp = int(time.time() * 1000)
+            dyn_exercise = format_dynamic_exercise(
+                exercise_template=selected_exercise,
+                timestamp=timestamp,
+                seed=request.seed
+            )
+            
+            duration_ms = int((time.time() - request_start) * 1000)
+            obs_logger.info(
+                "event=dynamic_generated",
+                event="dynamic_generated",
+                outcome="success",
+                duration_ms=duration_ms,
+                exercise_id=selected_exercise.get('id'),
+                generator_key=selected_exercise.get('generator_key'),
+                **ctx
+            )
+            logger.info(
+                f"[P0] ✅ Exercice DYNAMIQUE généré: "
+                f"chapter={chapter_code}, id={selected_exercise.get('id')}, "
+                f"generator={selected_exercise.get('generator_key')}"
+            )
+            return dyn_exercise
+    
+    except Exception as e:
+        logger.warning(f"[P0] Erreur génération DYNAMIC pour {chapter_code}: {e}. Fallback STATIC.")
+        obs_logger.warning(
+            "event=dynamic_failed",
+            event="dynamic_failed",
+            outcome="fallback",
+            reason="exception",
+            exception_type=type(e).__name__,
+            **ctx
+        )
+    
+    # 2. Fallback STATIC
+    try:
+        exercises = await exercise_service.get_exercises(
+            chapter_code=chapter_code,
+            offer=request.offer if hasattr(request, 'offer') else None,
+            difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+        )
+        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+        
+        if len(static_exercises) > 0:
+            selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
+            timestamp = int(time.time() * 1000)
+            
+            # Récupérer le chapitre pour les métadonnées
+            curriculum_chapter = get_chapter_by_official_code(chapter_code)
+            
+            static_exercise = {
+                "id_exercice": f"static_{chapter_code}_{selected_static.get('id')}_{timestamp}",
+                "niveau": curriculum_chapter.niveau if curriculum_chapter else "6e",
+                "chapitre": curriculum_chapter.libelle if curriculum_chapter else chapter_code,
+                "enonce_html": selected_static.get("enonce_html") or "",
+                "solution_html": selected_static.get("solution_html") or "",
+                "needs_svg": selected_static.get("needs_svg") or False,
+                "exercise_type": selected_static.get("exercise_type"),
+                "pdf_token": f"static_{chapter_code}_{selected_static.get('id')}_{timestamp}",
+                "metadata": {
+                    "offer": selected_static.get("offer"),
+                    "difficulty": selected_static.get("difficulty"),
+                    "source": "admin_exercises_static",
+                    "is_fallback": True,
+                    "fallback_reason": "dynamic_unavailable"
+                }
+            }
+            
+            duration_ms = int((time.time() - request_start) * 1000)
+            obs_logger.info(
+                "event=static_fallback_used",
+                event="static_fallback_used",
+                outcome="success",
+                duration_ms=duration_ms,
+                exercise_id=selected_static.get('id'),
+                **ctx
+            )
+            logger.info(
+                f"[P0] ✅ Exercice STATIQUE (fallback): "
+                f"chapter={chapter_code}, id={selected_static.get('id')}"
+            )
+            return static_exercise
+    
+    except Exception as e:
+        logger.error(f"[P0] Erreur fallback STATIC pour {chapter_code}: {e}")
+        obs_logger.error(
+            "event=static_fallback_failed",
+            event="static_fallback_failed",
+            outcome="error",
+            exception_type=type(e).__name__,
+            **ctx
+        )
+    
+    # 3. Aucun exercice disponible
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error_code": "NO_EXERCISE_AVAILABLE",
+            "error": "no_exercise_available",
+            "message": f"Aucun exercice disponible pour le chapitre '{chapter_code}' avec les critères demandés.",
+            "chapter_code": chapter_code,
+            "hint": "Vérifiez que des exercices existent en DB pour ce chapitre."
+        }
+    )
 
 # ============================================================================
 # INSTANCES GLOBALES DES SERVICES (V1-BE-002-FIX: Performance)
@@ -591,126 +731,12 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     )
     
     # ============================================================================
-    # GM07 INTERCEPT: Chapitre pilote avec exercices figés
+    # P0 - SUPPRESSION INTERCEPTS LEGACY GM07/GM08
     # ============================================================================
-    
-    if is_gm07_request(request.code_officiel):
-        from services.gm07_handler import generate_gm07_batch
-        
-        nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
-        logger.info(f"🎯 GM07 Request intercepted: offer={request.offer}, difficulty={request.difficulte}, count={nb}")
-        
-        # Si on demande 1 seul exercice, utiliser la fonction simple
-        if nb == 1:
-            gm07_exercise = generate_gm07_exercise(
-                offer=request.offer,
-                difficulty=request.difficulte,
-                seed=request.seed
-            )
-            
-            if not gm07_exercise:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": "no_gm07_exercise_found",
-                        "message": f"Aucun exercice GM07 trouvé pour offer='{request.offer}' et difficulty='{request.difficulte}'",
-                        "hint": "Vérifiez les filtres: offer='free'|'pro', difficulty='facile'|'moyen'|'difficile'"
-                    }
-                )
-            
-            logger.info(f"✅ GM07 Exercise generated: id={gm07_exercise['metadata']['exercise_id']}, "
-                       f"family={gm07_exercise['metadata']['family']}, "
-                       f"is_premium={gm07_exercise['metadata']['is_premium']}")
-            
-            return gm07_exercise
-        
-        # Si on demande plusieurs exercices via cet endpoint, utiliser le batch
-        # Note: Le frontend devrait utiliser /generate/batch/gm07 pour les lots
-        exercises, batch_meta = generate_gm07_batch(
-            offer=request.offer,
-            difficulty=request.difficulte,
-            count=nb,
-            seed=request.seed
-        )
-        
-        if not exercises:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "no_gm07_exercise_found",
-                    "message": batch_meta.get("warning", "Aucun exercice GM07 trouvé"),
-                    "hint": "Vérifiez les filtres ou utilisez /generate/batch/gm07 pour les lots"
-                }
-            )
-        
-        # Log le résultat
-        logger.info(f"✅ GM07 Batch via /generate: {len(exercises)} exercises, "
-                   f"available={batch_meta.get('available')}, "
-                   f"warning={batch_meta.get('warning', 'none')}")
-        
-        # Retourner le premier exercice pour compatibilité avec l'API actuelle
-        # Le warning est inclus dans les metadata
-        return exercises[0]
-    
+    # Les exercices GM07/GM08 sont maintenant en DB (migration P3.2).
+    # Ils sont gérés par le pipeline normal (DYNAMIC → STATIC fallback).
+    # Plus besoin d'intercepts hardcodés.
     # ============================================================================
-    # GM08 INTERCEPT: Chapitre pilote #2 avec exercices figés
-    # ============================================================================
-    
-    if is_gm08_request(request.code_officiel):
-        nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
-        logger.info(f"🎯 GM08 Request intercepted: offer={request.offer}, difficulty={request.difficulte}, count={nb}")
-        
-        # Si on demande 1 seul exercice, utiliser la fonction simple
-        if nb == 1:
-            gm08_exercise = generate_gm08_exercise(
-                offer=request.offer,
-                difficulty=request.difficulte,
-                seed=request.seed
-            )
-            
-            if not gm08_exercise:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": "no_gm08_exercise_found",
-                        "message": f"Aucun exercice GM08 trouvé pour offer='{request.offer}' et difficulty='{request.difficulte}'",
-                        "hint": "Vérifiez les filtres: offer='free'|'pro', difficulty='facile'|'moyen'|'difficile'"
-                    }
-                )
-            
-            logger.info(f"✅ GM08 Exercise generated: id={gm08_exercise['metadata']['exercise_id']}, "
-                       f"family={gm08_exercise['metadata']['family']}, "
-                       f"is_premium={gm08_exercise['metadata']['is_premium']}")
-            
-            return gm08_exercise
-        
-        # Si on demande plusieurs exercices via cet endpoint, utiliser le batch
-        # Note: Le frontend devrait utiliser /generate/batch/gm08 pour les lots
-        exercises, batch_meta = generate_gm08_batch(
-            offer=request.offer,
-            difficulty=request.difficulte,
-            count=nb,
-            seed=request.seed
-        )
-        
-        if not exercises:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "no_gm08_exercise_found",
-                    "message": batch_meta.get("warning", "Aucun exercice GM08 trouvé"),
-                    "hint": "Vérifiez les filtres ou utilisez /generate/batch/gm08 pour les lots"
-                }
-            )
-        
-        # Log le résultat
-        logger.info(f"✅ GM08 Batch via /generate: {len(exercises)} exercises, "
-                   f"available={batch_meta.get('available')}, "
-                   f"warning={batch_meta.get('warning', 'none')}")
-        
-        # Retourner le premier exercice pour compatibilité avec l'API actuelle
-        # Le warning est inclus dans les metadata
-        return exercises[0]
     
     # ============================================================================
     # TESTS_DYN INTERCEPT: Chapitre de test pour exercices dynamiques
@@ -984,7 +1010,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
             
             elif pipeline_mode == "MIXED":
-                # Priorité dynamique si exercices DB, sinon statique
+                # P0 - SIMPLIFICATION : Utiliser le pipeline DYNAMIC → STATIC fallback
                 ctx = get_request_context()
                 ctx.update({
                     'pipeline': 'MIXED',
@@ -999,6 +1025,29 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     **ctx
                 )
                 try:
+                    # Utiliser le pipeline simplifié : DYNAMIC → STATIC fallback
+                    return await generate_exercise_with_fallback(
+                        chapter_code=chapter_code_for_db,
+                        exercise_service=exercise_service,
+                        request=request,
+                        ctx=ctx,
+                        request_start=request_start
+                    )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"[P0] Erreur pipeline MIXED pour {chapter_code_for_db}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "error_code": "MIXED_PIPELINE_ERROR",
+                            "error": "mixed_pipeline_error",
+                            "message": f"Erreur lors de la génération avec pipeline MIXED: {str(e)}"
+                        }
+                    )
+                
+                # ANCIEN CODE MIXED (désactivé - trop complexe)
+                # try:
                     has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
                     if has_exercises:
                         # Récupérer les exercices avec filtres
@@ -1338,99 +1387,35 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 # Continue vers pipeline statique (code ci-dessous)
         
         else:
-            # Fallback temporaire : pipeline absent, utiliser l'ancien comportement
-            logger.warning(
-                f"[PIPELINE] Chapitre {request.code_officiel} n'a pas de pipeline défini. "
-                f"Fallback sur détection automatique (comportement legacy)."
+            # P0 - Pipeline absent : utiliser le pipeline AUTO (DYNAMIC → STATIC fallback)
+            logger.info(
+                f"[P0] Chapitre {request.code_officiel} n'a pas de pipeline défini. "
+                f"Utilisation du pipeline AUTO (DYNAMIC → STATIC fallback)."
             )
             
-            # Ancien comportement : vérification exercices dynamiques en DB
             from server import db
             from backend.services.curriculum_sync_service import get_curriculum_sync_service
             from backend.services.exercise_persistence_service import get_exercise_persistence_service
-            from backend.services.tests_dyn_handler import format_dynamic_exercise
             
             sync_service = get_curriculum_sync_service(db)
             exercise_service = get_exercise_persistence_service(db)
             
             chapter_code_for_db = request.code_officiel.upper().replace("-", "_")
             
-            try:
-                has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
-                if has_exercises:
-                    exercises = await exercise_service.get_exercises(
-                        chapter_code=chapter_code_for_db,
-                        offer=request.offer if hasattr(request, 'offer') else None,
-                        difficulty=request.difficulte if hasattr(request, 'difficulte') else None
-                    )
-                    dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
-                    static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
-                    
-                    if len(dynamic_exercises) > 0:
-                        selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
-                        timestamp = int(time.time() * 1000)
-                        dyn_exercise = format_dynamic_exercise(
-                            exercise_template=selected_exercise,
-                            timestamp=timestamp,
-                            seed=request.seed
-                        )
-                        
-                        logger.info(
-                            f"[PIPELINE] ✅ Exercice dynamique généré (fallback legacy): "
-                            f"chapter_code={chapter_code_for_db}, exercise_id={selected_exercise.get('id')}"
-                        )
-                        
-                        return dyn_exercise
-                    
-                        if len(static_exercises) > 0:
-                            selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
-                        timestamp = int(time.time() * 1000)
-                        static_exercise = {
-                            "id_exercice": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
-                            "niveau": curriculum_chapter.niveau,
-                            "chapitre": curriculum_chapter.libelle or curriculum_chapter.code_officiel,
-                            "enonce_html": selected_static.get("enonce_html") or "",
-                            "solution_html": selected_static.get("solution_html") or "",
-                            "needs_svg": selected_static.get("needs_svg") or False,
-                            "exercise_type": selected_static.get("exercise_type"),
-                            "pdf_token": f"admin_static_{chapter_code_for_db}_{selected_static.get('id')}_{timestamp}",
-                            "metadata": {
-                                "offer": selected_static.get("offer"),
-                                "difficulty": selected_static.get("difficulty"),
-                                "source": "admin_exercises_static",
-                                "is_fallback": False
-                            }
-                        }
-                        logger.info(
-                            f"[PIPELINE] ✅ Exercice statique (admin) généré (fallback legacy): "
-                            f"chapter_code={chapter_code_for_db}, exercise_id={selected_static.get('id')}"
-                        )
-                        return static_exercise
-                    
-                    # Aucun exo filtré → message explicite
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "error_code": "NO_EXERCISE_AVAILABLE",
-                            "error": "no_exercise_available",
-                            "message": (
-                                f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
-                                f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
-                                "Ajoutez un exercice correspondant ou changez de difficulté/offre."
-                            ),
-                            "chapter_code": chapter_code_for_db,
-                            "pipeline": "legacy_no_pipeline",
-                            "filters": {
-                                "offer": getattr(request, 'offer', None),
-                                "difficulty": getattr(request, 'difficulte', None)
-                            }
-                        }
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"[PIPELINE] Erreur vérification exercices dynamiques (fallback) pour {chapter_code_for_db}: {e}. "
-                    f"Fallback sur pipeline STATIQUE."
-                )
+            ctx = get_request_context()
+            ctx.update({
+                'pipeline': 'AUTO',
+                'chapter_code': chapter_code_for_db,
+            })
+            
+            # Utiliser le pipeline simplifié : DYNAMIC → STATIC fallback
+            return await generate_exercise_with_fallback(
+                chapter_code=chapter_code_for_db,
+                exercise_service=exercise_service,
+                request=request,
+                ctx=ctx,
+                request_start=request_start
+            )
         
         # Convertir les types d'exercices du référentiel en enum
         # IMPORTANT:

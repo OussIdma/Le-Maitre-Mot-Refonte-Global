@@ -6366,6 +6366,10 @@ app.include_router(admin_template_router, tags=["Admin Templates"])
 from backend.routes.admin_static_exercises_routes import router as admin_static_exercises_router
 app.include_router(admin_static_exercises_router, tags=["Admin Static Exercises"])
 
+# Routes user sheets (P3.1 - Mes fiches)
+from backend.routes.user_sheets_routes import router as user_sheets_router
+app.include_router(user_sheets_router, tags=["User Sheets"])
+
 # P0 - Import secure auth service
 from backend.services.secure_auth_service import SecureAuthService
 

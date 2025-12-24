@@ -95,8 +95,8 @@ const ChapterExercisesAdminPage = () => {
   const [filterOffer, setFilterOffer] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   
-  // P1.5 - Onglets Statiques/Dynamiques
-  const [activeTab, setActiveTab] = useState('dynamiques');
+  // P0 - Onglets simplifiés : Générateurs / Statiques DB uniquement
+  const [activeTab, setActiveTab] = useState('generateurs');
   const [staticExercises, setStaticExercises] = useState([]);
   const [loadingStatic, setLoadingStatic] = useState(false);
   const [staticError, setStaticError] = useState(null);
@@ -169,6 +169,63 @@ const ChapterExercisesAdminPage = () => {
   
   // Familles disponibles (déprécié - legacy)
   const families = ['CONVERSION', 'COMPARAISON', 'PERIMETRE', 'PROBLEME', 'DUREES', 'LECTURE_HORLOGE', 'CALCUL_DUREE', 'AGRANDISSEMENT_REDUCTION'];
+  
+  // ============================================================================
+  // FONCTIONS DE DÉTECTION DU TYPE D'EXERCICE (Phase C - Refactor)
+  // ============================================================================
+  
+  /**
+   * Détermine le type d'un exercice pour la séparation claire des onglets
+   * @param {Object} exercise - L'exercice à analyser
+   * @returns {'GENERATOR' | 'STATIC_DB' | 'CATALOG_LEGACY' | 'UNKNOWN'}
+   */
+  const getExerciseType = (exercise) => {
+    if (!exercise) return 'UNKNOWN';
+    
+    // GENERATOR : Exercice dynamique avec générateur
+    if (exercise.is_dynamic === true && exercise.generator_key) {
+      return 'GENERATOR';
+    }
+    
+    // STATIC_DB ou CATALOG_LEGACY : Exercice statique
+    if (exercise.is_dynamic === false || exercise.is_dynamic === undefined) {
+      // Vérifier si legacy (source depuis Python)
+      const isLegacy = exercise.source === 'legacy_migration' || 
+                       exercise.legacy_ref || 
+                       (exercise.source && exercise.source.includes('legacy'));
+      
+      if (isLegacy) {
+        return 'CATALOG_LEGACY';
+      }
+      
+      // Sinon, c'est un statique DB
+      return 'STATIC_DB';
+    }
+    
+    return 'UNKNOWN';
+  };
+  
+  /**
+   * Vérifie si un exercice provient d'une source legacy (fichier Python)
+   */
+  const isLegacySource = (exercise) => {
+    return exercise.source === 'legacy_migration' || 
+           exercise.legacy_ref || 
+           (exercise.source && exercise.source.includes('legacy'));
+  };
+  
+  /**
+   * Filtre les exercices par type
+   */
+  const filterByType = (exercisesList, type) => {
+    return exercisesList.filter(ex => getExerciseType(ex) === type);
+  };
+  
+  // Calcul des listes filtrées pour chaque onglet
+  const catalogExercises = exercises; // Catalogue = tous les exercices
+  const generatorExercises = filterByType(exercises, 'GENERATOR');
+  const staticDBExercises = filterByType(staticExercises, 'STATIC_DB'); // Utiliser staticExercises pour les statiques DB
+  const legacyExercises = filterByType(exercises, 'CATALOG_LEGACY');
   
   // Charger les types d'exercices et générateurs
   useEffect(() => {
@@ -322,7 +379,7 @@ const ChapterExercisesAdminPage = () => {
     }
   }, [chapterCode]);
 
-  // P1.5 - Charger les statiques quand l'onglet est actif
+  // P0 - Charger les statiques quand l'onglet est actif
   useEffect(() => {
     if (activeTab === 'statiques') {
       fetchStaticExercises();
@@ -1178,8 +1235,8 @@ const ChapterExercisesAdminPage = () => {
           </Button>
         </div>
 
-        {/* Liste des exercices statiques */}
-        {staticExercises.length === 0 ? (
+        {/* P0 - Liste des exercices statiques DB uniquement (pas legacy) */}
+        {staticDBExercises.length === 0 ? (
           <Card className="p-12 text-center">
             <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
             <p className="text-gray-600 mb-4">Aucun exercice statique dans ce chapitre</p>
@@ -1202,7 +1259,7 @@ const ChapterExercisesAdminPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {staticExercises.map((exercise) => (
+                {staticDBExercises.map((exercise) => (
                   <TableRow key={exercise.id}>
                     <TableCell>
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
@@ -1452,21 +1509,21 @@ const ChapterExercisesAdminPage = () => {
           );
         })()}
         
-        {/* P1.5 - Onglets Dynamiques / Statiques */}
+        {/* P0 - 2 onglets distincts : Générateurs / Statiques DB */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
-            <TabsTrigger value="dynamiques" className="flex items-center gap-2">
+          <TabsList className="grid w-full max-w-2xl grid-cols-2 mb-6">
+            <TabsTrigger value="generateurs" className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
-              🧩 Dynamiques (générés)
+              🧩 Générateurs
             </TabsTrigger>
             <TabsTrigger value="statiques" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              📄 Statiques (figés)
+              📄 Statiques DB
             </TabsTrigger>
           </TabsList>
 
-          {/* Onglet Dynamiques */}
-          <TabsContent value="dynamiques" className="space-y-6">
+          {/* P0 - Onglet Générateurs : UNIQUEMENT is_dynamic=true && generator_key */}
+          <TabsContent value="generateurs" className="space-y-6">
             {/* Bouton "Rédaction templates" */}
             <div className="flex justify-end">
               <Button 
@@ -1582,7 +1639,7 @@ const ChapterExercisesAdminPage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {exercises.map((exercise) => (
+                  {generatorExercises.map((exercise) => (
                     <TableRow key={exercise.id} className="hover:bg-gray-50">
                       <TableCell className="font-mono font-medium">
                         #{exercise.id}
@@ -1688,13 +1745,13 @@ const ChapterExercisesAdminPage = () => {
               </Table>
             </div>
             
-            {exercises.length === 0 && (
+            {generatorExercises.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Aucun exercice pour ce chapitre</p>
+                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Aucun générateur dynamique pour ce chapitre</p>
                 <Button onClick={handleOpenCreate} className="mt-4">
                   <Plus className="h-4 w-4 mr-2" />
-                  Créer le premier exercice
+                  Créer un générateur
                 </Button>
               </div>
             )}

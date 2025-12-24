@@ -1,0 +1,31 @@
+SAUVEGARDE MONGODB - 24 décembre 2025 13:32:49
+================================================
+
+Base de données: le_maitre_mot_db
+
+Collections sauvegardées:
+- admin_exercises (1 document)
+- auth_logs (6 documents)
+- curriculum_chapters (33 documents)
+- login_sessions (3 documents)
+- magic_tokens (3 documents)
+- pro_users (1 document)
+- user_exercises (3 documents)
+
+Fichiers:
+- backup_20251224_133249/ : Dossier de sauvegarde (format mongodump)
+- backup_20251224_133249.tar.gz : Archive compressée
+
+RESTAURATION:
+-------------
+Pour restaurer cette sauvegarde:
+
+1. Depuis le conteneur MongoDB:
+   docker compose exec mongo mongorestore --db le_maitre_mot_db /data/db/backup_20251224_133249/le_maitre_mot_db
+
+2. Ou depuis l'hôte (après extraction de l'archive):
+   tar -xzf backups/mongodb/backup_20251224_133249.tar.gz
+   docker cp backups/mongodb/backup_20251224_133249 le-maitre-mot-mongo:/data/db/
+   docker compose exec mongo mongorestore --db le_maitre_mot_db /data/db/backup_20251224_133249/le_maitre_mot_db
+
+Note: Cette sauvegarde a été créée AVANT la migration pseudo-statique vers static_exercises.

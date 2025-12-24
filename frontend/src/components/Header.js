@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import { useLogin } from "../contexts/LoginContext";
 import { Badge } from "./ui/badge";
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 
 function Header({ isPro, userEmail, onLogin, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { openLogin } = useLogin();
@@ -44,8 +46,8 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
           >
             <GraduationCap className="h-8 w-8 text-blue-600 mr-2" />
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Le Maître Mot</h1>
-              <p className="text-xs text-gray-500">Générateur d'exercices intelligent</p>
+              <h1 className="text-xl font-bold text-gray-900">{t('nav.appName')}</h1>
+              <p className="text-xs text-gray-500">{t('nav.subtitle')}</p>
             </div>
           </div>
 
@@ -57,7 +59,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               onClick={() => navigate('/')}
             >
               <Home className="h-4 w-4 mr-2" />
-              Accueil
+              {t('nav.home')}
             </Button>
 
             <Button
@@ -66,7 +68,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               onClick={() => navigate('/builder')}
             >
               <FileText className="h-4 w-4 mr-2" />
-              Créer une fiche
+              {t('nav.createSheet')}
             </Button>
 
             <Button
@@ -76,9 +78,9 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               className="relative"
             >
               <Sparkles className="h-4 w-4 mr-2" />
-              Exercice IA
+              {t('nav.exerciseIA')}
               {isPro && (
-                <Badge className="ml-2 bg-purple-600 text-white text-xs">Pro</Badge>
+                <Badge className="ml-2 bg-purple-600 text-white text-xs">{t('pro.badge')}</Badge>
               )}
             </Button>
 
@@ -88,7 +90,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               onClick={() => navigate('/sheets')}
             >
               <FolderOpen className="h-4 w-4 mr-2" />
-              Mes fiches
+              {t('nav.mySheets')}
             </Button>
 
             {isPro && (
@@ -109,8 +111,8 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
                 className="relative"
               >
                 <Settings className="h-4 w-4 mr-2" />
-                Paramètres Pro
-                <Badge className="ml-2 bg-blue-600 text-white text-xs">Pro</Badge>
+                {t('nav.proSettings')}
+                <Badge className="ml-2 bg-blue-600 text-white text-xs">{t('pro.badge')}</Badge>
               </Button>
             )}
           </nav>
@@ -122,7 +124,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
                 <div className="hidden sm:flex items-center bg-blue-50 px-3 py-1.5 rounded-lg">
                   <Crown className="h-4 w-4 text-blue-600 mr-2" />
                   <div className="text-right">
-                    <p className="text-xs font-semibold text-blue-900">Pro</p>
+                    <p className="text-xs font-semibold text-blue-900">{t('pro.status')}</p>
                     <p className="text-xs text-blue-700">{userEmail.split('@')[0]}</p>
                   </div>
                 </div>
@@ -132,7 +134,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
                   onClick={onLogout}
                 >
                   <LogOut className="h-4 w-4 mr-2" />
-                  Déconnexion
+                  {t('actions.disconnect')}
                 </Button>
               </div>
             ) : (
@@ -143,7 +145,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <LogIn className="h-4 w-4 mr-2" />
-                Connexion
+                {t('actions.login')}
               </Button>
             )}
           </div>
@@ -157,7 +159,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
             onClick={() => navigate('/')}
           >
             <Home className="h-4 w-4 mr-1" />
-            Accueil
+            {t('nav.home')}
           </Button>
 
           <Button
@@ -166,7 +168,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
             onClick={() => navigate('/builder')}
           >
             <FileText className="h-4 w-4 mr-1" />
-            Fiche
+            {t('nav.sheetShort')}
           </Button>
 
           <Button
@@ -175,7 +177,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
             onClick={() => navigate('/')}
           >
             <Sparkles className="h-4 w-4 mr-1" />
-            IA
+            {t('nav.iaShort')}
           </Button>
 
           <Button
@@ -184,7 +186,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
             onClick={() => navigate('/sheets')}
           >
             <FolderOpen className="h-4 w-4 mr-1" />
-            Fiches
+            {t('nav.mySheetsShort')}
           </Button>
 
           {isPro && (
@@ -203,7 +205,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               }}
             >
               <Settings className="h-4 w-4 mr-1" />
-              Param. Pro
+              {t('nav.proSettingsShort')}
             </Button>
           )}
         </nav>
