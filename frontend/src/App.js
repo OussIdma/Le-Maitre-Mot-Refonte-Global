@@ -22,6 +22,7 @@ import MyExercisesPage from "./components/MyExercisesPage";
 import ProSettingsPage from "./components/ProSettingsPage";
 import ExerciseGeneratorPage from "./components/ExerciseGeneratorPage";
 import CurriculumAdminSimplePage from "./components/admin/CurriculumAdminSimplePage";
+import Curriculum6eAdminPage from "./components/admin/Curriculum6eAdminPage";
 import ChapterExercisesAdminPage from "./components/admin/ChapterExercisesAdminPage";
 import GeneratorTemplatesAdminPage from "./components/admin/GeneratorTemplatesAdminPage";
 import LandingPage from "./components/LandingPage";
@@ -1613,7 +1614,7 @@ function App() {
         {/* Routes admin avec NavBar */}
         <Route path="/admin/curriculum" element={
           <AppWithNav>
-            <CurriculumAdminSimplePage />
+            <Curriculum6eAdminPage />
           </AppWithNav>
         } />
         <Route path="/admin/curriculum/:chapterCode/exercises" element={

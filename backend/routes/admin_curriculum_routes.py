@@ -5,18 +5,29 @@ Permet l'ajout/retrait de générateurs à un chapitre via UI,
 en modifiant directement le curriculum JSON de manière sécurisée.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import os
 from pathlib import Path
 
 from backend.generators.factory import GeneratorFactory
 from backend.observability.logger import get_logger
+from backend.services.curriculum_persistence_service import (
+    CurriculumPersistenceService,
+    ChapterCreateRequest,
+    ChapterUpdateRequest
+)
 
 router = APIRouter(prefix="/api/v1/admin/curriculum", tags=["admin-curriculum"])
 obs_logger = get_logger()
+
+# Dépendance pour obtenir le service
+async def get_curriculum_service():
+    from server import db
+    from backend.services.curriculum_persistence_service import CurriculumPersistenceService
+    return CurriculumPersistenceService(db)
 
 # Chemin vers les fichiers curriculum
 CURRICULUM_DIR = Path(__file__).parent.parent / "curriculum"
@@ -318,8 +329,231 @@ async def get_chapter_exercise_types(code_officiel: str):
         raise HTTPException(
             status_code=404,
             detail={
-            "error_code": "CHAPTER_NOT_FOUND",
-            "message": f"Chapitre {code_officiel} introuvable",
-            "code_officiel": code_officiel
+                "error_code": "CHAPTER_NOT_FOUND",
+                "message": f"Chapitre {code_officiel} introuvable",
+                "code_officiel": code_officiel
+            }
+        )
+
+
+# ============================================================================
+# Routes CRUD complètes pour les chapitres
+# ============================================================================
+
+@router.get("/{niveau}")
+async def get_curriculum(
+    niveau: str,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """
+    Récupère tous les chapitres d'un niveau avec statistiques.
+    
+    Compatible avec l'ancienne route /api/admin/curriculum/{niveau}
+    """
+    try:
+        chapters = await service.get_all_chapters(niveau=niveau)
+        
+        # Transformer les chapitres pour compatibilité frontend
+        # Le frontend attend "generateurs" mais MongoDB stocke "exercise_types"
+        transformed_chapters = []
+        for chapter in chapters:
+            transformed = chapter.copy()
+            # Mapper exercise_types -> generateurs pour compatibilité frontend
+            if "exercise_types" in transformed:
+                transformed["generateurs"] = transformed.pop("exercise_types")
+            elif "generateurs" not in transformed:
+                transformed["generateurs"] = []
+            transformed_chapters.append(transformed)
+        
+        # Calculer les statistiques
+        stats = {
+            "total_chapitres": len(transformed_chapters),
+            "by_domaine": {},
+            "by_status": {},
+            "with_diagrams": 0
         }
-    )
+        
+        for chapter in transformed_chapters:
+            # Par domaine
+            domaine = chapter.get("domaine", "Non défini")
+            stats["by_domaine"][domaine] = stats["by_domaine"].get(domaine, 0) + 1
+            
+            # Par statut
+            statut = chapter.get("statut", "beta")
+            stats["by_status"][statut] = stats["by_status"].get(statut, 0) + 1
+            
+            # Avec schémas
+            if chapter.get("schema_requis") or chapter.get("has_diagramme"):
+                stats["with_diagrams"] += 1
+        
+        return {
+            "niveau": niveau,
+            "chapitres": transformed_chapters,
+            "total_chapitres": len(transformed_chapters),
+            "stats": stats
+        }
+    except Exception as e:
+        obs_logger.error(f"Erreur récupération curriculum {niveau}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": f"Erreur lors de la récupération: {str(e)}"
+            }
+        )
+
+
+@router.get("/options")
+async def get_available_options():
+    """
+    Récupère les options disponibles pour les formulaires (générateurs, domaines, etc.)
+    
+    Compatible avec l'ancienne route /api/admin/curriculum/options
+    """
+    try:
+        # Récupérer tous les générateurs disponibles
+        all_generators = GeneratorFactory.list_all()
+        generators = [gen.get_meta().key for gen in all_generators if gen]
+        
+        # Domaines standards
+        domaines = [
+            "Nombres et calculs",
+            "Géométrie",
+            "Grandeurs et mesures",
+            "Organisation et gestion de données"
+        ]
+        
+        return {
+            "generators": sorted(generators),
+            "domaines": domaines,
+            "statuts": ["prod", "beta", "hidden"]
+        }
+    except Exception as e:
+        obs_logger.error(f"Erreur récupération options: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": f"Erreur lors de la récupération: {str(e)}"
+            }
+        )
+
+
+@router.post("/{niveau}/chapters")
+async def create_chapter(
+    niveau: str,
+    request: ChapterCreateRequest,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """
+    Crée un nouveau chapitre.
+    
+    Compatible avec l'ancienne route /api/admin/curriculum/{niveau}/chapters
+    """
+    try:
+        chapter = await service.create_chapter(request)
+        
+        return {
+            "message": f"Chapitre {request.code_officiel} créé avec succès",
+            "chapter": chapter
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "VALIDATION_ERROR",
+                "message": str(e)
+            }
+        )
+    except Exception as e:
+        obs_logger.error(f"Erreur création chapitre: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": f"Erreur lors de la création: {str(e)}"
+            }
+        )
+
+
+@router.put("/{niveau}/chapters/{code_officiel}")
+async def update_chapter(
+    niveau: str,
+    code_officiel: str,
+    request: ChapterUpdateRequest,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """
+    Met à jour un chapitre existant.
+    
+    Compatible avec l'ancienne route /api/admin/curriculum/{niveau}/chapters/{code_officiel}
+    """
+    try:
+        chapter = await service.update_chapter(code_officiel, request)
+        
+        return {
+            "message": f"Chapitre {code_officiel} modifié avec succès",
+            "chapter": chapter
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "VALIDATION_ERROR",
+                "message": str(e)
+            }
+        )
+    except Exception as e:
+        obs_logger.error(f"Erreur mise à jour chapitre: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": f"Erreur lors de la mise à jour: {str(e)}"
+            }
+        )
+
+
+@router.delete("/{niveau}/chapters/{code_officiel}")
+async def delete_chapter(
+    niveau: str,
+    code_officiel: str,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """
+    Supprime un chapitre.
+    
+    Compatible avec l'ancienne route /api/admin/curriculum/{niveau}/chapters/{code_officiel}
+    """
+    try:
+        deleted = await service.delete_chapter(code_officiel)
+        
+        if deleted:
+            return {
+                "message": f"Chapitre {code_officiel} supprimé avec succès"
+            }
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "CHAPTER_NOT_FOUND",
+                    "message": f"Chapitre {code_officiel} introuvable"
+                }
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error_code": "CHAPTER_NOT_FOUND",
+                "message": str(e)
+            }
+        )
+    except Exception as e:
+        obs_logger.error(f"Erreur suppression chapitre: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": f"Erreur lors de la suppression: {str(e)}"
+            }
+        )

@@ -244,12 +244,19 @@ class CurriculumPersistenceService:
                 )
         
         # Validation 2: SPEC avec exercise_types invalides → ERREUR
+        # Permet à la fois les MathExerciseType (statiques) et les generator_keys (dynamiques)
         if pipeline_mode == "SPEC" and request.exercise_types:
             from backend.models.math_models import MathExerciseType
+            from backend.generators.factory import GeneratorFactory
             
             invalid_types = []
             for et in request.exercise_types:
-                if not hasattr(MathExerciseType, et):
+                # Vérifier si c'est un MathExerciseType (statique)
+                is_math_type = hasattr(MathExerciseType, et)
+                # Vérifier si c'est un generator_key (dynamique)
+                is_generator = GeneratorFactory.get(et) is not None
+                
+                if not is_math_type and not is_generator:
                     invalid_types.append(et)
             
             if len(invalid_types) == len(request.exercise_types) and len(invalid_types) > 0:
@@ -257,9 +264,9 @@ class CurriculumPersistenceService:
                 raise ValueError(
                     f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='SPEC' "
                     f"mais tous les exercise_types configurés ne correspondent à aucun "
-                    f"MathExerciseType connu: {invalid_types}. "
-                    f"Ajoutez ces types dans MathExerciseType, corrigez le référentiel, "
-                    f"ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
+                    f"MathExerciseType connu ni à aucun générateur dynamique: {invalid_types}. "
+                    f"Ajoutez ces types dans MathExerciseType ou enregistrez ces générateurs dans GeneratorFactory, "
+                    f"corrigez le référentiel, ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
                 )
         
         # Construire le document
@@ -348,12 +355,19 @@ class CurriculumPersistenceService:
                 )
         
         # Validation 2: SPEC avec exercise_types invalides → ERREUR
+        # Permet à la fois les MathExerciseType (statiques) et les generator_keys (dynamiques)
         if pipeline_mode == "SPEC" and exercise_types:
             from backend.models.math_models import MathExerciseType
+            from backend.generators.factory import GeneratorFactory
             
             invalid_types = []
             for et in exercise_types:
-                if not hasattr(MathExerciseType, et):
+                # Vérifier si c'est un MathExerciseType (statique)
+                is_math_type = hasattr(MathExerciseType, et)
+                # Vérifier si c'est un generator_key (dynamique)
+                is_generator = GeneratorFactory.get(et) is not None
+                
+                if not is_math_type and not is_generator:
                     invalid_types.append(et)
             
             if len(invalid_types) == len(exercise_types) and len(invalid_types) > 0:
@@ -361,9 +375,9 @@ class CurriculumPersistenceService:
                 raise ValueError(
                     f"Le chapitre '{code_officiel}' est configuré avec pipeline='SPEC' "
                     f"mais tous les exercise_types configurés ne correspondent à aucun "
-                    f"MathExerciseType connu: {invalid_types}. "
-                    f"Ajoutez ces types dans MathExerciseType, corrigez le référentiel, "
-                    f"ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
+                    f"MathExerciseType connu ni à aucun générateur dynamique: {invalid_types}. "
+                    f"Ajoutez ces types dans MathExerciseType ou enregistrez ces générateurs dans GeneratorFactory, "
+                    f"corrigez le référentiel, ou changez le pipeline à 'TEMPLATE' ou 'MIXED'."
                 )
         
         update_data["updated_at"] = datetime.now(timezone.utc)

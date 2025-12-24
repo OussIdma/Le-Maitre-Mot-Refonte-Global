@@ -148,7 +148,7 @@ const Curriculum6eAdminPage = () => {
     setError(null);
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/admin/curriculum/6e`);
+      const response = await fetch(`${BACKEND_URL}/api/v1/admin/curriculum/6e`);
       
       if (!response.ok) {
         if (response.status === 403) {
@@ -168,7 +168,7 @@ const Curriculum6eAdminPage = () => {
   
   const fetchAvailableOptions = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/admin/curriculum/options`);
+      const response = await fetch(`${BACKEND_URL}/api/v1/admin/curriculum/options`);
       if (response.ok) {
         const data = await response.json();
         setAvailableOptions(data);
@@ -180,12 +180,12 @@ const Curriculum6eAdminPage = () => {
   
   // Filtrer les chapitres
   const filteredChapitres = useMemo(() => {
-    if (!curriculum?.chapitres) return [];
+    if (!curriculum?.chapitres || !Array.isArray(curriculum.chapitres)) return [];
     
     return curriculum.chapitres.filter(chapitre => {
       const matchesSearch = searchTerm === '' || 
-        chapitre.code_officiel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        chapitre.libelle.toLowerCase().includes(searchTerm.toLowerCase());
+        (chapitre.code_officiel && chapitre.code_officiel.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (chapitre.libelle && chapitre.libelle.toLowerCase().includes(searchTerm.toLowerCase()));
       
       const matchesDomaine = selectedDomaine === 'all' || 
         chapitre.domaine === selectedDomaine;
@@ -196,8 +196,8 @@ const Curriculum6eAdminPage = () => {
   
   // Liste des domaines uniques
   const domaines = useMemo(() => {
-    if (!curriculum?.chapitres) return [];
-    return [...new Set(curriculum.chapitres.map(c => c.domaine))];
+    if (!curriculum?.chapitres || !Array.isArray(curriculum.chapitres)) return [];
+    return [...new Set(curriculum.chapitres.map(c => c.domaine).filter(Boolean))];
   }, [curriculum]);
   
   // Couleurs
@@ -302,8 +302,8 @@ const Curriculum6eAdminPage = () => {
     
     try {
       const url = modalMode === 'create'
-        ? `${BACKEND_URL}/api/admin/curriculum/6e/chapters`
-        : `${BACKEND_URL}/api/admin/curriculum/6e/chapters/${editingChapter.code_officiel}`;
+        ? `${BACKEND_URL}/api/v1/admin/curriculum/6e/chapters`
+        : `${BACKEND_URL}/api/v1/admin/curriculum/6e/chapters/${editingChapter.code_officiel}`;
       
       const method = modalMode === 'create' ? 'POST' : 'PUT';
       
@@ -351,7 +351,7 @@ const Curriculum6eAdminPage = () => {
     
     try {
       const response = await fetch(
-        `${BACKEND_URL}/api/admin/curriculum/6e/chapters/${chapterToDelete.code_officiel}`,
+        `${BACKEND_URL}/api/v1/admin/curriculum/6e/chapters/${chapterToDelete.code_officiel}`,
         { method: 'DELETE' }
       );
       
@@ -633,7 +633,7 @@ const Curriculum6eAdminPage = () => {
                       
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {chapitre.generateurs.slice(0, 2).map((gen) => (
+                          {(chapitre.generateurs || []).slice(0, 2).map((gen) => (
                             <Badge 
                               key={gen} 
                               variant="secondary" 
@@ -642,9 +642,9 @@ const Curriculum6eAdminPage = () => {
                               {gen}
                             </Badge>
                           ))}
-                          {chapitre.generateurs.length > 2 && (
+                          {(chapitre.generateurs || []).length > 2 && (
                             <Badge variant="outline" className="text-xs">
-                              +{chapitre.generateurs.length - 2}
+                              +{(chapitre.generateurs || []).length - 2}
                             </Badge>
                           )}
                         </div>
@@ -796,7 +796,7 @@ const Curriculum6eAdminPage = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableOptions.domaines.map(domaine => (
+                    {(availableOptions.domaines || []).map(domaine => (
                       <SelectItem key={domaine} value={domaine}>
                         {domaine}
                       </SelectItem>
@@ -980,7 +980,7 @@ const Curriculum6eAdminPage = () => {
               <div className="col-span-3">
                 <div className={`border rounded-md p-3 max-h-40 overflow-y-auto ${formData.pipeline === 'TEMPLATE' ? 'opacity-60' : ''}`}>
                   <div className="flex flex-wrap gap-2">
-                    {availableOptions.generators.slice(0, 30).map(gen => (
+                    {(availableOptions.generators || []).slice(0, 30).map(gen => (
                       <Badge
                         key={gen}
                         variant={formData.exercise_types.includes(gen) ? 'default' : 'outline'}

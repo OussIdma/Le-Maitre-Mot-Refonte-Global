@@ -186,21 +186,48 @@ const ChapterExercisesAdminPage = () => {
     
     const fetchGenerators = async () => {
       try {
+        console.log('🔍 Chargement des générateurs depuis:', `${BACKEND_URL}/api/v1/exercises/generators`);
         const response = await fetch(`${BACKEND_URL}/api/v1/exercises/generators`);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('📦 Données reçues du backend:', data);
+          
           // Gérer les deux formats: liste d'objets ou liste de strings
           const generators = data.generators || [];
-          const keys = generators.map(g => typeof g === 'string' ? g : g.key);
-          // Ajouter SYMETRIE_AXIALE_V2 si non présent (nouveau générateur)
-          if (!keys.includes('SYMETRIE_AXIALE_V2')) {
-            keys.push('SYMETRIE_AXIALE_V2');
+          console.log('📋 Générateurs bruts:', generators);
+          
+          const keys = generators.map(g => {
+            if (typeof g === 'string') return g;
+            return g.key || g.generator_key || g.name || String(g);
+          }).filter(Boolean);
+          
+          console.log('🔑 Clés extraites:', keys);
+          
+          // Fallback si vide
+          if (keys.length === 0) {
+            console.warn('⚠️ Aucun générateur trouvé dans la réponse, utilisation du fallback');
+            const fallback = ['THALES_V1', 'THALES_V2', 'SYMETRIE_AXIALE_V2', 'CALCUL_NOMBRES_V1', 'RAISONNEMENT_MULTIPLICATIF_V1', 'SIMPLIFICATION_FRACTIONS_V2'];
+            setAvailableGenerators(fallback);
+            return;
           }
-          setAvailableGenerators(keys);
+          
+          // Dédupliquer et trier
+          const uniqueKeys = [...new Set(keys)].sort();
+          setAvailableGenerators(uniqueKeys);
+          console.log('✅ Générateurs chargés avec succès:', uniqueKeys);
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Erreur HTTP:', response.status, response.statusText, errorText);
+          // Fallback en cas d'erreur HTTP
+          const fallback = ['THALES_V1', 'THALES_V2', 'SYMETRIE_AXIALE_V2', 'CALCUL_NOMBRES_V1', 'RAISONNEMENT_MULTIPLICATIF_V1', 'SIMPLIFICATION_FRACTIONS_V2'];
+          setAvailableGenerators(fallback);
         }
       } catch (err) {
-        console.error('Erreur chargement générateurs:', err);
-        setAvailableGenerators(['THALES_V1', 'SYMETRIE_AXIALE_V2']); // Fallback avec les deux
+        console.error('❌ Erreur chargement générateurs:', err);
+        // Fallback avec tous les générateurs connus
+        const fallback = ['THALES_V1', 'THALES_V2', 'SYMETRIE_AXIALE_V2', 'CALCUL_NOMBRES_V1', 'RAISONNEMENT_MULTIPLICATIF_V1', 'SIMPLIFICATION_FRACTIONS_V2'];
+        setAvailableGenerators(fallback);
       }
     };
     
@@ -1773,7 +1800,8 @@ const ChapterExercisesAdminPage = () => {
                 />
               </div>
               
-              {formData.is_dynamic && (
+              {/* Afficher le champ générateur si is_dynamic OU si le pipeline est TEMPLATE/MIXED */}
+              {(formData.is_dynamic || chapterPipeline === 'TEMPLATE' || chapterPipeline === 'MIXED') && (
                 <div className={`space-y-4 mt-4 ${chapterPipeline === 'SPEC' ? 'opacity-60' : ''}`}>
                   {chapterPipeline === 'SPEC' && (
                     <Alert className="border-yellow-500 bg-yellow-50">
@@ -1806,10 +1834,19 @@ const ChapterExercisesAdminPage = () => {
                     <Label className="text-sm">
                       Générateur *
                       <span className="text-xs text-gray-500 ml-1">(déduit aussi l'exercise_type)</span>
+                      {availableGenerators.length === 0 && (
+                        <span className="text-xs text-orange-600 ml-2">⚠️ Chargement...</span>
+                      )}
+                      <span className="text-xs text-blue-600 ml-2">
+                        ({availableGenerators.length} disponible{availableGenerators.length > 1 ? 's' : ''})
+                      </span>
                     </Label>
                     <Select 
-                      value={formData.generator_key || 'THALES_V1'} 
+                      value={formData.generator_key || ''} 
+                      disabled={availableGenerators.length === 0}
                       onValueChange={(v) => {
+                        console.log('🎯 Générateur sélectionné:', v);
+                        console.log('📊 État actuel availableGenerators:', availableGenerators);
                         const templates = getDynamicTemplates(v);
                         setFormData(p => {
                           // Pour les générateurs premium (SIMPLIFICATION_FRACTIONS_V2), initialiser les variants A/B/C si absents
@@ -1862,13 +1899,29 @@ const ChapterExercisesAdminPage = () => {
                         <SelectValue placeholder="Choisir un générateur..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableGenerators.map(g => (
-                          <SelectItem key={g} value={g}>
-                            {g === 'THALES_V1' ? '🔺 THALES_V1 - Agrandissements/Réductions' : 
-                             g === 'SYMETRIE_AXIALE_V2' ? '📐 SYMETRIE_AXIALE_V2 - Symétrie Axiale' :
-                             g === 'THALES_V2' ? '🔺 THALES_V2 - Agrandissements/Réductions' : g}
-                          </SelectItem>
-                        ))}
+                        {(() => {
+                          console.log('🎨 Rendu SelectContent - availableGenerators:', availableGenerators, 'length:', availableGenerators.length);
+                          if (availableGenerators.length > 0) {
+                            return availableGenerators.map(g => (
+                              <SelectItem key={g} value={g}>
+                                {g === 'THALES_V1' ? '🔺 THALES_V1 - Agrandissements/Réductions' : 
+                                 g === 'THALES_V2' ? '🔺 THALES_V2 - Agrandissements/Réductions' :
+                                 g === 'SYMETRIE_AXIALE_V2' ? '📐 SYMETRIE_AXIALE_V2 - Symétrie Axiale' :
+                                 g === 'CALCUL_NOMBRES_V1' ? '🔢 CALCUL_NOMBRES_V1 - Calculs numériques' :
+                                 g === 'RAISONNEMENT_MULTIPLICATIF_V1' ? '✖️ RAISONNEMENT_MULTIPLICATIF_V1 - Raisonnement multiplicatif' :
+                                 g === 'SIMPLIFICATION_FRACTIONS_V1' ? '🔢 SIMPLIFICATION_FRACTIONS_V1 - Simplification de fractions' :
+                                 g === 'SIMPLIFICATION_FRACTIONS_V2' ? '🔢 SIMPLIFICATION_FRACTIONS_V2 - Simplification de fractions (v2)' :
+                                 g}
+                              </SelectItem>
+                            ));
+                          } else {
+                            return (
+                              <SelectItem value="" disabled>
+                                Chargement des générateurs... ({availableGenerators.length})
+                              </SelectItem>
+                            );
+                          }
+                        })()}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-gray-500 mt-1">
