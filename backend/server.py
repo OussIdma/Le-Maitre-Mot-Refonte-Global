@@ -6366,6 +6366,14 @@ app.include_router(admin_template_router, tags=["Admin Templates"])
 from backend.routes.admin_static_exercises_routes import router as admin_static_exercises_router
 app.include_router(admin_static_exercises_router, tags=["Admin Static Exercises"])
 
+# P4.B - Admin Chapter Generators
+from backend.routes.admin_chapter_generators_routes import router as admin_chapter_generators_router
+app.include_router(admin_chapter_generators_router, tags=["Admin - Chapter Generators"])
+
+# P4.D - Debug routes (DEV-only)
+from backend.routes.debug_routes import router as debug_router
+app.include_router(debug_router, tags=["Debug"])
+
 # Routes user sheets (P3.1 - Mes fiches)
 from backend.routes.user_sheets_routes import router as user_sheets_router
 app.include_router(user_sheets_router, tags=["User Sheets"])

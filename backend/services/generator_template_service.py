@@ -19,6 +19,13 @@ from backend.models.generator_template import (
 )
 from backend.generators.factory import GeneratorFactory
 from backend.services.template_renderer import render_template
+from backend.utils.difficulty_utils import (
+    normalize_difficulty,
+    coerce_to_supported_difficulty,
+    get_all_canonical_difficulties,
+)
+from backend.observability import get_request_context
+from backend.observability.logger import get_logger as get_obs_logger
 from logger import get_logger
 
 logger = get_logger()
@@ -198,30 +205,134 @@ class GeneratorTemplateService:
         """
         Valider un template et générer un preview
         
-        1. Génère des variables via GeneratorFactory
-        2. Parse les placeholders dans les templates
-        3. Vérifie que tous les placeholders existent
-        4. Vérifie la sécurité HTML (triple moustaches)
-        5. Génère un preview du rendu
+        1. Normalise et coercte la difficulté (P4.D)
+        2. Génère des variables via GeneratorFactory
+        3. Parse les placeholders dans les templates
+        4. Vérifie que tous les placeholders existent
+        5. Vérifie la sécurité HTML (triple moustaches)
+        6. Génère un preview du rendu
         """
+        difficulty_requested = request.difficulty
+        difficulty_used = request.difficulty
+        
         try:
-            # 1. Générer des variables via le générateur
+            # P4.D - Normaliser et coercte la difficulté avant génération
+            obs_logger = get_obs_logger('GENERATOR_TEMPLATE_VALIDATE')
+            ctx = get_request_context()
+            ctx.update({
+                'generator_key': request.generator_key,
+                'seed': request.seed,
+            })
+            
+            # Normaliser la difficulté
+            if request.difficulty:
+                try:
+                    normalized_difficulty = normalize_difficulty(request.difficulty)
+                    difficulty_requested = normalized_difficulty
+                    difficulty_used = normalized_difficulty
+                except ValueError as e:
+                    logger.warning(
+                        f"[DIFFICULTY_NORMALIZE_FAIL] Difficulté invalide '{request.difficulty}', "
+                        f"utilisation de 'moyen' par défaut: {e}"
+                    )
+                    normalized_difficulty = "moyen"
+                    difficulty_requested = normalized_difficulty
+                    difficulty_used = normalized_difficulty
+            
+            # Coercte la difficulté selon les difficultés supportées par le générateur
+            gen_class = GeneratorFactory.get(request.generator_key)
+            if gen_class:
+                gen_meta = gen_class.get_meta()
+                supported_difficulties = getattr(gen_meta, 'supported_difficulties', None)
+                
+                if supported_difficulties is None:
+                    # Récupérer depuis le schéma si non défini dans meta
+                    schema = gen_class.get_schema()
+                    if schema:
+                        difficulty_param = next((p for p in schema if p.name == "difficulty"), None)
+                        if difficulty_param and hasattr(difficulty_param, 'options'):
+                            supported_difficulties = difficulty_param.options or []
+                
+                # Normaliser les difficultés supportées
+                normalized_supported = []
+                if supported_difficulties:
+                    for diff in supported_difficulties:
+                        try:
+                            normalized = normalize_difficulty(diff)
+                            if normalized not in normalized_supported:
+                                normalized_supported.append(normalized)
+                        except ValueError:
+                            pass
+                
+                # Si aucune difficulté supportée trouvée, utiliser les canoniques par défaut
+                if not normalized_supported:
+                    normalized_supported = get_all_canonical_difficulties()
+                
+                # Appliquer la coercition
+                if normalized_supported:
+                    coerced_difficulty = coerce_to_supported_difficulty(
+                        difficulty_used,
+                        normalized_supported,
+                        ctx,
+                        obs_logger
+                    )
+                    
+                    if coerced_difficulty != difficulty_used:
+                        logger.info(
+                            f"[DIFFICULTY_COERCED] Validation template: "
+                            f"requested={difficulty_used} coerced={coerced_difficulty} "
+                            f"generator={request.generator_key}"
+                        )
+                        obs_logger.info(
+                            "event=difficulty_coerced",
+                            event="difficulty_coerced",
+                            outcome="success",
+                            requested_difficulty=difficulty_used,
+                            coerced_difficulty=coerced_difficulty,
+                            generator_key=request.generator_key,
+                            context="admin_template_validate",
+                            **ctx
+                        )
+                        difficulty_used = coerced_difficulty
+            
+            # 1. Générer des variables via le générateur avec la difficulté coercée
             logger.info(
                 f"Validation template: generator={request.generator_key}, "
+                f"difficulty_requested={difficulty_requested}, difficulty_used={difficulty_used}, "
                 f"seed={request.seed}"
             )
             
-            generated = GeneratorFactory.generate(
-                key=request.generator_key,
-                exercise_params={},
-                overrides={
-                    "seed": request.seed,
-                    "grade": request.grade,
-                    "difficulty": request.difficulty,
-                    "variant_id": request.variant_id
-                },
-                seed=request.seed
-            )
+            try:
+                generated = GeneratorFactory.generate(
+                    key=request.generator_key,
+                    exercise_params={},
+                    overrides={
+                        "seed": request.seed,
+                        "grade": request.grade,
+                        "difficulty": difficulty_used,  # Utiliser la difficulté coercée
+                        "variant_id": request.variant_id
+                    },
+                    seed=request.seed
+                )
+            except ValueError as e:
+                # P4.D - Distinguer les erreurs de difficulté invalide des autres erreurs
+                error_msg = str(e)
+                if "difficulté" in error_msg.lower() or "difficulty" in error_msg.lower():
+                    logger.error(
+                        f"[GENERATOR_INVALID_DIFFICULTY] Validation template échouée: "
+                        f"generator={request.generator_key}, difficulty={difficulty_used}, error={error_msg}"
+                    )
+                    return GeneratorTemplateValidateResponse(
+                        valid=False,
+                        difficulty_requested=difficulty_requested,
+                        difficulty_used=difficulty_used,
+                        error_message=(
+                            f"Le générateur '{request.generator_key}' ne peut pas générer avec la difficulté "
+                            f"'{difficulty_used}'. Erreur: {error_msg}"
+                        )
+                    )
+                # Autre erreur de validation
+                raise
             
             variables = generated.get("variables", {})
             
@@ -260,7 +371,9 @@ class GeneratorTemplateService:
                     used_placeholders=list(all_placeholders),
                     missing_placeholders=missing,
                     html_security_errors=html_errors,
-                    error_message=self._build_error_message(missing, html_errors)
+                    error_message=self._build_error_message(missing, html_errors),
+                    difficulty_requested=difficulty_requested,
+                    difficulty_used=difficulty_used
                 )
             
             # 5. Générer le preview
@@ -276,14 +389,18 @@ class GeneratorTemplateService:
                     "enonce_html": enonce_html,
                     "solution_html": solution_html,
                     "variables": variables
-                }
+                },
+                difficulty_requested=difficulty_requested,
+                difficulty_used=difficulty_used
             )
             
         except Exception as e:
             logger.error(f"Erreur validation template: {e}", exc_info=True)
             return GeneratorTemplateValidateResponse(
                 valid=False,
-                error_message=f"Erreur lors de la validation: {str(e)}"
+                error_message=f"Erreur lors de la validation: {str(e)}",
+                difficulty_requested=difficulty_requested,
+                difficulty_used=difficulty_used
             )
     
     def _extract_placeholders(self, template: str) -> List[str]:
@@ -326,6 +443,7 @@ class GeneratorTemplateService:
 def get_template_service(db: AsyncIOMotorDatabase) -> GeneratorTemplateService:
     """Factory pour créer le service de templates"""
     return GeneratorTemplateService(db)
+
 
 
 

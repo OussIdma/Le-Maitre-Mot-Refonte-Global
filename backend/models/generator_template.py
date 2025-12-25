@@ -79,6 +79,10 @@ class GeneratorTemplateValidateResponse(BaseModel):
     html_security_errors: List[dict] = Field(default_factory=list)
     preview: Optional[dict] = None  # {enonce_html, solution_html, variables}
     error_message: Optional[str] = None
+    # P4.D - Difficulté utilisée (après coercition)
+    difficulty_requested: Optional[str] = Field(default=None, description="Difficulté demandée par l'admin")
+    difficulty_used: Optional[str] = Field(default=None, description="Difficulté réellement utilisée (après coercition)")
+
 
 
 

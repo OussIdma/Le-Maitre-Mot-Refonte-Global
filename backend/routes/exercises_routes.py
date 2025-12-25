@@ -9,7 +9,7 @@ Modes de fonctionnement:
 3. Mode officiel: code_officiel (basé sur le référentiel 6e)
 """
 from fastapi import APIRouter, HTTPException
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field
 from html import escape
 import time
@@ -24,7 +24,8 @@ from backend.models.math_models import MathExerciseType
 from backend.services.curriculum_service import curriculum_service
 from backend.services.math_generation_service import MathGenerationService
 from backend.services.geometry_render_service import GeometryRenderService
-from curriculum.loader import get_chapter_by_official_code, CurriculumChapter
+from curriculum.loader import get_chapter_by_official_code, CurriculumChapter  # Legacy - à remplacer par MongoDB
+from backend.services.curriculum_persistence_service import CurriculumPersistenceService
 # P0 - SUPPRESSION IMPORTS LEGACY : GM07/GM08 gérés par pipeline normal
 # from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
 # from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
@@ -32,6 +33,11 @@ from backend.services.tests_dyn_handler import is_tests_dyn_request, generate_te
 from backend.generators.factory import GeneratorFactory  # P0.3 - Dispatch premium générique
 from backend.services.template_renderer import render_template  # P0.3 - Rendu HTML templates
 from backend.services.generator_template_service import get_template_service  # P1 - Templates DB
+from backend.utils.difficulty_utils import (
+    normalize_difficulty,
+    coerce_to_supported_difficulty,
+    map_ui_difficulty_to_generator,  # P4.D HOTFIX
+)  # P4.B/P4.C - Normalisation et coercition difficultés
 from logger import get_logger
 from backend.observability import (
     get_request_context,
@@ -71,15 +77,55 @@ async def generate_exercise_with_fallback(
     
     # 1. Essayer DYNAMIC d'abord
     try:
+        # P4.C - Coercer la difficulté si un générateur dynamique est sélectionné
+        requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else None
+        
         exercises = await exercise_service.get_exercises(
             chapter_code=chapter_code,
             offer=request.offer if hasattr(request, 'offer') else None,
-            difficulty=request.difficulte if hasattr(request, 'difficulte') else None
+            difficulty=requested_difficulty
         )
         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
         
+        # P4.D - Filtrer selon enabled_generators si disponible (passé via ctx)
+        enabled_generators_for_chapter = ctx.get("enabled_generators", [])
+        if enabled_generators_for_chapter:
+            dynamic_exercises = [
+                ex for ex in dynamic_exercises
+                if ex.get("generator_key") and ex.get("generator_key").upper() in [eg.upper() for eg in enabled_generators_for_chapter]
+            ]
+            logger.info(
+                f"[PROF_GENERATORS] generate_exercise_with_fallback: Filtré {len(dynamic_exercises)} exercices "
+                f"selon enabled_generators={enabled_generators_for_chapter}"
+            )
+        
         if len(dynamic_exercises) > 0:
             selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
+            
+            # P4.C - Coercer la difficulté selon les capacités du générateur
+            generator_key = selected_exercise.get("generator_key")
+            coerced_difficulty = requested_difficulty
+            if generator_key and requested_difficulty:
+                gen_class = GeneratorFactory.get(generator_key)
+                if gen_class:
+                    schema = gen_class.get_schema()
+                    supported_difficulties = ["facile", "moyen", "difficile"]  # Par défaut
+                    if schema:
+                        difficulty_param = next((p for p in schema if p.name == "difficulty"), None)
+                        if difficulty_param and hasattr(difficulty_param, 'options'):
+                            supported_difficulties = [normalize_difficulty(d) for d in (difficulty_param.options or [])]
+                    
+                    coerced_difficulty = coerce_to_supported_difficulty(
+                        requested=requested_difficulty,
+                        supported=supported_difficulties,
+                        logger=logger
+                    )
+                    
+                    # Mettre à jour la difficulté dans le contexte pour les logs
+                    ctx['requested_difficulty'] = requested_difficulty
+                    ctx['coerced_difficulty'] = coerced_difficulty
+                    ctx['generator_key'] = generator_key
+            
             timestamp = int(time.time() * 1000)
             dyn_exercise = format_dynamic_exercise(
                 exercise_template=selected_exercise,
@@ -98,14 +144,17 @@ async def generate_exercise_with_fallback(
                 **ctx
             )
             logger.info(
-                f"[P0] ✅ Exercice DYNAMIQUE généré: "
+                f"[GENERATOR_OK] ✅ Exercice DYNAMIQUE généré: "
                 f"chapter={chapter_code}, id={selected_exercise.get('id')}, "
                 f"generator={selected_exercise.get('generator_key')}"
             )
             return dyn_exercise
     
     except Exception as e:
-        logger.warning(f"[P0] Erreur génération DYNAMIC pour {chapter_code}: {e}. Fallback STATIC.")
+        logger.warning(
+            f"[GENERATOR_FAIL] ❌ Erreur génération DYNAMIC pour {chapter_code}: {e}. "
+            f"Fallback STATIC activé."
+        )
         obs_logger.warning(
             "event=dynamic_failed",
             event="dynamic_failed",
@@ -159,13 +208,16 @@ async def generate_exercise_with_fallback(
                 **ctx
             )
             logger.info(
-                f"[P0] ✅ Exercice STATIQUE (fallback): "
+                f"[GENERATOR_OK] ✅ Exercice STATIQUE (fallback): "
                 f"chapter={chapter_code}, id={selected_static.get('id')}"
             )
             return static_exercise
     
     except Exception as e:
-        logger.error(f"[P0] Erreur fallback STATIC pour {chapter_code}: {e}")
+        logger.error(
+            f"[GENERATOR_FAIL] ❌ Erreur fallback STATIC pour {chapter_code}: {e}. "
+            f"Aucun exercice disponible."
+        )
         obs_logger.error(
             "event=static_fallback_failed",
             event="static_fallback_failed",
@@ -712,11 +764,24 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     """
     request_start = time.time()
     ensure_request_id()
+    
+    # P4.B - Normaliser la difficulté (standard -> moyen)
+    normalized_difficulty = None
+    if hasattr(request, 'difficulte') and request.difficulte:
+        try:
+            normalized_difficulty = normalize_difficulty(request.difficulte)
+            # Mettre à jour la requête avec la difficulté normalisée
+            request.difficulte = normalized_difficulty
+        except ValueError as e:
+            logger.warning(f"Difficulté invalide '{request.difficulte}', utilisation de 'moyen' par défaut: {e}")
+            normalized_difficulty = "moyen"
+            request.difficulte = normalized_difficulty
+    
     set_request_context(
         chapter_code=getattr(request, 'code_officiel', None),
         niveau=getattr(request, 'niveau', None),
         chapitre=getattr(request, 'chapitre', None),
-        difficulty=getattr(request, 'difficulte', None),
+        difficulty=normalized_difficulty or getattr(request, 'difficulte', None),
         offer=getattr(request, 'offer', None),
         seed=getattr(request, 'seed', None),
     )
@@ -800,18 +865,50 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     exercise_types_override: Optional[List[MathExerciseType]] = None
     filtered_premium_generators: List[str] = []  # P2.1 - Track des générateurs premium exclus
     
+    # P4.D - Charger le chapitre depuis MongoDB (source de vérité unique)
+    chapter_from_db: Optional[Dict[str, Any]] = None
+    enabled_generators_list: List[Dict[str, Any]] = []
+    
     if request.code_officiel:
-        # Mode code_officiel : chercher dans le référentiel
-        curriculum_chapter = get_chapter_by_official_code(request.code_officiel)
+        # Mode code_officiel : chercher dans MongoDB
+        from server import db
+        curriculum_service_db = CurriculumPersistenceService(db)
+        await curriculum_service_db.initialize()
         
-        if not curriculum_chapter:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "code_officiel_invalide",
-                    "message": f"Le code officiel '{request.code_officiel}' n'existe pas dans le référentiel.",
-                    "hint": "Utilisez un code au format 6e_N01, 6e_G01, etc."
-                }
+        chapter_from_db = await curriculum_service_db.get_chapter_by_code(request.code_officiel)
+        
+        if not chapter_from_db:
+            # Fallback legacy : chercher dans le fichier JSON (pour compatibilité)
+            curriculum_chapter = get_chapter_by_official_code(request.code_officiel)
+            
+            if not curriculum_chapter:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "code_officiel_invalide",
+                        "message": f"Le code officiel '{request.code_officiel}' n'existe pas dans le référentiel.",
+                        "hint": "Utilisez un code au format 6e_N01, 6e_G01, etc."
+                    }
+                )
+            
+            # Utiliser les données legacy
+            request.niveau = curriculum_chapter.niveau
+            request.chapitre = curriculum_chapter.libelle or curriculum_chapter.code_officiel
+            logger.warning(
+                f"[CHAPTER_LOAD] source=json code={request.code_officiel} "
+                f"(chapitre trouvé dans JSON mais pas en DB - migration nécessaire)"
+            )
+        else:
+            # Utiliser les données depuis MongoDB
+            request.niveau = chapter_from_db.get("niveau", "6e")
+            request.chapitre = chapter_from_db.get("libelle") or chapter_from_db.get("code_officiel", request.code_officiel)
+            
+            # P4.D - Récupérer enabled_generators depuis la DB
+            enabled_generators_list = chapter_from_db.get("enabled_generators", [])
+            
+            logger.info(
+                f"[CHAPTER_LOAD] source=db code={request.code_officiel} "
+                f"enabled_generators={[eg.get('generator_key') for eg in enabled_generators_list if eg.get('is_enabled')]}"
             )
         
         # Vérifier si c'est un chapitre de test (interdit en mode public)
@@ -830,11 +927,6 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     }
                 }
             )
-        
-        # Extraire les informations du référentiel
-        request.niveau = curriculum_chapter.niveau
-        # Toujours utiliser le libellé/officiel comme chapitre lisible, ne pas basculer sur un alias backend
-        request.chapitre = curriculum_chapter.libelle or curriculum_chapter.code_officiel
         
         # ============================================================================
         # DÉTECTION CHAPITRES DE TEST - Routage déterministe pour chapitres de test
@@ -872,7 +964,13 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             # Si le chapitre a un pipeline défini, l'utiliser explicitement.
             # Sinon, fallback sur l'ancien comportement (détection automatique).
             
-            pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
+            # P4.D - Utiliser le pipeline depuis la DB si disponible, sinon depuis legacy
+            if chapter_from_db:
+                pipeline_mode = chapter_from_db.get("pipeline")
+            elif curriculum_chapter:
+                pipeline_mode = curriculum_chapter.pipeline if hasattr(curriculum_chapter, 'pipeline') and curriculum_chapter.pipeline else None
+            else:
+                pipeline_mode = None
         
         if pipeline_mode:
             logger.info(f"[PIPELINE] Chapitre {request.code_officiel} → pipeline={pipeline_mode} (explicite)")
@@ -887,6 +985,15 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             
             # Normaliser le code_officiel pour la recherche
             chapter_code_for_db = request.code_officiel.upper().replace("-", "_")
+            
+            # P4.D - Récupérer enabled_generators depuis la DB si disponible
+            enabled_generators_for_chapter = []
+            if chapter_from_db:
+                enabled_generators_for_chapter = [
+                    eg.get("generator_key") 
+                    for eg in chapter_from_db.get("enabled_generators", [])
+                    if eg.get("is_enabled") is True
+                ]
             
             if pipeline_mode == "TEMPLATE":
                 # Pipeline dynamique uniquement
@@ -928,7 +1035,31 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
                     
+                    # P4.D - Filtrer selon enabled_generators si disponible
+                    if enabled_generators_for_chapter:
+                        dynamic_exercises = [
+                            ex for ex in dynamic_exercises
+                            if ex.get("generator_key") and ex.get("generator_key").upper() in [eg.upper() for eg in enabled_generators_for_chapter]
+                        ]
+                        logger.info(
+                            f"[PROF_GENERATORS] Filtré {len(dynamic_exercises)} exercices dynamiques "
+                            f"parmi {len([ex for ex in exercises if ex.get('is_dynamic')])} "
+                            f"selon enabled_generators={enabled_generators_for_chapter}"
+                        )
+                    
                     if len(dynamic_exercises) == 0:
+                        # P4.D - Message amélioré selon si enabled_generators est vide
+                        if enabled_generators_for_chapter:
+                            hint_msg = (
+                                f"Aucun exercice dynamique trouvé pour les générateurs activés: {', '.join(enabled_generators_for_chapter)}. "
+                                f"Créez des exercices dynamiques pour ces générateurs ou activez d'autres générateurs dans l'admin."
+                            )
+                        else:
+                            hint_msg = (
+                                f"Aucun générateur activé pour ce chapitre. "
+                                f"Activez au moins un générateur dans l'admin (section 'Générateurs activés')."
+                            )
+                        
                         raise HTTPException(
                             status_code=422,
                             detail={
@@ -940,12 +1071,47 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 ),
                                 "chapter_code": request.code_officiel,
                                 "pipeline": "TEMPLATE",
-                                "hint": "Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'."
+                                "hint": hint_msg,
+                                "enabled_generators": enabled_generators_for_chapter if enabled_generators_for_chapter else None
                             }
                         )
                     
-                    # Sélectionner un exercice dynamique aléatoire (avec seed pour reproductibilité)
+                    # P4.D - Guardrail : vérifier que le générateur sélectionné est activé
                     selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
+                    selected_generator_key = selected_exercise.get("generator_key")
+                    
+                    if enabled_generators_for_chapter and selected_generator_key:
+                        if selected_generator_key.upper() not in [eg.upper() for eg in enabled_generators_for_chapter]:
+                            logger.warning(
+                                f"[PROF_GENERATORS] Guardrail: générateur '{selected_generator_key}' "
+                                f"non activé pour {chapter_code_for_db}. Activés: {enabled_generators_for_chapter}"
+                            )
+                            # Filtrer à nouveau pour s'assurer qu'on utilise un générateur activé
+                            dynamic_exercises_filtered = [
+                                ex for ex in dynamic_exercises
+                                if ex.get("generator_key") and ex.get("generator_key").upper() in [eg.upper() for eg in enabled_generators_for_chapter]
+                            ]
+                            if dynamic_exercises_filtered:
+                                selected_exercise = safe_random_choice(dynamic_exercises_filtered, ctx, obs_logger)
+                                selected_generator_key = selected_exercise.get("generator_key")
+                            else:
+                                raise HTTPException(
+                                    status_code=403,
+                                    detail={
+                                        "error_code": "GENERATOR_NOT_ENABLED",
+                                        "error": "generator_not_enabled",
+                                        "message": (
+                                            f"Le générateur '{selected_generator_key}' n'est pas activé pour le chapitre '{request.code_officiel}'. "
+                                            f"Générateurs activés: {', '.join(enabled_generators_for_chapter) if enabled_generators_for_chapter else 'aucun'}."
+                                        ),
+                                        "hint": "Activez ce générateur dans l'admin (section 'Générateurs activés') ou utilisez un autre générateur.",
+                                        "context": {
+                                            "chapter_code": request.code_officiel,
+                                            "generator_key": selected_generator_key,
+                                            "enabled_generators": enabled_generators_for_chapter
+                                        }
+                                    }
+                                )
                     
                     # Générer l'exercice dynamique
                     timestamp = int(time.time() * 1000)
@@ -1025,6 +1191,9 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     **ctx
                 )
                 try:
+                    # P4.D - Passer enabled_generators dans le contexte
+                    ctx["enabled_generators"] = enabled_generators_for_chapter
+                    
                     # Utiliser le pipeline simplifié : DYNAMIC → STATIC fallback
                     return await generate_exercise_with_fallback(
                         chapter_code=chapter_code_for_db,
@@ -1163,18 +1332,31 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             pool_size=0,
                             **ctx
                         )
+                        # P4.D - Message amélioré selon si enabled_generators est vide
+                        if enabled_generators_for_chapter:
+                            hint_msg = (
+                                f"Aucun exercice dynamique trouvé pour les générateurs activés: {', '.join(enabled_generators_for_chapter)}. "
+                                f"Créez des exercices dynamiques pour ces générateurs ou activez d'autres générateurs dans l'admin."
+                            )
+                        else:
+                            hint_msg = (
+                                f"Aucun générateur activé pour ce chapitre. "
+                                f"Activez au moins un générateur dans l'admin (section 'Générateurs activés')."
+                            )
+                        
                         raise HTTPException(
                             status_code=422,
                             detail={
                                 "error_code": "POOL_EMPTY",
                                 "error": "pool_empty",
                                 "message": f"Aucun exercice dynamique disponible pour ce chapitre avec les critères demandés.",
-                                "hint": f"Vérifiez que des exercices dynamiques existent pour le chapitre '{chapter_code_for_db}' avec difficulty='{request.difficulte}' et offer='{request.offer}'. Vous pouvez essayer une autre difficulté ou contacter l'administrateur.",
+                                "hint": hint_msg,
                                 "context": {
                                     "chapter": chapter_code_for_db,
                                     "difficulty": request.difficulte,
                                     "offer": request.offer,
-                                    "pipeline": "MIXED"
+                                    "pipeline": "MIXED",
+                                    "enabled_generators": enabled_generators_for_chapter if enabled_generators_for_chapter else None
                                 }
                             }
                         )
@@ -1599,16 +1781,44 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         premium_result = None
         
         if request.offer == "pro" and request.code_officiel:
-            # Récupérer les informations du chapitre
-            chapter_info = get_chapter_by_official_code(request.code_officiel)
+            # P4.D - Utiliser enabled_generators depuis la DB (source de vérité unique)
+            factory_generator_keys = []
             
-            if chapter_info and hasattr(chapter_info, 'exercise_types'):
-                # Filtrer les exercise_types pour ne garder que ceux enregistrés dans GeneratorFactory
-                available_factory_generators = list(GeneratorFactory._generators.keys())
-                factory_generator_keys = [gen_key for gen_key in chapter_info.exercise_types 
-                                         if gen_key in available_factory_generators]
+            if chapter_from_db and enabled_generators_list:
+                # Filtrer uniquement les générateurs activés (is_enabled=True)
+                enabled_keys = [
+                    eg.get("generator_key") 
+                    for eg in enabled_generators_list 
+                    if eg.get("is_enabled") is True
+                ]
                 
-                if factory_generator_keys:
+                # Vérifier que ces générateurs existent dans GeneratorFactory
+                available_factory_generators = list(GeneratorFactory._generators.keys())
+                factory_generator_keys = [
+                    gen_key for gen_key in enabled_keys 
+                    if gen_key.upper() in available_factory_generators
+                ]
+                
+                logger.info(
+                    f"[PROF_GENERATORS] chapter={request.code_officiel} "
+                    f"enabled_in_db={enabled_keys} resolved={factory_generator_keys}"
+                )
+            else:
+                # Fallback legacy : utiliser exercise_types depuis JSON
+                chapter_info = get_chapter_by_official_code(request.code_officiel)
+                
+                if chapter_info and hasattr(chapter_info, 'exercise_types'):
+                    available_factory_generators = list(GeneratorFactory._generators.keys())
+                    factory_generator_keys = [gen_key for gen_key in chapter_info.exercise_types 
+                                             if gen_key in available_factory_generators]
+                    
+                    logger.warning(
+                        f"[PROF_GENERATORS] chapter={request.code_officiel} "
+                        f"source=legacy_json exercise_types={chapter_info.exercise_types} "
+                        f"resolved={factory_generator_keys} (migration vers enabled_generators nécessaire)"
+                    )
+            
+            if factory_generator_keys:
                     # Sélectionner un générateur de façon déterministe si seed fourni
                     if request.seed is not None:
                         # Déterministe : même seed → même générateur
@@ -1661,14 +1871,33 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     
                     try:
-                        # Appeler GeneratorFactory.generate()
+                        # P4.D HOTFIX - Mapper la difficulté UI vers la difficulté réelle du générateur
+                        requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else "moyen"
+                        generator_difficulty = map_ui_difficulty_to_generator(
+                            selected_premium_generator,
+                            requested_difficulty,
+                            logger
+                        )
+                        
+                        if generator_difficulty != requested_difficulty:
+                            obs_logger.info(
+                                "event=difficulty_mapped",
+                                event="difficulty_mapped",
+                                outcome="success",
+                                ui_difficulty=requested_difficulty,
+                                generator_difficulty=generator_difficulty,
+                                generator_key=selected_premium_generator,
+                                **ctx
+                            )
+                        
+                        # Appeler GeneratorFactory.generate() avec la difficulté mappée
                         premium_result = GeneratorFactory.generate(
                             key=selected_premium_generator,
                             exercise_params={},
                             overrides={
                                 'seed': request.seed,
                                 'grade': request.niveau,
-                                'difficulty': request.difficulte,
+                                'difficulty': generator_difficulty,  # P4.D HOTFIX - Utiliser la difficulté mappée
                             },
                             seed=request.seed
                         )

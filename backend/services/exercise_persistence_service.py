@@ -19,6 +19,14 @@ from pydantic import BaseModel, Field, validator
 
 from backend.generators.factory import GeneratorFactory
 from backend.services.template_renderer import get_template_variables
+from backend.utils.difficulty_utils import (
+    normalize_difficulty,
+    coerce_to_supported_difficulty,
+    get_all_canonical_difficulties,
+    map_ui_difficulty_to_generator,  # P4.D HOTFIX
+)
+from backend.observability import get_request_context
+from backend.observability.logger import get_logger as get_obs_logger
 from fastapi import HTTPException
 import re
 
@@ -1067,7 +1075,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         generator_key: str,
         enonce_template_html: Optional[str],
         solution_template_html: Optional[str],
-        template_variants: Optional[List[Dict[str, Any]]],
+        template_variants: Optional[List[Any]],  # Peut être List[TemplateVariant] ou List[Dict]
         exercise_params: Dict[str, Any]
     ) -> None:
         """
@@ -1088,11 +1096,22 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         # Templates variants
         if template_variants:
             for variant in template_variants:
-                if isinstance(variant, dict):
-                    if variant.get("enonce_template_html"):
-                        placeholders_expected.update(_extract_placeholders(variant["enonce_template_html"]))
-                    if variant.get("solution_template_html"):
-                        placeholders_expected.update(_extract_placeholders(variant["solution_template_html"]))
+                # Gérer les objets Pydantic TemplateVariant ou les dictionnaires
+                if hasattr(variant, 'dict'):
+                    # Objet Pydantic TemplateVariant
+                    variant_dict = variant.dict()
+                elif isinstance(variant, dict):
+                    # Dictionnaire déjà
+                    variant_dict = variant
+                else:
+                    # Type inattendu, skip
+                    logger.warning(f"Type de variant inattendu: {type(variant)}, skip")
+                    continue
+                
+                if variant_dict.get("enonce_template_html"):
+                    placeholders_expected.update(_extract_placeholders(variant_dict["enonce_template_html"]))
+                if variant_dict.get("solution_template_html"):
+                    placeholders_expected.update(_extract_placeholders(variant_dict["solution_template_html"]))
         
         if not placeholders_expected:
             # Pas de placeholders à valider
@@ -1104,15 +1123,26 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             # Le générateur sera validé ailleurs, on skip ici
             return
         
-        # Tester pour chaque difficulté
-        difficulties = ["facile", "moyen", "difficile"]
+        # P4.D HOTFIX - Tester pour chaque difficulté canonique avec mapping UI -> générateur
+        difficulties_to_test = ["facile", "moyen", "difficile"]
         all_mismatches = []
+        obs_logger = get_obs_logger('EXERCISE_PERSISTENCE')
+        ctx = get_request_context()
+        ctx.update({'generator_key': generator_key})
         
-        for difficulty in difficulties:
+        for requested_difficulty in difficulties_to_test:
+            # P4.D HOTFIX - Mapper la difficulté UI vers la difficulté réelle du générateur
+            generator_difficulty = map_ui_difficulty_to_generator(
+                generator_key,
+                requested_difficulty,
+                obs_logger
+            )
+            
             try:
-                # Préparer les paramètres de génération
+                
+                # Préparer les paramètres de génération avec la difficulté mappée
                 gen_params = exercise_params.copy()
-                gen_params["difficulty"] = difficulty
+                gen_params["difficulty"] = generator_difficulty
                 
                 # Générer un exercice de test
                 generator = gen_class(seed=42)  # Seed fixe pour reproductibilité
@@ -1127,17 +1157,40 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
                 
                 if missing:
                     all_mismatches.append({
-                        "difficulty": difficulty,
+                        "difficulty": requested_difficulty,
+                        "difficulty_used": generator_difficulty,  # P4.D HOTFIX - Difficulté réellement utilisée
                         "missing": missing,
                         "extra": extra,
                         "placeholders_expected": sorted(placeholders_expected),
                         "keys_provided": sorted(keys_provided)
                     })
+            except ValueError as e:
+                # P4.D HOTFIX - Distinguer les erreurs de difficulté invalide des autres erreurs
+                error_msg = str(e)
+                if "difficulté" in error_msg.lower() or "difficulty" in error_msg.lower() or "INVALID_DIFFICULTY" in error_msg:
+                    # Erreur de difficulté invalide - ne pas considérer comme mismatch
+                    logger.warning(
+                        f"[GENERATOR_INVALID_DIFFICULTY] Validation placeholder pour {generator_key} "
+                        f"(ui={requested_difficulty}, generator={generator_difficulty}): {error_msg}"
+                    )
+                    # Ne pas ajouter à all_mismatches - c'est une erreur de difficulté, pas de template
+                    continue
+                else:
+                    # Autre erreur - considérer comme mismatch
+                    logger.warning(f"Erreur lors de la validation placeholder pour {generator_key} (ui={requested_difficulty}, generator={generator_difficulty}): {e}")
+                    all_mismatches.append({
+                        "difficulty": requested_difficulty,
+                        "difficulty_used": generator_difficulty,
+                        "missing": sorted(placeholders_expected),
+                        "extra": [],
+                        "error": str(e)
+                    })
             except Exception as e:
-                # Si la génération échoue, on considère comme mismatch
-                logger.warning(f"Erreur lors de la validation placeholder pour {generator_key} (difficulty={difficulty}): {e}")
+                # Si la génération échoue pour une autre raison, on considère comme mismatch
+                logger.warning(f"Erreur lors de la validation placeholder pour {generator_key} (ui={requested_difficulty}, generator={generator_difficulty}): {e}")
                 all_mismatches.append({
-                    "difficulty": difficulty,
+                    "difficulty": requested_difficulty,
+                    "difficulty_used": generator_difficulty,
                     "missing": sorted(placeholders_expected),
                     "extra": [],
                     "error": str(e)

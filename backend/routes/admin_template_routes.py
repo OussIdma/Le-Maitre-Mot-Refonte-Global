@@ -261,9 +261,12 @@ async def validate_generator_template(
             f"html_errors={len(result.html_security_errors)}"
         )
         
+        # P4.D - Distinguer les erreurs de difficulté invalide des erreurs de template mismatch
         error_code = "ADMIN_TEMPLATE_MISMATCH"
         if result.html_security_errors and not result.missing_placeholders:
             error_code = "HTML_VAR_NOT_ALLOWED"
+        elif "ne peut pas générer avec la difficulté" in (result.error_message or ""):
+            error_code = "GENERATOR_INVALID_DIFFICULTY"
         
         raise HTTPException(
             status_code=422,
@@ -272,7 +275,9 @@ async def validate_generator_template(
                 "message": result.error_message,
                 "used_placeholders": result.used_placeholders,
                 "missing_placeholders": result.missing_placeholders,
-                "html_security_errors": result.html_security_errors
+                "html_security_errors": result.html_security_errors,
+                "difficulty_requested": result.difficulty_requested,
+                "difficulty_used": result.difficulty_used
             }
         )
     
