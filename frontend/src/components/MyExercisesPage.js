@@ -9,6 +9,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
+import { useAuth } from "../hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
@@ -117,11 +118,11 @@ function MyExercisesPage() {
   const { toast } = useToast();
   const { openLogin } = useLogin();
   
+  // P0: Utiliser useAuth() pour cohérence avec ExerciseGeneratorPage
+  const { sessionToken, userEmail, isPro } = useAuth();
+  
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userEmail, setUserEmail] = useState("");
-  const [isPro, setIsPro] = useState(false);
-  const [sessionToken, setSessionToken] = useState("");
   
   // États pour la modal de visualisation
   const [viewModalOpen, setViewModalOpen] = useState(false);
@@ -132,27 +133,15 @@ function MyExercisesPage() {
   const [filterCodeOfficiel, setFilterCodeOfficiel] = useState("");
   const [filterDifficulty, setFilterDifficulty] = useState("");
 
-  useEffect(() => {
-    const storedSessionToken = localStorage.getItem('lemaitremot_session_token');
-    const storedEmail = localStorage.getItem('lemaitremot_user_email');
-    const loginMethod = localStorage.getItem('lemaitremot_login_method');
-    
-    if (storedSessionToken && storedEmail && loginMethod === 'session') {
-      setSessionToken(storedSessionToken);
-      setUserEmail(storedEmail);
-      setIsPro(true);
-      loadExercises();
-    } else {
-      // P0 UX: Stocker returnTo si non connecté
-      sessionStorage.setItem('postLoginRedirect', '/mes-exercices');
-      setLoading(false);
-    }
-  }, []);
-
-  // BUG-003: Recharger les exercices quand sessionToken devient disponible après login
+  // P0: Plus besoin d'initialiser auth manuellement - useAuth() le fait
+  // Charger les exercices quand sessionToken devient disponible
   useEffect(() => {
     if (sessionToken && isPro) {
       loadExercises();
+    } else if (!sessionToken) {
+      // P0 UX: Stocker returnTo si non connecté
+      sessionStorage.setItem('postLoginRedirect', '/mes-exercices');
+      setLoading(false);
     }
   }, [sessionToken, isPro]); // Se déclenche quand sessionToken change
 
@@ -160,7 +149,7 @@ function MyExercisesPage() {
     try {
       setLoading(true);
       
-      const sessionToken = localStorage.getItem('lemaitremot_session_token');
+      // P0: Utiliser sessionToken de useAuth() au lieu de localStorage
       if (!sessionToken) {
         setLoading(false);
         return;
@@ -180,7 +169,8 @@ function MyExercisesPage() {
       const response = await axios.get(url, {
         headers: {
           'X-Session-Token': sessionToken
-        }
+        },
+        withCredentials: true  // P0: Stabiliser l'auth côté front
       });
       
       setExercises(response.data.exercises || []);
@@ -216,7 +206,8 @@ function MyExercisesPage() {
       await axios.delete(`${API}/user/exercises/${exerciseUid}`, {
         headers: {
           'X-Session-Token': sessionToken
-        }
+        },
+        withCredentials: true  // P0: Stabiliser l'auth côté front
       });
       
       setExercises(exercises.filter(ex => ex.exercise_uid !== exerciseUid));
@@ -259,7 +250,8 @@ function MyExercisesPage() {
       await axios.post(`${API}/user/exercises`, saveData, {
         headers: {
           'X-Session-Token': sessionToken
-        }
+        },
+        withCredentials: true  // P0: Stabiliser l'auth côté front
       });
       
       // Recharger la liste
@@ -306,9 +298,8 @@ function MyExercisesPage() {
       localStorage.removeItem('lemaitremot_user_email');
       localStorage.removeItem('lemaitremot_login_method');
       
-      setSessionToken("");
-      setUserEmail("");
-      setIsPro(false);
+      // P0: useAuth() se mettra à jour automatiquement via l'événement storage
+      // Plus besoin de setSessionToken/setUserEmail/setIsPro
       
       console.log('✅ Déconnexion réussie');
       navigate('/');

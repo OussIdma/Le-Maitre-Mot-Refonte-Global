@@ -38,6 +38,7 @@ function GlobalLoginModal() {
       setLoginEmailSent(false);
       setLoginLoading(false);
       setLoginTab("magic");
+      setDevMagicLink(null); // P0: Reset magic link
     }
   }, [showLoginModal]);
 
@@ -45,21 +46,35 @@ function GlobalLoginModal() {
     return 'device_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
   };
 
+  // P0: État pour afficher le lien magique en mode dev
+  const [devMagicLink, setDevMagicLink] = useState(null);
+  
   // Magic link request
   const requestLogin = async (email) => {
     if (!email) return;
     
     setLoginLoading(true);
+    setDevMagicLink(null); // Reset
     try {
-      await axios.post(`${API}/auth/request-login`, {
+      const response = await axios.post(`${API}/auth/request-login`, {
         email: email
       });
       
       setLoginEmailSent(true);
-      toast({
-        title: "Email envoyé",
-        description: "Si un compte existe, un email vous a été envoyé.",
-      });
+      
+      // P0: Afficher le lien magique en mode dev
+      if (response.data.dev_mode && response.data.magic_link) {
+        setDevMagicLink(response.data.magic_link);
+        toast({
+          title: "🔗 Lien magique (mode dev)",
+          description: "Le lien est affiché ci-dessous pour copier.",
+        });
+      } else {
+        toast({
+          title: "Email envoyé",
+          description: "Si un compte existe, un email vous a été envoyé.",
+        });
+      }
       
     } catch (error) {
       console.error('Error requesting login:', error);
@@ -99,6 +114,9 @@ function GlobalLoginModal() {
       localStorage.setItem('lemaitremot_user_email', loginEmail);
       localStorage.setItem('lemaitremot_login_method', 'session');
       
+      // P0: Dispatcher l'événement pour notifier les composants utilisant useAuth()
+      window.dispatchEvent(new Event('lmm:auth-changed'));
+      
       closeLogin();
       
       // P0 UX: Rediriger vers returnTo si présent
@@ -116,7 +134,7 @@ function GlobalLoginModal() {
       });
       
       // Ne pas reload - React Router gère la navigation
-      // L'état auth sera mis à jour via LoginContext
+      // L'état auth sera mis à jour via useAuth() hook
       
     } catch (error) {
       console.error('Error in password login:', error);
@@ -226,30 +244,75 @@ function GlobalLoginModal() {
               </>
             ) : (
               <div className="space-y-4 text-center">
-                <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Mail className="h-8 w-8 text-blue-600" />
-                </div>
-                
-                <div>
-                  <h3 className="font-semibold text-gray-900 mb-2">Email envoyé !</h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Si un compte existe, un email vous a été envoyé.
-                  </p>
-                  <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
-                    💡 <strong>Conseil :</strong> Vérifiez vos spams si vous ne recevez pas l'email dans les 2 minutes.
+                {/* P0: Afficher le lien magique en mode dev */}
+                {devMagicLink ? (
+                  <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <p className="text-sm font-medium text-blue-900">
+                      🔗 Lien magique (mode développement)
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={devMagicLink}
+                        readOnly
+                        className="flex-1 font-mono text-xs bg-white"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(devMagicLink);
+                          toast({
+                            title: "Lien copié",
+                            description: "Le lien magique a été copié dans le presse-papier.",
+                          });
+                        }}
+                      >
+                        Copier
+                      </Button>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      Cliquez sur le lien ou copiez-le pour vous connecter.
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setLoginEmailSent(false);
+                        setDevMagicLink(null);
+                        setLoginEmail("");
+                      }}
+                      className="w-full"
+                    >
+                      Réessayer
+                    </Button>
                   </div>
-                </div>
-                
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setLoginEmailSent(false);
-                    setLoginEmail("");
-                  }}
-                  className="w-full"
-                >
-                  Changer d'email
-                </Button>
+                ) : (
+                  <>
+                    <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Mail className="h-8 w-8 text-blue-600" />
+                    </div>
+                    
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-2">Email envoyé !</h3>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Si un compte existe, un email vous a été envoyé.
+                      </p>
+                      <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700">
+                        💡 <strong>Conseil :</strong> Vérifiez vos spams si vous ne recevez pas l'email dans les 2 minutes.
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setLoginEmailSent(false);
+                        setLoginEmail("");
+                      }}
+                      className="w-full"
+                    >
+                      Changer d'email
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </TabsContent>

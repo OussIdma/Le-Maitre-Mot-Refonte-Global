@@ -38,6 +38,14 @@ import {
 import { Switch } from '../ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '../ui/sheet';
+import {
   RefreshCw, 
   CheckCircle, 
   AlertCircle, 
@@ -55,7 +63,11 @@ import {
   Sparkles,
   PlayCircle,
   Copy,
-  FileText
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Star
 } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../../hooks/use-toast';
@@ -142,6 +154,22 @@ const ChapterExercisesAdminPage = () => {
   
   // Générateurs disponibles
   const [availableGenerators, setAvailableGenerators] = useState([]);
+  
+  // P4.B - Gestion des générateurs activés dans le chapitre
+  const [chapterGenerators, setChapterGenerators] = useState({
+    available: [],
+    enabled: [],
+    loading: false,
+    warnings: []
+  });
+  
+  // P4.C UX - État d'expansion de la section générateurs activés
+  const [expandedEnabled, setExpandedEnabled] = useState(true);
+  
+  // P4.C UX - Modal d'ajout de générateur
+  const [addGeneratorModalOpen, setAddGeneratorModalOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('gold'); // Default to GOLD only
   
   // Modal de prévisualisation
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -290,6 +318,37 @@ const ChapterExercisesAdminPage = () => {
     
     fetchExerciseTypes();
     fetchGenerators();
+    
+    // P4.B: Charger les générateurs activés pour ce chapitre
+    const fetchChapterGenerators = async () => {
+      if (!chapterCode) return;
+      
+      try {
+        setChapterGenerators(prev => ({ ...prev, loading: true }));
+        const response = await fetch(
+          `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+          { credentials: 'include' }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setChapterGenerators({
+            available: data.available_generators || [],
+            enabled: data.enabled_generators || [],
+            loading: false,
+            warnings: data.warnings || []
+          });
+        } else {
+          console.error('Erreur chargement générateurs chapitre:', response.status);
+          setChapterGenerators(prev => ({ ...prev, loading: false }));
+        }
+      } catch (err) {
+        console.error('Erreur chargement générateurs chapitre:', err);
+        setChapterGenerators(prev => ({ ...prev, loading: false }));
+      }
+    };
+    
+    fetchChapterGenerators();
     
     // P1: Charger le pipeline du chapitre depuis le curriculum
     const fetchChapterPipeline = async () => {
@@ -1524,6 +1583,380 @@ const ChapterExercisesAdminPage = () => {
 
           {/* P0 - Onglet Générateurs : UNIQUEMENT is_dynamic=true && generator_key */}
           <TabsContent value="generateurs" className="space-y-6">
+            {/* P4.C UX - Vue compacte : Générateurs activés uniquement */}
+            <Card className="border-gray-200">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-blue-600" />
+                    🧩 Générateurs activés pour ce chapitre ({chapterGenerators.enabled.filter(eg => eg.is_enabled).length})
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExpandedEnabled(!expandedEnabled)}
+                    className="h-6 w-6 p-0"
+                  >
+                    {expandedEnabled ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {/* Warnings */}
+                {chapterGenerators.warnings.length > 0 && (
+                  <Alert className="border-yellow-500 bg-yellow-50">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800 text-sm">
+                      {chapterGenerators.warnings.map((w, i) => (
+                        <div key={i}>{w}</div>
+                      ))}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
+                {/* P4.C UX - Liste compacte : Générateurs activés uniquement */}
+                {expandedEnabled && (
+                  <div className="max-h-96 overflow-y-auto space-y-2 border rounded-md p-3 bg-gray-50">
+                    {chapterGenerators.loading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                        <span className="ml-2 text-xs text-gray-500">Chargement...</span>
+                      </div>
+                    ) : chapterGenerators.enabled.filter(eg => eg.is_enabled).length === 0 ? (
+                      <p className="text-xs text-gray-500 text-center py-4">
+                        Aucun générateur activé. Cliquez sur "+ Ajouter un générateur" pour commencer.
+                      </p>
+                    ) : (
+                      chapterGenerators.enabled
+                        .filter(eg => eg.is_enabled)
+                        .map((enabledGen) => {
+                          const gen = chapterGenerators.available.find(g => g.key === enabledGen.generator_key);
+                          if (!gen) return null;
+                        const enabled = chapterGenerators.enabled.find(
+                          eg => eg.generator_key === gen.key
+                        );
+                        const isEnabled = enabled?.is_enabled || false;
+                        
+                          return (
+                            <div
+                              key={enabledGen.generator_key}
+                              className="flex items-center justify-between p-2 border rounded bg-white text-xs"
+                            >
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className="h-3 w-3 text-green-600" />
+                                <span className="font-medium">{gen.label}</span>
+                                {gen.min_offer === 'pro' && (
+                                  <Badge className="bg-purple-100 text-purple-800 text-[10px] px-1">Premium</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 text-gray-600">
+                                <span>Difficultés :</span>
+                                {enabledGen.difficulty_presets.map((diff, idx) => (
+                                  <span key={diff}>
+                                    {diff}
+                                    {idx < enabledGen.difficulty_presets.length - 1 && ' · '}
+                                  </span>
+                                ))}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const updatedEnabled = chapterGenerators.enabled.filter(
+                                      eg => eg.generator_key !== enabledGen.generator_key
+                                    );
+                                    
+                                    const response = await fetch(
+                                      `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+                                      {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        credentials: 'include',
+                                        body: JSON.stringify({
+                                          enabled_generators: updatedEnabled
+                                        })
+                                      }
+                                    );
+                                    
+                                    if (response.ok) {
+                                      toast({
+                                        title: 'Générateur désactivé',
+                                        description: `${gen.label} désactivé.`,
+                                      });
+                                      
+                                      const reloadResponse = await fetch(
+                                        `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+                                        { credentials: 'include' }
+                                      );
+                                      if (reloadResponse.ok) {
+                                        const reloadData = await reloadResponse.json();
+                                        setChapterGenerators({
+                                          available: reloadData.available_generators || [],
+                                          enabled: reloadData.enabled_generators || [],
+                                          loading: false,
+                                          warnings: reloadData.warnings || []
+                                        });
+                                      }
+                                    }
+                                  } catch (err) {
+                                    console.error('Erreur désactivation:', err);
+                                  }
+                                }}
+                                className="h-6 px-2 text-[10px]"
+                              >
+                                Désactiver
+                              </Button>
+                            </div>
+                          );
+                        })
+                        .filter(Boolean)
+                    )}
+                  </div>
+                )}
+                
+                {/* P4.C UX - Actions */}
+                <div className="flex items-center justify-between pt-3 border-t mt-3">
+                  <Sheet open={addGeneratorModalOpen} onOpenChange={setAddGeneratorModalOpen}>
+                    <SheetTrigger asChild>
+                      <Button size="sm" className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Ajouter un générateur
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+                      <SheetHeader>
+                        <SheetTitle>Ajouter un générateur</SheetTitle>
+                        <SheetDescription>
+                          Sélectionnez un générateur à activer pour ce chapitre.
+                        </SheetDescription>
+                      </SheetHeader>
+                      
+                      {/* Filtres */}
+                      <div className="space-y-3 mt-4 pb-4 border-b">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                          <Input
+                            placeholder="Rechercher un générateur..."
+                            value={searchFilter}
+                            onChange={(e) => setSearchFilter(e.target.value)}
+                            className="pl-8"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600">Statut :</span>
+                          <Button
+                            variant={statusFilter === 'gold' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('gold')}
+                            className="h-7 text-xs"
+                          >
+                            <Star className="h-3 w-3 mr-1" />
+                            GOLD uniquement
+                          </Button>
+                          <Button
+                            variant={statusFilter === 'all' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setStatusFilter('all')}
+                            className="h-7 text-xs"
+                          >
+                            Tous
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {/* Liste des générateurs disponibles (non activés) */}
+                      <div className="space-y-2 mt-4">
+                        {chapterGenerators.available
+                          .filter(gen => {
+                            // Filtrer les générateurs déjà activés
+                            const isAlreadyEnabled = chapterGenerators.enabled.some(
+                              eg => eg.generator_key === gen.key && eg.is_enabled
+                            );
+                            if (isAlreadyEnabled) return false;
+                            
+                            // Filtre recherche
+                            if (searchFilter && !gen.label.toLowerCase().includes(searchFilter.toLowerCase()) && 
+                                !gen.key.toLowerCase().includes(searchFilter.toLowerCase())) {
+                              return false;
+                            }
+                            
+                            // Filtre statut
+                            if (statusFilter === 'gold' && !gen.is_gold) {
+                              return false;
+                            }
+                            
+                            return true;
+                          })
+                          .map((gen) => (
+                            <div
+                              key={gen.key}
+                              className="flex items-start justify-between p-3 border rounded-md hover:bg-gray-50"
+                            >
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-sm">{gen.label}</span>
+                                  {gen.is_gold && (
+                                    <Badge className="bg-yellow-100 text-yellow-800 text-xs">GOLD</Badge>
+                                  )}
+                                  {gen.min_offer === 'pro' && (
+                                    <Badge className="bg-purple-100 text-purple-800 text-xs">Premium</Badge>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                                  {['facile', 'moyen', 'difficile'].map((diff) => {
+                                    const isSupported = gen.supported_difficulties.includes(diff);
+                                    return (
+                                      <span
+                                        key={diff}
+                                        className={isSupported ? 'text-green-600' : 'text-gray-400'}
+                                        title={!isSupported ? `Non supporté (fallback → ${diff === 'difficile' ? 'moyen' : 'facile'})` : undefined}
+                                      >
+                                        {isSupported ? '✔' : '✖'} {diff}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const updatedEnabled = [
+                                      ...chapterGenerators.enabled.filter(eg => eg.generator_key !== gen.key),
+                                      {
+                                        generator_key: gen.key,
+                                        difficulty_presets: gen.supported_difficulties.length > 0
+                                          ? gen.supported_difficulties
+                                          : ['facile', 'moyen', 'difficile'],
+                                        min_offer: gen.min_offer || 'free',
+                                        is_enabled: true
+                                      }
+                                    ];
+                                    
+                                    const response = await fetch(
+                                      `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+                                      {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        credentials: 'include',
+                                        body: JSON.stringify({
+                                          enabled_generators: updatedEnabled
+                                        })
+                                      }
+                                    );
+                                    
+                                    if (response.ok) {
+                                      toast({
+                                        title: 'Générateur activé',
+                                        description: `${gen.label} activé pour ce chapitre.`,
+                                      });
+                                      
+                                      // Recharger les générateurs
+                                      const reloadResponse = await fetch(
+                                        `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+                                        { credentials: 'include' }
+                                      );
+                                      if (reloadResponse.ok) {
+                                        const reloadData = await reloadResponse.json();
+                                        setChapterGenerators({
+                                          available: reloadData.available_generators || [],
+                                          enabled: reloadData.enabled_generators || [],
+                                          loading: false,
+                                          warnings: reloadData.warnings || []
+                                        });
+                                      }
+                                      
+                                      // Fermer le modal si succès
+                                      setAddGeneratorModalOpen(false);
+                                    } else {
+                                      const error = await response.json();
+                                      toast({
+                                        title: 'Erreur',
+                                        description: error.detail || 'Impossible d\'activer le générateur.',
+                                        variant: 'destructive'
+                                      });
+                                    }
+                                  } catch (err) {
+                                    console.error('Erreur activation générateur:', err);
+                                    toast({
+                                      title: 'Erreur',
+                                      description: 'Impossible d\'activer le générateur.',
+                                      variant: 'destructive'
+                                    });
+                                  }
+                                }}
+                                className="ml-2"
+                              >
+                                Activer
+                              </Button>
+                            </div>
+                          ))}
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                  
+                  {/* Auto-réparer (action secondaire) */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(
+                          `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators/auto-fill`,
+                          {
+                            method: 'POST',
+                            credentials: 'include'
+                          }
+                        );
+                        
+                        if (response.ok) {
+                          const data = await response.json();
+                          toast({
+                            title: 'Auto-réparer terminé',
+                            description: data.message || `${data.added_generators?.length || 0} générateur(s) activé(s).`,
+                          });
+                          // Recharger les générateurs
+                          const reloadResponse = await fetch(
+                            `${BACKEND_URL}/api/v1/admin/chapters/${chapterCode}/generators`,
+                            { credentials: 'include' }
+                          );
+                          if (reloadResponse.ok) {
+                            const reloadData = await reloadResponse.json();
+                            setChapterGenerators({
+                              available: reloadData.available_generators || [],
+                              enabled: reloadData.enabled_generators || [],
+                              loading: false,
+                              warnings: reloadData.warnings || []
+                            });
+                          }
+                        } else {
+                          const error = await response.json();
+                          toast({
+                            title: 'Erreur',
+                            description: error.detail || 'Impossible d\'effectuer l\'auto-réparer.',
+                            variant: 'destructive'
+                          });
+                        }
+                      } catch (err) {
+                        console.error('Erreur auto-fill:', err);
+                        toast({
+                          title: 'Erreur',
+                          description: 'Impossible d\'effectuer l\'auto-réparer.',
+                          variant: 'destructive'
+                        });
+                      }
+                    }}
+                    className="flex items-center gap-1 text-xs"
+                    title="Active automatiquement les générateurs GOLD recommandés"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Auto-réparer
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            
             {/* Bouton "Rédaction templates" */}
             <div className="flex justify-end">
               <Button 

@@ -482,3 +482,6 @@ Requête → Pipeline
 
 **Prochaine étape** : Implémenter P0 (1-2 jours) pour valider l'approche.
 
+
+
+

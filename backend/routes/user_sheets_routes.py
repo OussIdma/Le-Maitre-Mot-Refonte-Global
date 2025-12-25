@@ -472,12 +472,34 @@ async def export_sheet_pdf(
         <h1>{sheet["title"]}</h1>
     """
     
+    # P0: Compter les exercices manquants
+    missing_exercises = []
+    exercises_added = 0
+    
     # Ajouter les exercices dans l'ordre
     for idx, sheet_ex in enumerate(sorted(exercises, key=lambda x: x.get("order", 0)), 1):
-        exercise = exercises_map.get(sheet_ex.get("exercise_uid"))
+        exercise_uid = sheet_ex.get("exercise_uid")
+        exercise = exercises_map.get(exercise_uid)
+        
         if not exercise:
+            # P0: Exercice manquant - logger et ajouter un placeholder explicite
+            logger.warning(
+                f"[SHEETS_EXPORT] missing_exercise - sheet_uid={sheet_uid}, user_email={user_email}, exercise_uid={exercise_uid}"
+            )
+            missing_exercises.append(exercise_uid)
+            
+            # Ajouter un bloc HTML explicite dans le PDF
+            html_content += f"""
+        <div class="exercise">
+            <div class="exercise-number">Exercice {idx}</div>
+            <div class="enonce" style="color: #dc2626; font-style: italic;">
+                ⚠️ Exercice introuvable (supprimé ou non accessible). UID: {exercise_uid}
+            </div>
+        </div>
+        """
             continue
         
+        exercises_added += 1
         html_content += f"""
         <div class="exercise">
             <div class="exercise-number">Exercice {idx}</div>
@@ -495,6 +517,17 @@ async def export_sheet_pdf(
             """
         
         html_content += "</div>"
+    
+    # P0: Si tous les exercices sont manquants, retourner une erreur 409
+    if exercises_added == 0 and len(exercises) > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "all_exercises_missing",
+                "message": "Tous les exercices de cette fiche sont introuvables (supprimés ou non accessibles). Impossible de générer le PDF.",
+                "missing_exercises": missing_exercises
+            }
+        )
     
     html_content += """
     </body>

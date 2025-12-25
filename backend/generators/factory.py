@@ -16,11 +16,15 @@ Endpoints exposés:
 
 from typing import Dict, Any, List, Optional, Type
 import time
+import logging
 from backend.generators.base_generator import BaseGenerator, GeneratorMeta, ParamSchema, Preset
 from backend.observability import (
     get_logger as get_obs_logger,
     get_request_context,
 )
+
+logger = logging.getLogger(__name__)
+obs_logger = get_obs_logger('GENERATOR_FACTORY')
 
 
 # =============================================================================
@@ -31,6 +35,14 @@ class GeneratorFactory:
     """Factory centrale pour tous les générateurs."""
     
     _generators: Dict[str, Type[BaseGenerator]] = {}
+    
+    # P4.1 - Générateurs désactivés (non utilisables)
+    # Cette liste est mise à jour manuellement après classification
+    # Pour mettre à jour : exécuter test_dynamic_generators.py puis classify_generators.py
+    DISABLED_GENERATORS: List[str] = [
+        # Exemple (à remplacer par les résultats réels de classification) :
+        # "SIMPLIFICATION_FRACTIONS_V1",
+    ]
     
     # Aliases pour compatibilité arrière (clés legacy -> nouveaux générateurs)
     _ALIASES: Dict[str, str] = {
@@ -62,17 +74,33 @@ class GeneratorFactory:
         normalized = key.upper()
         # Appliquer les alias pour compatibilité arrière
         normalized = cls._ALIASES.get(normalized, normalized)
+        
+        # P4.1 - Vérifier si le générateur est désactivé
+        if normalized in cls.DISABLED_GENERATORS:
+            logger.warning(
+                f"[GENERATOR_DISABLED] Tentative d'utilisation du générateur désactivé: {normalized}"
+            )
+            return None
+        
         return cls._generators.get(normalized)
     
     @classmethod
-    def list_all(cls) -> List[Dict[str, Any]]:
+    def list_all(cls, include_disabled: bool = False) -> List[Dict[str, Any]]:
         """
         Liste tous les générateurs avec leurs métadonnées.
         
         P1.2: Inclut is_dynamic, supported_grades, supported_chapters pour le filtrage UI.
+        P4.1: Exclut les générateurs désactivés par défaut.
+        
+        Args:
+            include_disabled: Si True, inclut aussi les générateurs désactivés
         """
         result = []
         for key, gen_class in cls._generators.items():
+            # P4.1 - Filtrer les générateurs désactivés
+            if not include_disabled and key in cls.DISABLED_GENERATORS:
+                continue
+            
             meta = gen_class.get_meta()
             result.append({
                 "key": meta.key,
@@ -88,14 +116,26 @@ class GeneratorFactory:
                 # P1.2 - Métadonnées pour filtrage
                 "is_dynamic": getattr(meta, 'is_dynamic', True),  # Par défaut True pour compatibilité
                 "supported_grades": getattr(meta, 'supported_grades', meta.niveaux),  # Fallback sur niveaux
-                "supported_chapters": getattr(meta, 'supported_chapters', [])  # Optionnel
+                "supported_chapters": getattr(meta, 'supported_chapters', []),  # Optionnel
+                # P4.1 - Statut de désactivation
+                "disabled": key in cls.DISABLED_GENERATORS
             })
         return result
     
     @classmethod
     def get_schema(cls, key: str) -> Optional[Dict[str, Any]]:
         """Récupère le schéma complet d'un générateur."""
-        gen_class = cls.get(key)
+        normalized = key.upper()
+        normalized = cls._ALIASES.get(normalized, normalized)
+        
+        # P4.1 - Vérifier si le générateur est désactivé
+        if normalized in cls.DISABLED_GENERATORS:
+            logger.warning(
+                f"[GENERATOR_DISABLED] Tentative de récupération du schéma d'un générateur désactivé: {normalized}"
+            )
+            return None
+        
+        gen_class = cls.get(normalized)
         if not gen_class:
             return None
         
@@ -147,6 +187,8 @@ class GeneratorFactory:
         
         Ordre de fusion: defaults < exercise_params < overrides
         
+        P4.1 - Lève une exception si le générateur est désactivé.
+        
         Args:
             key: Clé du générateur
             exercise_params: Params stockés dans l'exercice (admin)
@@ -156,11 +198,24 @@ class GeneratorFactory:
         Returns:
             Exercice généré complet
         """
+        normalized = key.upper()
+        normalized = cls._ALIASES.get(normalized, normalized)
+        
+        # P4.1 - Vérifier si le générateur est désactivé
+        if normalized in cls.DISABLED_GENERATORS:
+            logger.error(
+                f"[GENERATOR_DISABLED] Tentative de génération avec générateur désactivé: {normalized}"
+            )
+            raise ValueError(
+                f"Le générateur '{normalized}' est désactivé et ne peut pas être utilisé. "
+                f"Consultez docs/CLASSIFICATION_GENERATEURS.md pour plus d'informations."
+            )
+        
         gen_start = time.time()
         obs_logger = get_obs_logger('GENERATOR')
         ctx = get_request_context()
         ctx.update({
-            'generator_key': key,
+            'generator_key': normalized,
             'seed': seed,
         })
         ctx.pop("exc_info", None)
@@ -186,7 +241,7 @@ class GeneratorFactory:
             )
         
         try:
-            gen_class = cls.get(key)
+            gen_class = cls.get(normalized)
             if not gen_class:
                 obs_logger.error(
                     "event=generator_unknown",
@@ -238,6 +293,12 @@ class GeneratorFactory:
                 'variant_id': result.get('variant_id'),
                 'pedagogy_mode': result.get('pedagogy_mode'),
             })
+            logger.info(
+                f"[GENERATOR_OK] ✅ Génération réussie: generator={key}, "
+                f"duration_ms={gen_duration_ms}, variables={len(output.get('variables', {}))}, "
+                f"svg_enonce={output.get('figure_svg_enonce') is not None}, "
+                f"svg_solution={output.get('figure_svg_solution') is not None}"
+            )
             obs_logger.info(
                 "event=generate_complete",
                 event="generate_complete",
@@ -253,6 +314,11 @@ class GeneratorFactory:
             
         except Exception as e:
             gen_duration_ms = int((time.time() - gen_start) * 1000)
+            logger.error(
+                f"[GENERATOR_FAIL] ❌ Génération échouée: generator={key}, "
+                f"duration_ms={gen_duration_ms}, exception={type(e).__name__}, "
+                f"message={str(e)[:200]}"
+            )
             obs_logger.error(
                 "event=generate_exception",
                 event="generate_exception",

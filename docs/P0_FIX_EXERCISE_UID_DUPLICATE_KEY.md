@@ -96,3 +96,6 @@ docker compose exec backend python /app/backend/scripts/fix_null_exercise_uid.py
 
 **RÉSOLU** - Les nouveaux exercices créés via l'admin ont maintenant un `exercise_uid` calculé automatiquement, évitant l'erreur E11000.
 
+
+
+

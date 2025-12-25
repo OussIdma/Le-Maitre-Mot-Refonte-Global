@@ -559,6 +559,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         difficulty: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Récupère les exercices d'un chapitre avec filtres optionnels"""
+        from logger import get_logger
+        diag_logger = get_logger()
+        
         chapter_upper = chapter_code.upper().replace("-", "_")
         await self.initialize_chapter(chapter_upper)
         
@@ -569,10 +572,20 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         if difficulty:
             query["difficulty"] = difficulty.lower()
         
+        # P0 - DIAGNOSTIC : Log de la requête MongoDB exacte
+        diag_logger.info(
+            f"[DIAG_6E_G07] MongoDB query: collection='{self.collection.name}', "
+            f"query={query}"
+        )
+        
         exercises = await self.collection.find(
             query,
             {"_id": 0}
         ).sort("id", 1).to_list(1000)  # Augmenter la limite pour les chapitres avec beaucoup d'exercices
+        
+        diag_logger.info(
+            f"[DIAG_6E_G07] MongoDB result: {len(exercises)} exercices trouvés"
+        )
         
         return exercises
     

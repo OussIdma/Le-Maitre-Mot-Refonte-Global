@@ -14,7 +14,7 @@ import logging
 import time
 from typing import List, Optional
 from backend.models.math_models import MathExerciseSpec, MathTextGeneration, GeneratedMathExercise
-from backend.utils import get_emergent_key
+from backend.utils_legacy import get_emergent_key
 from backend.emergentintegrations.llm.chat import LlmChat, UserMessage
 from backend.services.text_normalizer import normalizer
 from backend.services.ia_monitoring_service import ia_monitoring

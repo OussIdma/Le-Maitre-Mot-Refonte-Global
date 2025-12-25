@@ -131,3 +131,5 @@ async def debug_chapter_generators(chapter_code: str) -> Dict[str, Any]:
         "pipeline": chapter_from_db.get("pipeline") if chapter_from_db else None
     }
 
+
+

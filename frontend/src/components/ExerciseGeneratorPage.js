@@ -37,9 +37,12 @@ import {
 } from "lucide-react";
 import MathRenderer from "./MathRenderer";
 import { useToast } from "../hooks/use-toast";
+import { useAuth } from "../hooks/useAuth";
+import { useLogin } from "../contexts/LoginContext";
+import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
-import { Trash2, RefreshCw, Save, Check } from "lucide-react";
+import { Trash2, RefreshCw, Save, Check, Lock } from "lucide-react";
 import PremiumUpsellModal from "./PremiumUpsellModal";
 import UpgradeProModal, { trackPremiumEvent } from "./UpgradeProModal";
 
@@ -126,6 +129,8 @@ const MathHtmlRenderer = ({ html, className = "" }) => {
 
 const ExerciseGeneratorPage = () => {
   const { toast } = useToast();
+  const { openLogin } = useLogin();
+  const navigate = useNavigate();
   
   // État du catalogue
   const [catalog, setCatalog] = useState(null);
@@ -143,6 +148,9 @@ const ExerciseGeneratorPage = () => {
   const [selectedDomaine, setSelectedDomaine] = useState("all");
   const [batchSize, setBatchSize] = useState(5); // Nombre d'exercices par lot (défaut 5)
   const [difficulte, setDifficulte] = useState("moyen");
+  // P0 - État pour exercise_type (générateurs premium uniquement)
+  const [exerciseType, setExerciseType] = useState("");
+  const [detectedGenerator, setDetectedGenerator] = useState(null); // CALCUL_NOMBRES_V1 ou RAISONNEMENT_MULTIPLICATIF_V1
   
   // États pour la génération en lot
   const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
@@ -156,9 +164,8 @@ const ExerciseGeneratorPage = () => {
   // Historique des codes utilisés (pour rotation)
   const [usedCodes, setUsedCodes] = useState([]);
   
-  // États PRO - Détection de l'utilisateur premium
-  const [isPro, setIsPro] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
+  // P0: Utiliser le hook useAuth() pour un état réactif
+  const { sessionToken, userEmail, isPro } = useAuth();
   
   // État pour le seed de génération GM07 (pour reproductibilité des variations)
   const [gm07Seed, setGm07Seed] = useState(null);
@@ -187,21 +194,13 @@ const ExerciseGeneratorPage = () => {
     });
   }, [exercises, isPro]); // eslint-disable-line react-hooks/exhaustive-deps
   
-  // Initialiser l'authentification PRO
+  // P0: Charger les exercices sauvegardés quand sessionToken devient disponible
   useEffect(() => {
-    const storedSessionToken = localStorage.getItem('lemaitremot_session_token');
-    const storedEmail = localStorage.getItem('lemaitremot_user_email');
-    const loginMethod = localStorage.getItem('lemaitremot_login_method');
-    
-    if (storedSessionToken && storedEmail && loginMethod === 'session') {
-      setUserEmail(storedEmail);
-      setIsPro(true);
-      console.log('🌟 Mode PRO activé:', storedEmail);
-      
-      // P3.0: Charger les exercices sauvegardés pour marquer ceux déjà sauvegardés
-      loadSavedExercises(storedSessionToken);
+    if (sessionToken && isPro) {
+      console.log('🌟 Mode PRO activé (réactif):', userEmail);
+      loadSavedExercises(sessionToken);
     }
-  }, []);
+  }, [sessionToken, isPro, userEmail]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // P3.0: Charger les exercices sauvegardés pour vérifier lesquels sont déjà sauvegardés
   const loadSavedExercises = async (sessionToken) => {
@@ -209,7 +208,8 @@ const ExerciseGeneratorPage = () => {
       const response = await axios.get(`${BACKEND_URL}/api/user/exercises`, {
         headers: {
           'X-Session-Token': sessionToken
-        }
+        },
+        withCredentials: true  // P0: Stabiliser l'auth côté front
       });
       
       const savedUids = new Set(response.data.exercises.map(ex => ex.exercise_uid));
@@ -223,13 +223,14 @@ const ExerciseGeneratorPage = () => {
   
   // P3.0: Sauvegarder un exercice
   const handleSaveExercise = async (exercise) => {
-    const sessionToken = localStorage.getItem('lemaitremot_session_token');
-    
-    if (!sessionToken) {
+    // P0: Si pas Pro, ouvrir le modal de login avec message
+    if (!isPro || !sessionToken) {
+      const currentPath = window.location.pathname;
+      openLogin(currentPath);
       toast({
-        title: "Authentification requise",
-        description: "Veuillez vous connecter pour sauvegarder un exercice",
-        variant: "destructive"
+        title: "Sauvegarde réservée aux Pro",
+        description: "Connectez-vous avec un compte Pro pour sauvegarder vos exercices",
+        variant: "default"
       });
       return;
     }
@@ -270,7 +271,8 @@ const ExerciseGeneratorPage = () => {
         {
           headers: {
             'X-Session-Token': sessionToken
-          }
+          },
+          withCredentials: true  // P0: Stabiliser l'auth côté front
         }
       );
       
@@ -316,6 +318,55 @@ const ExerciseGeneratorPage = () => {
   useEffect(() => {
     fetchCatalog();
   }, [selectedGrade]);
+
+  // P0 - Détecter le générateur pour le chapitre sélectionné via le catalogue (sans endpoint debug)
+  useEffect(() => {
+    // Si pas de chapitre sélectionné ou mode macro, masquer le select
+    if (!selectedItem || selectedItem.startsWith("macro:")) {
+      setDetectedGenerator(null);
+      setExerciseType("");
+      return;
+    }
+    
+    // Si le catalogue n'est pas encore chargé, attendre
+    if (!catalog || !catalog.domains) {
+      setDetectedGenerator(null);
+      setExerciseType("");
+      return;
+    }
+    
+    // Chercher le chapitre dans le catalogue
+    let foundChapter = null;
+    for (const domain of catalog.domains) {
+      foundChapter = domain.chapters?.find(ch => ch.code_officiel === selectedItem);
+      if (foundChapter) break;
+    }
+    
+    // Si le chapitre n'est pas trouvé, masquer le select
+    if (!foundChapter || !foundChapter.generators || !Array.isArray(foundChapter.generators)) {
+      setDetectedGenerator(null);
+      setExerciseType("");
+      return;
+    }
+    
+    // Vérifier si CALCUL_NOMBRES_V1 ou RAISONNEMENT_MULTIPLICATIF_V1 est présent dans les générateurs
+    const generators = foundChapter.generators;
+    const hasCalculNombres = generators.includes("CALCUL_NOMBRES_V1");
+    const hasRaisonnementMulti = generators.includes("RAISONNEMENT_MULTIPLICATIF_V1");
+    
+    if (hasCalculNombres) {
+      setDetectedGenerator("CALCUL_NOMBRES_V1");
+      // Défaut: operations_simples (seulement si pas déjà défini)
+      setExerciseType(prev => prev || "operations_simples");
+    } else if (hasRaisonnementMulti) {
+      setDetectedGenerator("RAISONNEMENT_MULTIPLICATIF_V1");
+      // Défaut: proportionnalite_tableau (seulement si pas déjà défini)
+      setExerciseType(prev => prev || "proportionnalite_tableau");
+    } else {
+      setDetectedGenerator(null);
+      setExerciseType("");
+    }
+  }, [selectedItem, catalog]);
 
   const fetchCatalog = async () => {
     setCatalogLoading(true);
@@ -586,6 +637,14 @@ const ExerciseGeneratorPage = () => {
             difficulte: difficulte,
             seed: seed
           };
+          
+          // P0 - Ajouter exercise_type si générateur premium détecté
+          if (detectedGenerator && exerciseType) {
+            payload.exercise_type = exerciseType;
+            payload.ui_params = {
+              exercise_type: exerciseType
+            };
+          }
           
           // Ajouter offer: "pro" pour les utilisateurs PRO
           if (isPro) {
@@ -902,6 +961,14 @@ const ExerciseGeneratorPage = () => {
         seed: seed
       };
       
+      // P0 - Ajouter exercise_type si générateur premium détecté (variante garde exercise_type + difficulté, change uniquement seed)
+      if (detectedGenerator && exerciseType) {
+        payload.exercise_type = exerciseType;
+        payload.ui_params = {
+          exercise_type: exerciseType
+        };
+      }
+      
       // Si l'exercice courant est PREMIUM, la variation DOIT être PREMIUM aussi
       // Sinon, on utilise le statut PRO de l'utilisateur pour les nouvelles générations
       if (isCurrentPremium) {
@@ -1063,7 +1130,7 @@ const ExerciseGeneratorPage = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div className={`grid grid-cols-1 ${detectedGenerator ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mb-4`}>
               {/* Filtre par domaine (mode Standard uniquement) */}
               {viewMode === "officiel" && (
                 <div>
@@ -1136,6 +1203,44 @@ const ExerciseGeneratorPage = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* P0 - Type d'exercice (générateurs premium uniquement) */}
+              {detectedGenerator === "CALCUL_NOMBRES_V1" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Type d&apos;exercice
+                  </label>
+                  <Select value={exerciseType} onValueChange={setExerciseType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="operations_simples">Opérations simples</SelectItem>
+                      <SelectItem value="priorites_operatoires">Priorités opératoires</SelectItem>
+                      <SelectItem value="decimaux">Décimaux</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {detectedGenerator === "RAISONNEMENT_MULTIPLICATIF_V1" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Type d&apos;exercice
+                  </label>
+                  <Select value={exerciseType} onValueChange={setExerciseType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="proportionnalite_tableau">Proportionnalité (tableau)</SelectItem>
+                      <SelectItem value="pourcentage">Pourcentages</SelectItem>
+                      <SelectItem value="vitesse">Vitesse</SelectItem>
+                      <SelectItem value="echelle">Échelle</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Nombre d'exercices (batch size) */}
               <div>
@@ -1292,33 +1397,42 @@ const ExerciseGeneratorPage = () => {
                       )}
                     </div>
                     
-                    {/* P3.0: Bouton Sauvegarder */}
-                    {isPro && (
-                      <Button
-                        onClick={() => handleSaveExercise(exercise)}
-                        disabled={savingExerciseId === exercise.id_exercice || savedExercises.has(exercise.id_exercice)}
-                        variant={savedExercises.has(exercise.id_exercice) ? "outline" : "default"}
-                        size="sm"
-                        className={savedExercises.has(exercise.id_exercice) ? "border-green-300 text-green-700" : ""}
-                      >
-                        {savingExerciseId === exercise.id_exercice ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sauvegarde...
-                          </>
-                        ) : savedExercises.has(exercise.id_exercice) ? (
-                          <>
-                            <Check className="mr-2 h-4 w-4" />
-                            Sauvegardé ✅
-                          </>
-                        ) : (
-                          <>
-                            <Save className="mr-2 h-4 w-4" />
-                            Sauvegarder
-                          </>
-                        )}
-                      </Button>
-                    )}
+                    {/* P0: Bouton Sauvegarder - Visible pour tous (avec lock si Guest) */}
+                    <Button
+                      onClick={() => handleSaveExercise(exercise)}
+                      disabled={savingExerciseId === exercise.id_exercice || savedExercises.has(exercise.id_exercice)}
+                      variant={savedExercises.has(exercise.id_exercice) ? "outline" : isPro ? "default" : "outline"}
+                      size="sm"
+                      className={
+                        savedExercises.has(exercise.id_exercice) 
+                          ? "border-green-300 text-green-700" 
+                          : !isPro 
+                            ? "border-gray-300 text-gray-600 hover:bg-gray-50" 
+                            : ""
+                      }
+                    >
+                      {savingExerciseId === exercise.id_exercice ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sauvegarde...
+                        </>
+                      ) : savedExercises.has(exercise.id_exercice) ? (
+                        <>
+                          <Check className="mr-2 h-4 w-4" />
+                          Sauvegardé ✅
+                        </>
+                      ) : isPro ? (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          Sauvegarder
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="mr-2 h-4 w-4" />
+                          Sauvegarder (Pro)
+                        </>
+                      )}
+                    </Button>
                   </div>
 
                   {/* Figure SVG Énoncé (nouvelle API ou compatibilité) */}

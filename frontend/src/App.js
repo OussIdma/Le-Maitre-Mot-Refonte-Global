@@ -341,6 +341,8 @@ function MainApp() {
   const [pricing, setPricing] = useState({});
   const [paymentEmail, setPaymentEmail] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
+  // P0: État pour afficher le lien magique en mode dev
+  const [devCheckoutLink, setDevCheckoutLink] = useState(null);
   
   // Login modal for existing Pro users
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -672,28 +674,34 @@ function MainApp() {
     }
     
     setPaymentLoading(true);
+    setDevCheckoutLink(null); // Reset
     
     try {
-      const originUrl = window.location.origin;
-      
-      const response = await axios.post(`${API}/checkout/session`, {
-        package_id: packageId,
-        origin_url: originUrl,
-        email: paymentEmail
+      // P0: Appeler pre-checkout pour obtenir le lien magique
+      const preCheckoutResponse = await axios.post(`${API}/auth/pre-checkout`, {
+        email: paymentEmail,
+        package_id: packageId
       });
-
-      if (response.data.url) {
-        // Store email for when user returns
-        localStorage.setItem('lemaitremot_user_email', paymentEmail);
-        localStorage.setItem('lemaitremot_pending_payment', 'true');
-        
-        // Redirect to Stripe Checkout
-        window.location.href = response.data.url;
-      } else {
-        throw new Error('Aucune URL de checkout reçue');
+      
+      // P0: Afficher le lien magique en mode dev
+      if (preCheckoutResponse.data.dev_mode && preCheckoutResponse.data.checkout_link) {
+        setDevCheckoutLink(preCheckoutResponse.data.checkout_link);
+        toast({
+          title: "🔗 Lien magique (mode dev)",
+          description: "Le lien de confirmation est affiché ci-dessous pour copier.",
+        });
+        setPaymentLoading(false);
+        return; // Ne pas continuer, l'utilisateur doit cliquer sur le lien
       }
+      
+      // En production, l'email est envoyé, on affiche un message
+      toast({
+        title: "Email envoyé",
+        description: "Un lien de confirmation a été envoyé à votre adresse email.",
+      });
+      
     } catch (error) {
-      console.error('Erreur lors du paiement:', error);
+      console.error('Erreur lors du pre-checkout:', error);
       
       // Handle duplicate subscription error
       if (error.response?.status === 409) {
@@ -704,7 +712,11 @@ function MainApp() {
           alert('Cette adresse email dispose déjà d\'un abonnement actif.');
         }
       } else {
-        alert('Erreur lors de la création de la session de paiement');
+        // Toujours afficher un message neutre pour la sécurité
+        toast({
+          title: "Email envoyé",
+          description: "Si un compte existe, un lien de confirmation a été envoyé.",
+        });
       }
     } finally {
       setPaymentLoading(false);
@@ -1295,7 +1307,12 @@ function MainApp() {
         )}
 
         {/* Payment Modal */}
-        <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+        <Dialog open={showPaymentModal} onOpenChange={(open) => {
+          setShowPaymentModal(open);
+          if (!open) {
+            setDevCheckoutLink(null); // Reset quand le modal se ferme
+          }
+        }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center text-center">
@@ -1418,6 +1435,48 @@ function MainApp() {
                     </Button>
                   </CardContent>
                 </Card>
+              )}
+
+              {/* P0: Afficher le lien magique en mode dev */}
+              {devCheckoutLink && (
+                <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm font-medium text-blue-900">
+                    🔗 Lien magique (mode développement)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={devCheckoutLink}
+                      readOnly
+                      className="flex-1 font-mono text-xs bg-white"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(devCheckoutLink);
+                        toast({
+                          title: "Lien copié",
+                          description: "Le lien magique a été copié dans le presse-papier.",
+                        });
+                      }}
+                    >
+                      Copier
+                    </Button>
+                  </div>
+                  <p className="text-xs text-blue-700">
+                    Cliquez sur le lien ou copiez-le pour continuer le checkout.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      window.open(devCheckoutLink, '_blank');
+                    }}
+                    className="w-full"
+                  >
+                    Ouvrir le lien
+                  </Button>
+                </div>
               )}
 
               <div className="text-center text-xs text-gray-500 mt-4">

@@ -62,7 +62,8 @@ async def generate_exercise_with_fallback(
     exercise_service,
     request: ExerciseGenerateRequest,
     ctx: dict,
-    request_start: float
+    request_start: float,
+    effective_grade: Optional[str] = None  # P0 - Grade effectif calculé (optionnel pour compatibilité)
 ) -> dict:
     """
     Pipeline simplifié P0 : Essaie DYNAMIC, fallback STATIC si échec.
@@ -80,74 +81,199 @@ async def generate_exercise_with_fallback(
         # P4.C - Coercer la difficulté si un générateur dynamique est sélectionné
         requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else None
         
+        # P0 - DIAGNOSTIC COMPLET pour 6E_G07
+        logger.info(
+            f"[DIAG_6E_G07] generate_exercise_with_fallback() appelé avec "
+            f"chapter_code={chapter_code}"
+        )
+        logger.info(
+            f"[DIAG_6E_G07] Filtres: offer={request.offer if hasattr(request, 'offer') else None}, "
+            f"difficulty={requested_difficulty}"
+        )
+        
         exercises = await exercise_service.get_exercises(
             chapter_code=chapter_code,
             offer=request.offer if hasattr(request, 'offer') else None,
             difficulty=requested_difficulty
         )
+        
+        # P0 - Logs de diagnostic pour comprendre pourquoi les exercices dynamiques ne sont pas trouvés
+        logger.info(
+            f"[DIAG_6E_G07] ========================================="
+        )
+        logger.info(
+            f"[DIAG_6E_G07] Requête MongoDB: collection='exercises', "
+            f"query={{chapter_code: '{chapter_code.upper().replace('-', '_')}'"
+        )
+        if request.offer if hasattr(request, 'offer') else None:
+            logger.info(
+                f"[DIAG_6E_G07]   + offer: '{request.offer}'"
+            )
+        if requested_difficulty:
+            logger.info(
+                f"[DIAG_6E_G07]   + difficulty: '{requested_difficulty}'"
+            )
+        logger.info(
+            f"[DIAG_6E_G07] }}"
+        )
+        logger.info(
+            f"[DIAG_6E_G07] total_exercises={len(exercises)}"
+        )
+        
+        # Log détaillé de chaque exercice pour diagnostic
+        for idx, ex in enumerate(exercises):
+            logger.info(
+                f"[DIAG_6E_G07] exercise[{idx}]: id={ex.get('id')} "
+                f"is_dynamic={ex.get('is_dynamic')} (type: {type(ex.get('is_dynamic'))}) "
+                f"generator_key={ex.get('generator_key')} "
+                f"offer={ex.get('offer')} "
+                f"difficulty={ex.get('difficulty')} "
+                f"enonce_preview={str(ex.get('enonce_html', ''))[:50]}..."
+            )
+        
         dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+        
+        logger.info(
+            f"[PIPELINE_DEBUG] generate_exercise_with_fallback() - Résultats:"
+        )
+        logger.info(
+            f"[PIPELINE_DEBUG]   total_exercises={len(exercises)}"
+        )
+        logger.info(
+            f"[PIPELINE_DEBUG]   dynamic_count={len(dynamic_exercises)}"
+        )
+        logger.info(
+            f"[PIPELINE_DEBUG]   static_count={len(static_exercises)}"
+        )
         
         # P4.D - Filtrer selon enabled_generators si disponible (passé via ctx)
-        enabled_generators_for_chapter = ctx.get("enabled_generators", [])
+        enabled_generators_raw = ctx.get("enabled_generators", [])
+        dynamic_count_before_filter = len(dynamic_exercises)
+        
+        # P0 - FIX : Normaliser enabled_generators (peut être List[str] ou List[dict])
+        enabled_generators_for_chapter = normalize_enabled_generators(enabled_generators_raw)
+        
+        logger.info(
+            f"[PIPELINE_DEBUG]   enabled_generators_raw_type={type(enabled_generators_raw).__name__}"
+        )
+        logger.info(
+            f"[PIPELINE_DEBUG]   enabled_generators_raw={enabled_generators_raw}"
+        )
+        logger.info(
+            f"[PIPELINE_DEBUG]   enabled_generator_keys (normalisés)={enabled_generators_for_chapter}"
+        )
+        
         if enabled_generators_for_chapter:
+            logger.info(
+                f"[PIPELINE_DEBUG]   Filtrant selon enabled_generators={enabled_generators_for_chapter} "
+                f"(avant filtre: {dynamic_count_before_filter} exercices dynamiques)"
+            )
             dynamic_exercises = [
                 ex for ex in dynamic_exercises
-                if ex.get("generator_key") and ex.get("generator_key").upper() in [eg.upper() for eg in enabled_generators_for_chapter]
+                if ex.get("generator_key") and ex.get("generator_key").upper() in enabled_generators_for_chapter
             ]
+            logger.info(
+                f"[PIPELINE_DEBUG]   dynamic_after_enabled_generators={len(dynamic_exercises)}"
+            )
             logger.info(
                 f"[PROF_GENERATORS] generate_exercise_with_fallback: Filtré {len(dynamic_exercises)} exercices "
                 f"selon enabled_generators={enabled_generators_for_chapter}"
+            )
+        else:
+            logger.info(
+                f"[PIPELINE_DEBUG]   Aucun enabled_generators dans ctx (ou normalisation vide), "
+                f"utilisant tous les {len(dynamic_exercises)} exercices dynamiques disponibles"
             )
         
         if len(dynamic_exercises) > 0:
             selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
             
-            # P4.C - Coercer la difficulté selon les capacités du générateur
+            # P0 - Appliquer map_ui_difficulty_to_generator() pour les générateurs dynamiques
             generator_key = selected_exercise.get("generator_key")
             coerced_difficulty = requested_difficulty
             if generator_key and requested_difficulty:
-                gen_class = GeneratorFactory.get(generator_key)
-                if gen_class:
-                    schema = gen_class.get_schema()
-                    supported_difficulties = ["facile", "moyen", "difficile"]  # Par défaut
-                    if schema:
-                        difficulty_param = next((p for p in schema if p.name == "difficulty"), None)
-                        if difficulty_param and hasattr(difficulty_param, 'options'):
-                            supported_difficulties = [normalize_difficulty(d) for d in (difficulty_param.options or [])]
-                    
-                    coerced_difficulty = coerce_to_supported_difficulty(
-                        requested=requested_difficulty,
-                        supported=supported_difficulties,
-                        logger=logger
+                # P0 - Utiliser map_ui_difficulty_to_generator() au lieu de coerce_to_supported_difficulty()
+                coerced_difficulty = map_ui_difficulty_to_generator(
+                    generator_key,
+                    requested_difficulty,
+                    logger
+                )
+                
+                # Mettre à jour la difficulté dans le contexte pour les logs
+                ctx['requested_difficulty'] = requested_difficulty
+                ctx['coerced_difficulty'] = coerced_difficulty
+                ctx['generator_key'] = generator_key
+                
+                if coerced_difficulty != requested_difficulty:
+                    logger.info(
+                        f"[DIFFICULTY_MAPPED] generate_exercise_with_fallback: "
+                        f"generator={generator_key} ui={requested_difficulty} -> effective={coerced_difficulty}"
                     )
-                    
-                    # Mettre à jour la difficulté dans le contexte pour les logs
-                    ctx['requested_difficulty'] = requested_difficulty
-                    ctx['coerced_difficulty'] = coerced_difficulty
-                    ctx['generator_key'] = generator_key
             
             timestamp = int(time.time() * 1000)
             dyn_exercise = format_dynamic_exercise(
                 exercise_template=selected_exercise,
                 timestamp=timestamp,
-                seed=request.seed
+                seed=request.seed if hasattr(request, 'seed') and request.seed else None
             )
             
-            duration_ms = int((time.time() - request_start) * 1000)
-            obs_logger.info(
-                "event=dynamic_generated",
-                event="dynamic_generated",
-                outcome="success",
-                duration_ms=duration_ms,
-                exercise_id=selected_exercise.get('id'),
-                generator_key=selected_exercise.get('generator_key'),
-                **ctx
-            )
+            # P0 - Ajouter ui_params et effective_params dans metadata
+            if 'metadata' not in dyn_exercise:
+                dyn_exercise['metadata'] = {}
+            
+            # Construire ui_params si pas déjà fait
+            if 'ui_params' not in dyn_exercise['metadata']:
+                ui_params_fallback = {}
+                if hasattr(request, 'difficulte') and request.difficulte:
+                    ui_params_fallback['difficulty_ui'] = request.difficulte
+                if hasattr(request, 'exercise_type') and request.exercise_type:
+                    ui_params_fallback['exercise_type_ui'] = request.exercise_type
+                if hasattr(request, 'seed') and request.seed:
+                    ui_params_fallback['seed'] = request.seed
+                dyn_exercise['metadata']['ui_params'] = ui_params_fallback
+            
+            # Construire effective_params
+            effective_params_fallback = {
+                'difficulty_effective': coerced_difficulty if 'coerced_difficulty' in locals() else requested_difficulty,
+                'grade_effective': effective_grade if effective_grade else (request.niveau if hasattr(request, 'niveau') else "6e"),
+                'seed': request.seed if hasattr(request, 'seed') and request.seed else None
+            }
+            if hasattr(request, 'exercise_type') and request.exercise_type:
+                effective_params_fallback['exercise_type_effective'] = request.exercise_type
+            dyn_exercise['metadata']['effective_params'] = effective_params_fallback
+            
+            # P0 - Logs avec paramètres
             logger.info(
                 f"[GENERATOR_OK] ✅ Exercice DYNAMIQUE généré: "
                 f"chapter={chapter_code}, id={selected_exercise.get('id')}, "
-                f"generator={selected_exercise.get('generator_key')}"
+                f"generator={selected_exercise.get('generator_key')}, "
+                f"ui_params={dyn_exercise['metadata'].get('ui_params')}, "
+                f"effective_params={dyn_exercise['metadata'].get('effective_params')}"
             )
+            
+            duration_ms = int((time.time() - request_start) * 1000)
+            # P0 - FIX : Retirer generator_key de ctx avant de le passer explicitement
+            # pour éviter "got multiple values for keyword argument 'generator_key'"
+            ctx_for_log = {k: v for k, v in ctx.items() if k != 'generator_key'}
+            
+            # P0 - SÉCURITÉ : Rendre l'observabilité non-bloquante
+            try:
+                obs_logger.info(
+                    "event=dynamic_generated",
+                    event="dynamic_generated",
+                    outcome="success",
+                    duration_ms=duration_ms,
+                    exercise_id=selected_exercise.get('id'),
+                    generator_key=selected_exercise.get('generator_key'),
+                    **ctx_for_log
+                )
+            except Exception as log_error:
+                logger.exception(
+                    f"[OBSERVABILITY_FAIL] Erreur lors du log observability pour exercice dynamique: {log_error}"
+                )
+                # Continuer la génération même si le log échoue
+            
             return dyn_exercise
     
     except Exception as e:
@@ -155,17 +281,32 @@ async def generate_exercise_with_fallback(
             f"[GENERATOR_FAIL] ❌ Erreur génération DYNAMIC pour {chapter_code}: {e}. "
             f"Fallback STATIC activé."
         )
-        obs_logger.warning(
-            "event=dynamic_failed",
-            event="dynamic_failed",
-            outcome="fallback",
-            reason="exception",
-            exception_type=type(e).__name__,
-            **ctx
+        logger.warning(
+            f"[FALLBACK_DEBUG] Exception détails: type={type(e).__name__}, "
+            f"message={str(e)}"
         )
+        # P0 - SÉCURITÉ : Rendre l'observabilité non-bloquante
+        try:
+            obs_logger.warning(
+                "event=dynamic_failed",
+                event="dynamic_failed",
+                outcome="fallback",
+                reason="exception",
+                exception_type=type(e).__name__,
+                **ctx
+            )
+        except Exception as log_error:
+            logger.exception(
+                f"[OBSERVABILITY_FAIL] Erreur lors du log observability pour dynamic_failed: {log_error}"
+            )
+            # Continuer même si le log échoue
     
     # 2. Fallback STATIC
     try:
+        logger.info(
+            f"[FALLBACK_DEBUG] Tentative fallback STATIC pour {chapter_code} "
+            f"(aucun exercice dynamique trouvé ou erreur)"
+        )
         exercises = await exercise_service.get_exercises(
             chapter_code=chapter_code,
             offer=request.offer if hasattr(request, 'offer') else None,
@@ -173,8 +314,20 @@ async def generate_exercise_with_fallback(
         )
         static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
         
+        logger.info(
+            f"[FALLBACK_DEBUG] static_exercises_count={len(static_exercises)} "
+            f"pour chapter_code={chapter_code}"
+        )
+        
         if len(static_exercises) > 0:
             selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
+            
+            logger.warning(
+                f"[FALLBACK_STATIC] ⚠️ Utilisation d'un exercice STATIC pour {chapter_code}: "
+                f"id={selected_static.get('id')}, "
+                f"enonce_preview={selected_static.get('enonce_html', '')[:100]}..."
+            )
+            
             timestamp = int(time.time() * 1000)
             
             # Récupérer le chapitre pour les métadonnées
@@ -505,6 +658,40 @@ async def generate_gm08_batch_endpoint(request: GM08BatchRequest):
     )
 
 
+def normalize_enabled_generators(raw: Any) -> List[str]:
+    """
+    Normalise enabled_generators depuis différents formats possibles.
+    
+    Formats supportés:
+    - List[str]: ["CALCUL_NOMBRES_V1", "SYMETRIE_AXIALE_V2"]
+    - List[dict]: [{"generator_key": "CALCUL_NOMBRES_V1", "is_enabled": True, ...}, ...]
+    - None ou autre: []
+    
+    Returns:
+        Liste de generator_key (strings) normalisés
+    """
+    if not raw:
+        return []
+    
+    if isinstance(raw, list):
+        if len(raw) == 0:
+            return []
+        
+        # Cas 1: List[str]
+        if isinstance(raw[0], str):
+            return [g.upper() for g in raw if g]
+        
+        # Cas 2: List[dict]
+        if isinstance(raw[0], dict):
+            return [
+                d["generator_key"].upper()
+                for d in raw
+                if isinstance(d, dict) and d.get("is_enabled") and d.get("generator_key")
+            ]
+    
+    return []
+
+
 def generate_exercise_id(niveau: str, chapitre: str) -> str:
     """
     Génère un identifiant unique pour l'exercice
@@ -765,6 +952,31 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     request_start = time.time()
     ensure_request_id()
     
+    # P0 - Construire ui_params (paramètres UI bruts)
+    ui_params = request.ui_params or {}
+    if hasattr(request, 'difficulte') and request.difficulte:
+        ui_params['difficulty_ui'] = request.difficulte
+    if hasattr(request, 'exercise_type') and request.exercise_type:
+        ui_params['exercise_type_ui'] = request.exercise_type
+    if hasattr(request, 'grade') and request.grade:
+        ui_params['grade_ui'] = request.grade
+    if hasattr(request, 'seed') and request.seed:
+        ui_params['seed'] = request.seed
+    
+    # P0 - Calculer grade avec priorité : payload.grade -> contexte grade -> extraction code_officiel -> fallback
+    effective_grade = None
+    if hasattr(request, 'grade') and request.grade:
+        effective_grade = request.grade
+    elif request.code_officiel:
+        # Extraire grade depuis code_officiel (format: "6e_N04")
+        parts = request.code_officiel.split('_', 1)
+        if len(parts) == 2 and parts[0] in ['6e', '5e', '4e', '3e']:
+            effective_grade = parts[0]
+    elif hasattr(request, 'niveau') and request.niveau:
+        effective_grade = request.niveau
+    else:
+        effective_grade = "6e"  # Fallback
+    
     # P4.B - Normaliser la difficulté (standard -> moyen)
     normalized_difficulty = None
     if hasattr(request, 'difficulte') and request.difficulte:
@@ -875,7 +1087,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         curriculum_service_db = CurriculumPersistenceService(db)
         await curriculum_service_db.initialize()
         
-        chapter_from_db = await curriculum_service_db.get_chapter_by_code(request.code_officiel)
+        # P0 - FIX : Normaliser le code_officiel AVANT la lecture DB
+        # Le chapitre en DB peut être stocké en uppercase ("6E_G07") alors que
+        # la requête arrive en mixed case ("6e_G07")
+        normalized_code_officiel = request.code_officiel.upper().replace("-", "_")
+        
+        logger.info(
+            f"[DIAG_6E_G07] Normalisation code_officiel: "
+            f"requested='{request.code_officiel}' → normalized='{normalized_code_officiel}'"
+        )
+        
+        chapter_from_db = await curriculum_service_db.get_chapter_by_code(normalized_code_officiel)
         
         if not chapter_from_db:
             # Fallback legacy : chercher dans le fichier JSON (pour compatibilité)
@@ -984,16 +1206,50 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             exercise_service = get_exercise_persistence_service(db)
             
             # Normaliser le code_officiel pour la recherche
-            chapter_code_for_db = request.code_officiel.upper().replace("-", "_")
+            # Utiliser normalized_code_officiel défini plus haut
+            chapter_code_for_db = normalized_code_officiel if normalized_code_officiel else request.code_officiel.upper().replace("-", "_")
+            
+            # P0 - DIAGNOSTIC COMPLET pour 6E_G07
+            logger.info(
+                f"[PIPELINE_DEBUG] ========================================="
+            )
+            logger.info(
+                f"[PIPELINE_DEBUG] requested_code_officiel='{request.code_officiel}'"
+            )
+            logger.info(
+                f"[PIPELINE_DEBUG] normalized_code='{normalized_code_officiel if normalized_code_officiel else chapter_code_for_db}'"
+            )
+            logger.info(
+                f"[PIPELINE_DEBUG] chapter_from_db exists: {chapter_from_db is not None}"
+            )
+            if chapter_from_db:
+                logger.info(
+                    f"[PIPELINE_DEBUG] chapter_from_db.code_officiel='{chapter_from_db.get('code_officiel')}'"
+                )
+                logger.info(
+                    f"[PIPELINE_DEBUG] pipeline_mode='{pipeline_mode}' (type: {type(pipeline_mode)})"
+                )
+                logger.info(
+                    f"[PIPELINE_DEBUG] enabled_generators={enabled_generators_for_chapter}"
+                )
+            else:
+                logger.warning(
+                    f"[PIPELINE_DEBUG] ⚠️ chapter_from_db is None! "
+                    f"Le chapitre n'a pas été trouvé avec normalized_code='{normalized_code_officiel if normalized_code_officiel else chapter_code_for_db}'"
+                )
             
             # P4.D - Récupérer enabled_generators depuis la DB si disponible
-            enabled_generators_for_chapter = []
+            enabled_generators_raw = []
             if chapter_from_db:
-                enabled_generators_for_chapter = [
-                    eg.get("generator_key") 
-                    for eg in chapter_from_db.get("enabled_generators", [])
-                    if eg.get("is_enabled") is True
-                ]
+                enabled_generators_raw = chapter_from_db.get("enabled_generators", [])
+            
+            # P0 - FIX : Normaliser enabled_generators (peut être List[str] ou List[dict])
+            enabled_generators_for_chapter = normalize_enabled_generators(enabled_generators_raw)
+            
+            logger.info(
+                f"[PIPELINE_DEBUG] enabled_generators_raw_type={type(enabled_generators_raw).__name__} "
+                f"enabled_generators={enabled_generators_for_chapter}"
+            )
             
             if pipeline_mode == "TEMPLATE":
                 # Pipeline dynamique uniquement
@@ -1036,10 +1292,11 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
                     
                     # P4.D - Filtrer selon enabled_generators si disponible
+                    # enabled_generators_for_chapter est déjà normalisé plus haut
                     if enabled_generators_for_chapter:
                         dynamic_exercises = [
                             ex for ex in dynamic_exercises
-                            if ex.get("generator_key") and ex.get("generator_key").upper() in [eg.upper() for eg in enabled_generators_for_chapter]
+                            if ex.get("generator_key") and ex.get("generator_key").upper() in enabled_generators_for_chapter
                         ]
                         logger.info(
                             f"[PROF_GENERATORS] Filtré {len(dynamic_exercises)} exercices dynamiques "
@@ -1200,7 +1457,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         exercise_service=exercise_service,
                         request=request,
                         ctx=ctx,
-                        request_start=request_start
+                        request_start=request_start,
+                        effective_grade=effective_grade  # P0 - Passer le grade effectif
                     )
                 except HTTPException:
                     raise
@@ -1871,13 +2129,27 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     
                     try:
-                        # P4.D HOTFIX - Mapper la difficulté UI vers la difficulté réelle du générateur
+                        # P0 - Construire effective_params (paramètres effectifs après mapping)
                         requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else "moyen"
+                        
+                        # P0 - Appliquer map_ui_difficulty_to_generator() AVANT GeneratorFactory.generate()
                         generator_difficulty = map_ui_difficulty_to_generator(
                             selected_premium_generator,
                             requested_difficulty,
                             logger
                         )
+                        
+                        # P0 - Construire effective_params
+                        effective_params = {
+                            'difficulty_effective': generator_difficulty,
+                            'grade_effective': effective_grade,
+                            'seed': request.seed if hasattr(request, 'seed') and request.seed else None
+                        }
+                        
+                        # Ajouter exercise_type si fourni
+                        if hasattr(request, 'exercise_type') and request.exercise_type:
+                            effective_params['exercise_type_effective'] = request.exercise_type
+                            ui_params['exercise_type_ui'] = request.exercise_type
                         
                         if generator_difficulty != requested_difficulty:
                             obs_logger.info(
@@ -1889,17 +2161,34 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 generator_key=selected_premium_generator,
                                 **ctx
                             )
+                            logger.info(
+                                f"[DIFFICULTY_MAPPED] generator={selected_premium_generator} "
+                                f"ui={requested_difficulty} -> effective={generator_difficulty}"
+                            )
+                        
+                        # P0 - Logs avec ui_params et effective_params (sans données sensibles)
+                        logger.info(
+                            f"[GENERATOR_PARAMS] generator_key={selected_premium_generator} "
+                            f"code_officiel={request.code_officiel} "
+                            f"ui_params={ui_params} effective_params={effective_params}"
+                        )
                         
                         # Appeler GeneratorFactory.generate() avec la difficulté mappée
+                        overrides_dict = {
+                            'seed': request.seed if hasattr(request, 'seed') and request.seed else None,
+                            'grade': effective_grade,
+                            'difficulty': generator_difficulty,  # P0 - Utiliser la difficulté mappée
+                        }
+                        
+                        # Ajouter exercise_type si fourni
+                        if hasattr(request, 'exercise_type') and request.exercise_type:
+                            overrides_dict['exercise_type'] = request.exercise_type
+                        
                         premium_result = GeneratorFactory.generate(
                             key=selected_premium_generator,
                             exercise_params={},
-                            overrides={
-                                'seed': request.seed,
-                                'grade': request.niveau,
-                                'difficulty': generator_difficulty,  # P4.D HOTFIX - Utiliser la difficulté mappée
-                            },
-                            seed=request.seed
+                            overrides=overrides_dict,
+                            seed=request.seed if hasattr(request, 'seed') and request.seed else None
                         )
                         use_premium_factory = True
                         
@@ -2074,6 +2363,16 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             id_exercice = generate_exercise_id(request.niveau, request.chapitre)
             pdf_token = id_exercice
             
+            # P0 - Construire effective_params si pas déjà fait
+            if 'effective_params' not in locals():
+                effective_params = {
+                    'difficulty_effective': generator_difficulty if 'generator_difficulty' in locals() else request.difficulte,
+                    'grade_effective': effective_grade,
+                    'seed': request.seed if hasattr(request, 'seed') and request.seed else None
+                }
+                if hasattr(request, 'exercise_type') and request.exercise_type:
+                    effective_params['exercise_type_effective'] = request.exercise_type
+            
             # Retourner immédiatement la réponse Factory
             metadata = {
                 "is_premium": True,
@@ -2081,9 +2380,11 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 "generator_code": f"{request.niveau}_{selected_premium_generator}",
                 "difficulte": request.difficulte,
                 "generation_duration_ms": duration_ms,
-                "seed": request.seed,
+                "seed": request.seed if hasattr(request, 'seed') and request.seed else None,
                 "variables": variables,  # Ajout des variables pour debug
                 "template_source": template_source,  # P1 - Traçabilité template (db | legacy)
+                "ui_params": ui_params,  # P0 - Paramètres UI bruts
+                "effective_params": effective_params,  # P0 - Paramètres effectifs après mapping
             }
             
             # Ajouter template_db_id si template DB utilisé

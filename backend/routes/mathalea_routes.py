@@ -5,15 +5,16 @@ CRUD pour Competence et ExerciseType
 Architecture non-destructive - N'affecte pas les routes existantes
 """
 
-from fastapi import APIRouter, HTTPException, Query, Header, File, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Header, File, UploadFile, Request
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
 import shutil
 from pathlib import Path
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -1014,9 +1015,16 @@ async def generate_sheet_pdf(sheet_id: str):
 
 
 @router.post("/sheets/{sheet_id}/export-standard")
-async def export_standard_pdf(sheet_id: str):
+async def export_standard_pdf(
+    sheet_id: str,
+    request: Request,
+    x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
+    x_guest_id: Optional[str] = Header(None, alias="X-Guest-ID")
+):
     """
     Export Standard - Génère 2 PDFs simplifiés (Élève + Corrigé)
+    
+    P0 BUSINESS: Protection contre exports illimités gratuits
     
     SPRINT FUSION PDF - Export standard simplifié:
     1. Génère le preview de la feuille
@@ -1024,6 +1032,11 @@ async def export_standard_pdf(sheet_id: str):
        - student_pdf: Énoncé + zones de réponse (pour distribution aux élèves)
        - correction_pdf: Énoncé + corrections détaillées
     3. Pas de logo, pas de personnalisation, design simple et clair
+    
+    Guards:
+    - Si X-Session-Token présent: vérifie Pro (pas de quota si Pro)
+    - Sinon: exige X-Guest-ID (header uniquement - P0 FIX: une seule méthode)
+    - Guest: quota 3 exports / 30 jours (compté dans db.exports)
     
     Returns:
         Dict avec 2 clés contenant les PDFs en base64:
@@ -1037,6 +1050,74 @@ async def export_standard_pdf(sheet_id: str):
         build_sheet_student_pdf,
         build_sheet_correction_pdf
     )
+    from backend.server import validate_session_token, check_user_pro_status, check_guest_quota
+    
+    # P0: Vérification auth et quota
+    is_pro_user = False
+    user_email = None
+    guest_id_final = None
+    user_type = "guest"  # Par défaut
+    
+    # 1. Si X-Session-Token présent, vérifier Pro
+    if x_session_token:
+        try:
+            user_email = await validate_session_token(x_session_token)
+            if user_email:
+                is_pro_user, _ = await check_user_pro_status(user_email)
+                if is_pro_user:
+                    user_type = "pro"
+                    logger.info(
+                        f"[EXPORT_QUOTA] user_type=pro user_email={user_email} sheet_id={sheet_id} - pas de quota"
+                    )
+                else:
+                    user_type = "non_pro"
+                    logger.info(
+                        f"[EXPORT_QUOTA] user_type=non_pro user_email={user_email} sheet_id={sheet_id} - nécessite guest_id"
+                    )
+        except Exception as e:
+            logger.warning(f"[EXPORT_QUOTA] Erreur validation session: {e} - traité comme guest")
+            # Continue comme guest si session invalide
+    
+    # 2. Si pas Pro, exiger X-Guest-ID (header uniquement - P0 FIX)
+    if not is_pro_user:
+        guest_id_final = x_guest_id
+        if not guest_id_final:
+            logger.warning(
+                f"[EXPORT_QUOTA] user_type=guest sheet_id={sheet_id} - X-Guest-ID manquant"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "guest_id_required",
+                    "message": "Guest ID requis pour les utilisateurs non-Pro. Fournissez X-Guest-ID (header).",
+                    "hint": "Les utilisateurs Pro peuvent utiliser X-Session-Token pour un accès illimité."
+                }
+            )
+        
+        # 3. Vérifier le quota guest
+        quota_status = await check_guest_quota(guest_id_final)
+        
+        if quota_status["quota_exceeded"]:
+            logger.warning(
+                f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
+                f"exports_used={quota_status['exports_used']} max_exports={quota_status['max_exports']} - QUOTA_EXCEEDED"
+            )
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "quota_exceeded",
+                    "action": "upgrade_required",
+                    "message": f"Limite de {quota_status['max_exports']} exports gratuits atteinte (30 derniers jours). Passez à l'abonnement Pro pour continuer.",
+                    "exports_used": quota_status["exports_used"],
+                    "exports_remaining": quota_status["exports_remaining"],
+                    "max_exports": quota_status["max_exports"]
+                }
+            )
+        
+        logger.info(
+            f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
+            f"exports_used={quota_status['exports_used']} exports_remaining={quota_status['exports_remaining']} - QUOTA_OK"
+        )
     
     try:
         # 1. Vérifier que la feuille existe
@@ -1117,7 +1198,25 @@ async def export_standard_pdf(sheet_id: str):
         # 4. Créer le nom de fichier base
         filename_base = f"LeMaitreMot_{sheet['titre'].replace(' ', '_')}"
         
-        # 5. Encoder en base64 et retourner
+        # 5. P0: Enregistrer l'export dans db.exports (si guest)
+        if not is_pro_user and guest_id_final:
+            try:
+                export_doc = {
+                    "guest_id": guest_id_final,
+                    "sheet_id": sheet_id,
+                    "type": "sheet_export",
+                    "created_at": datetime.now(timezone.utc)
+                }
+                await db.exports.insert_one(export_doc)
+                logger.info(
+                    f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
+                    f"- export enregistré dans db.exports"
+                )
+            except Exception as e:
+                logger.error(f"[EXPORT_QUOTA] Erreur enregistrement export: {e}")
+                # Ne pas bloquer l'export si l'enregistrement échoue
+        
+        # 6. Encoder en base64 et retourner
         response = {
             "student_pdf": base64.b64encode(student_pdf_bytes).decode('utf-8'),
             "correction_pdf": base64.b64encode(correction_pdf_bytes).decode('utf-8'),
@@ -1127,11 +1226,13 @@ async def export_standard_pdf(sheet_id: str):
                 "titre": sheet["titre"],
                 "niveau": sheet["niveau"],
                 "nb_exercises": len(preview_items),
-                "generated_at": datetime.now(timezone.utc).isoformat()
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "user_type": "pro" if is_pro_user else "guest",
+                "guest_id": guest_id_final[:8] + "..." if guest_id_final and len(guest_id_final) > 8 else guest_id_final if guest_id_final else None
             }
         }
         
-        logger.info(f"✅ Export standard généré: 2 PDFs pour la feuille {sheet_id}")
+        logger.info(f"✅ Export standard généré: 2 PDFs pour la feuille {sheet_id} (user_type={'pro' if is_pro_user else 'guest'})")
         return response
         
     except HTTPException:

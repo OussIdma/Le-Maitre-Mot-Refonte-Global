@@ -25,6 +25,7 @@ CURRICULUM_COLLECTION = "curriculum_chapters"
 
 import re
 from pydantic import field_validator
+from typing import Literal as PyLiteral
 
 
 def normalize_code_officiel(code: str) -> str:
@@ -47,6 +48,24 @@ def normalize_code_officiel(code: str) -> str:
     return code  # Retourne tel quel si le format n'est pas reconnu
 
 
+# P4.B - Modèles pour enabled_generators
+class EnabledGeneratorConfig(BaseModel):
+    """Configuration d'un générateur activé dans un chapitre"""
+    generator_key: str = Field(..., description="Clé du générateur (ex: THALES_V2)")
+    difficulty_presets: List[str] = Field(
+        default_factory=lambda: ["facile", "moyen", "difficile"],
+        description="Liste des difficultés activées pour ce générateur"
+    )
+    min_offer: str = Field(
+        default="free",
+        description="Offre minimum requise: 'free' ou 'pro'"
+    )
+    is_enabled: bool = Field(
+        default=True,
+        description="Si le générateur est activé dans ce chapitre"
+    )
+
+
 class ChapterCreateRequest(BaseModel):
     """Modèle pour la création d'un chapitre"""
     code_officiel: str = Field(..., description="Code officiel unique (ex: 6e_N01)")
@@ -63,6 +82,10 @@ class ChapterCreateRequest(BaseModel):
     pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
         default="SPEC",
         description="Pipeline de génération: SPEC (statique), TEMPLATE (dynamique), MIXED (les deux)"
+    )
+    enabled_generators: List[EnabledGeneratorConfig] = Field(
+        default_factory=list,
+        description="Liste des générateurs activés dans ce chapitre (P4.B)"
     )
     
     @field_validator('code_officiel', mode='before')
@@ -87,6 +110,10 @@ class ChapterUpdateRequest(BaseModel):
     pipeline: Optional[Literal["SPEC", "TEMPLATE", "MIXED"]] = Field(
         default=None,
         description="Pipeline de génération: SPEC (statique), TEMPLATE (dynamique), MIXED (les deux)"
+    )
+    enabled_generators: Optional[List[EnabledGeneratorConfig]] = Field(
+        default=None,
+        description="Liste des générateurs activés dans ce chapitre (P4.B)"
     )
 
 
@@ -186,10 +213,27 @@ class CurriculumPersistenceService:
         """Récupère un chapitre par son code officiel"""
         await self.initialize()
         
+        # P0 - DIAGNOSTIC : Log de la requête exacte
+        logger.info(
+            f"[DIAG_6E_G07] get_chapter_by_code() appelé avec code_officiel='{code_officiel}' "
+            f"(type: {type(code_officiel)})"
+        )
+        
         chapter = await self.collection.find_one(
             {"code_officiel": code_officiel},
             {"_id": 0}
         )
+        
+        if chapter:
+            logger.info(
+                f"[DIAG_6E_G07] ✅ Chapitre trouvé: code_officiel='{chapter.get('code_officiel')}', "
+                f"pipeline='{chapter.get('pipeline')}'"
+            )
+        else:
+            logger.warning(
+                f"[DIAG_6E_G07] ❌ Chapitre NON TROUVÉ avec code_officiel='{code_officiel}'. "
+                f"Vérifier la casse dans MongoDB."
+            )
         
         return chapter
     

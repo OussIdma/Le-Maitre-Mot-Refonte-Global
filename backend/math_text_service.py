@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import List, Optional
 from math_models import MathExerciseSpec, MathTextGeneration, GeneratedMathExercise
-from backend.utils import get_emergent_key
+from backend.utils_legacy import get_emergent_key
 from backend.emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger(__name__)

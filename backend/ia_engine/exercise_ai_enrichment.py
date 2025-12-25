@@ -12,7 +12,7 @@ Fonctionnalités:
 import logging
 import json
 from typing import Dict, Any, Optional
-from backend.utils import get_emergent_key
+from backend.utils_legacy import get_emergent_key
 from backend.emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger(__name__)

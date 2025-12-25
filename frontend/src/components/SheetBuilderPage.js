@@ -6,6 +6,9 @@ import Header from "./Header";
 import SheetPreviewModal from "./SheetPreviewModal";
 import PdfDownloadModal from "./PdfDownloadModal";
 import ProExportModal from "./ProExportModal";
+import UpgradeProModal from "./UpgradeProModal";
+import { useToast } from "../hooks/use-toast";
+import { useAuth } from "../hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Badge } from "./ui/badge";
@@ -50,10 +53,8 @@ function SheetBuilderPage() {
   const [sheetItems, setSheetItems] = useState([]);
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   
-  // États pour l'utilisateur et Pro
-  const [userEmail, setUserEmail] = useState("");
-  const [isPro, setIsPro] = useState(false);
-  const [sessionToken, setSessionToken] = useState("");
+  // P0: Utiliser useAuth() pour cohérence avec ExerciseGeneratorPage
+  const { sessionToken, userEmail, isPro } = useAuth();
   
   // États pour génération/export
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
@@ -75,20 +76,50 @@ function SheetBuilderPage() {
   const [selectedDomain, setSelectedDomain] = useState("");
   const [selectedGeneratorKind, setSelectedGeneratorKind] = useState("");
   const [availableDomains, setAvailableDomains] = useState([]);
+  
+  // P0: États pour le quota guest
+  const [quotaStatus, setQuotaStatus] = useState(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  
+  const { toast } = useToast();
 
-  // Initialiser l'authentification
+  // P0: Plus besoin d'initialiser auth manuellement - useAuth() le fait
+  
+  // P0: Charger le quota guest si !isPro
   useEffect(() => {
-    const storedSessionToken = localStorage.getItem('lemaitremot_session_token');
-    const storedEmail = localStorage.getItem('lemaitremot_user_email');
-    const loginMethod = localStorage.getItem('lemaitremot_login_method');
-    
-    if (storedSessionToken && storedEmail && loginMethod === 'session') {
-      setSessionToken(storedSessionToken);
-      setUserEmail(storedEmail);
-      setIsPro(true);
-      console.log('✅ Session Pro détectée:', storedEmail);
+    if (!isPro) {
+      loadQuotaStatus();
+    } else {
+      // Si Pro, pas de quota
+      setQuotaStatus(null);
     }
-  }, []);
+  }, [isPro]);
+  
+  // P0: Fonction pour charger le quota
+  // IMPORTANT: Ne JAMAIS créer guest_id ici - seulement lire depuis App.js
+  const loadQuotaStatus = async () => {
+    try {
+      setQuotaLoading(true);
+      const guestId = localStorage.getItem('lemaitremot_guest_id');
+      
+      if (!guestId) {
+        // P0 FIX: Ne pas créer guest_id ici - App.js le fait
+        // Si absent, attendre qu'App.js le crée (ou afficher message)
+        console.warn('[QUOTA] guest_id absent - App.js devrait le créer');
+        return;
+      }
+      
+      const response = await axios.get(`${API}/quota/check?guest_id=${guestId}`);
+      setQuotaStatus(response.data);
+      console.log('📊 Quota chargé:', response.data);
+    } catch (error) {
+      console.error('Erreur chargement quota:', error);
+      // En cas d'erreur, on continue quand même (pas bloquant)
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
 
   // Charger une fiche existante depuis l'URL
   useEffect(() => {
@@ -443,6 +474,44 @@ function SheetBuilderPage() {
       return;
     }
     
+    // P0: Vérifier le quota avant export (si !isPro)
+    if (!isPro) {
+      const guestId = localStorage.getItem('lemaitremot_guest_id');
+      
+      if (!guestId) {
+        // P0 FIX: Ne pas créer guest_id ici - App.js le fait
+        toast({
+          title: "Erreur",
+          description: "Guest ID manquant. Veuillez rafraîchir la page.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Vérifier le quota
+      try {
+        const quotaResponse = await axios.get(`${API}/quota/check?guest_id=${guestId}`);
+        const quota = quotaResponse.data;
+        
+        if (quota.quota_exceeded) {
+          // Quota dépassé - ouvrir modal upgrade
+          setShowUpgradeModal(true);
+          toast({
+            title: "Quota d'exports atteint",
+            description: `Vous avez utilisé vos ${quota.max_exports} exports gratuits. Passez à Pro pour continuer.`,
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        // Mettre à jour le quota affiché
+        setQuotaStatus(quota);
+      } catch (error) {
+        console.error('Erreur vérification quota:', error);
+        // Continuer quand même si erreur (pas bloquant)
+      }
+    }
+    
     setIsGeneratingPDF(true);
     
     try {
@@ -455,6 +524,14 @@ function SheetBuilderPage() {
         config.headers = {
           'X-Session-Token': sessionToken
         };
+      } else {
+        // P0: Ajouter guest_id si pas Pro
+        const guestId = localStorage.getItem('lemaitremot_guest_id');
+        if (guestId) {
+          config.headers = {
+            'X-Guest-ID': guestId
+          };
+        }
       }
       
       // Le backend retourne un JSON avec 2 PDFs en base64
@@ -481,17 +558,36 @@ function SheetBuilderPage() {
       });
       setShowPdfModal(true);
       
+      // P0: Recharger le quota après export réussi (si guest)
+      if (!isPro) {
+        await loadQuotaStatus();
+      }
+      
       console.log('✅ 2 PDFs générés et prêts à télécharger');
       
     } catch (error) {
       console.error('Erreur génération PDF:', error);
+      
+      // P0: Gérer erreur 402 (quota dépassé)
+      if (error.response?.status === 402 && error.response?.data?.detail?.error === 'quota_exceeded') {
+        const quotaDetail = error.response.data.detail;
+        setShowUpgradeModal(true);
+        toast({
+          title: "Quota d'exports atteint",
+          description: quotaDetail.message || `Vous avez utilisé vos ${quotaDetail.max_exports} exports gratuits. Passez à Pro pour continuer.`,
+          variant: "destructive"
+        });
+        // Recharger le quota
+        await loadQuotaStatus();
+        return;
+      }
       
       // Improved error handling
       let errorMessage = 'Erreur lors de la génération du PDF. ';
       
       if (error.response) {
         if (error.response.status >= 400 && error.response.status < 500) {
-          errorMessage += error.response.data?.detail || 'Merci de vérifier la configuration des exercices.';
+          errorMessage += error.response.data?.detail?.message || error.response.data?.detail || 'Merci de vérifier la configuration des exercices.';
         } else if (error.response.status >= 500) {
           errorMessage += 'Erreur serveur. Merci de réessayer plus tard.';
         }
@@ -501,7 +597,11 @@ function SheetBuilderPage() {
         errorMessage += error.message || 'Une erreur inattendue s\'est produite.';
       }
       
-      alert(errorMessage);
+      toast({
+        title: "Erreur",
+        description: errorMessage,
+        variant: "destructive"
+      });
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -528,9 +628,8 @@ function SheetBuilderPage() {
       localStorage.removeItem('lemaitremot_user_email');
       localStorage.removeItem('lemaitremot_login_method');
       
-      setSessionToken("");
-      setUserEmail("");
-      setIsPro(false);
+      // P0: useAuth() se mettra à jour automatiquement via l'événement storage
+      // Plus besoin de setSessionToken/setUserEmail/setIsPro
       
       console.log('✅ Déconnexion réussie');
       
@@ -886,18 +985,35 @@ function SheetBuilderPage() {
                         Prévisualiser
                       </Button>
                       
-                      <Button
-                        onClick={handleGeneratePDF}
-                        disabled={isGeneratingPDF}
-                        className="w-full bg-green-600 hover:bg-green-700"
-                      >
-                        {isGeneratingPDF ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="h-4 w-4 mr-2" />
+                      <div className="space-y-2">
+                        <Button
+                          onClick={handleGeneratePDF}
+                          disabled={isGeneratingPDF}
+                          className="w-full bg-green-600 hover:bg-green-700"
+                        >
+                          {isGeneratingPDF ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          Générer PDF
+                        </Button>
+                        
+                        {/* P0: Afficher le quota restant (si guest) */}
+                        {!isPro && quotaStatus && (
+                          <div className="text-center text-xs text-gray-600">
+                            {quotaStatus.quota_exceeded ? (
+                              <span className="text-red-600 font-medium">
+                                ⚠️ Quota atteint ({quotaStatus.exports_used}/{quotaStatus.max_exports})
+                              </span>
+                            ) : (
+                              <span className="text-gray-600">
+                                {quotaStatus.exports_remaining} export{quotaStatus.exports_remaining > 1 ? 's' : ''} gratuit{quotaStatus.exports_remaining > 1 ? 's' : ''} restant{quotaStatus.exports_remaining > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                         )}
-                        Générer PDF
-                      </Button>
+                      </div>
                       
                       {/* Bouton Export Pro - visible uniquement pour les Pro */}
                       {isPro && (
@@ -949,6 +1065,13 @@ function SheetBuilderPage() {
         sheetId={sheetId}
         sheetTitle={sheetTitle}
         sessionToken={sessionToken}
+      />
+      
+      {/* P0: Upgrade Pro Modal */}
+      <UpgradeProModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        context="export"
       />
     </div>
   );

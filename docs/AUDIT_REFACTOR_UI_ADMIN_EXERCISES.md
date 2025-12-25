@@ -290,3 +290,6 @@ Un exercice est considéré comme legacy si :
 3. ⏳ Validation Phase D
 4. ⏳ Tests manuels
 
+
+
+

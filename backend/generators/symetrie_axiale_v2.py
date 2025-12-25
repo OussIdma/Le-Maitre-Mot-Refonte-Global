@@ -29,6 +29,11 @@ from backend.generators.base_generator import (
     create_svg_wrapper,
 )
 from backend.generators.factory import GeneratorFactory
+from backend.observability import (
+    get_request_context,
+    safe_random_choice,
+    safe_randrange,
+)
 
 
 @GeneratorFactory.register

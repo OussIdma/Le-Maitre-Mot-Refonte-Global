@@ -3719,12 +3719,26 @@ async def request_login(request_body: LoginRequest, request: Request):
             
             # Send magic link email (or log in local dev)
             environment = os.environ.get('ENVIRONMENT', 'development')
+            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            magic_link = f"{frontend_url}/login/verify?token={raw_token}"
+            
             if environment == 'development':
-                # Mode local: Log the magic link
-                frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
-                magic_link = f"{frontend_url}/login/verify?token={raw_token}"
+                # Mode local: Log the magic link and return it in response
                 logger.info(f"🔗 MAGIC LINK (dev): {magic_link}")
                 logger.info(f"   Email: {request_body.email}")
+                # Return magic link in dev mode for easy testing
+                await auth_service.log_auth_attempt(
+                    email=request_body.email,
+                    action="request_login",
+                    success=True,
+                    ip_address=ip_address
+                )
+                return {
+                    "message": "Si un compte Pro existe pour cette adresse, un lien de connexion a été envoyé",
+                    "success": True,
+                    "dev_mode": True,
+                    "magic_link": magic_link  # P0: Return magic link in dev mode
+                }
             else:
                 # Production: Send email
                 email_sent = await send_magic_link_email(request_body.email, raw_token)
@@ -6027,6 +6041,7 @@ async def save_user_exercise(
     """
     P3.0: Sauvegarder un exercice généré dans la bibliothèque utilisateur.
     Requiert une session active.
+    P0: Sanitisation HTML pour prévenir XSS.
     """
     try:
         # Valider la session
@@ -6044,6 +6059,45 @@ async def save_user_exercise(
                 detail="Session invalide ou expirée"
             )
         
+        # P0: Sanitiser le HTML avant insertion
+        from backend.utils.html_sanitizer import sanitize_html
+        
+        # Sanitiser l'énoncé
+        enonce_result = sanitize_html(request_body.enonce_html)
+        if enonce_result["rejected"]:
+            status_code = 413 if enonce_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "error": "HTML rejeté pour l'énoncé",
+                    "reason": enonce_result["reject_reason"],
+                    "message": f"Le contenu HTML de l'énoncé a été rejeté: {enonce_result['reject_reason']}"
+                }
+            )
+        
+        # Sanitiser la solution
+        solution_result = sanitize_html(request_body.solution_html)
+        if solution_result["rejected"]:
+            status_code = 413 if solution_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "error": "HTML rejeté pour la solution",
+                    "reason": solution_result["reject_reason"],
+                    "message": f"Le contenu HTML de la solution a été rejeté: {solution_result['reject_reason']}"
+                }
+            )
+        
+        # Logger si sanitization a eu lieu
+        if enonce_result["changed"] or solution_result["changed"]:
+            # Tronquer l'email pour les logs (garder seulement les 3 premiers caractères)
+            email_hash = user_email[:3] + "***" if len(user_email) > 3 else "***"
+            logger.warning(
+                f"[XSS_SANITIZED] HTML sanitized for user {email_hash} - exercise_uid={request_body.exercise_uid}, "
+                f"enonce_changed={enonce_result['changed']}, solution_changed={solution_result['changed']}, "
+                f"enonce_reasons={enonce_result['reasons']}, solution_reasons={solution_result['reasons']}"
+            )
+        
         # Vérifier si l'exercice existe déjà (doublon)
         existing = await db.user_exercises.find_one({
             "user_email": user_email,
@@ -6056,7 +6110,20 @@ async def save_user_exercise(
                 detail="Cet exercice est déjà sauvegardé"
             )
         
-        # Créer le document
+        # Préparer les métadonnées avec info de sanitization
+        metadata = request_body.metadata or {}
+        if enonce_result["changed"]:
+            metadata["sanitized"] = True
+            if "sanitize_reasons" not in metadata:
+                metadata["sanitize_reasons"] = []
+            metadata["sanitize_reasons"].extend([f"enonce: {r}" for r in enonce_result["reasons"]])
+        if solution_result["changed"]:
+            metadata["sanitized"] = True
+            if "sanitize_reasons" not in metadata:
+                metadata["sanitize_reasons"] = []
+            metadata["sanitize_reasons"].extend([f"solution: {r}" for r in solution_result["reasons"]])
+        
+        # Créer le document avec HTML sanitized
         exercise_doc = {
             "user_email": user_email,
             "exercise_uid": request_body.exercise_uid,
@@ -6065,9 +6132,9 @@ async def save_user_exercise(
             "difficulty": request_body.difficulty,
             "seed": request_body.seed,
             "variables": request_body.variables or {},
-            "enonce_html": request_body.enonce_html,
-            "solution_html": request_body.solution_html,
-            "metadata": request_body.metadata or {},
+            "enonce_html": enonce_result["html"],  # Version sanitized
+            "solution_html": solution_result["html"],  # Version sanitized
+            "metadata": metadata,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         }

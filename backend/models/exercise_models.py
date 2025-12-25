@@ -43,6 +43,19 @@ class ExerciseGenerateRequest(BaseModel):
         default=None,
         description="Seed pour la génération aléatoire (optionnel)"
     )
+    # P0 - Paramètres premium optionnels
+    grade: Optional[str] = Field(
+        default=None,
+        description="Niveau scolaire explicite (ex: 6e, 5e). Priorité: payload.grade > contexte > extraction code_officiel > fallback"
+    )
+    exercise_type: Optional[str] = Field(
+        default=None,
+        description="Type d'exercice pour générateurs premium (ex: operations_simples, proportionnalite_tableau)"
+    )
+    ui_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Paramètres UI bruts (pour traçabilité et debug)"
+    )
     
     @model_validator(mode='after')
     def validate_request_mode(self):

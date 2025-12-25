@@ -83,3 +83,6 @@ La page `/generer` affichait initialement un exercice à la fois avec pagination
 
 
 
+
+
+

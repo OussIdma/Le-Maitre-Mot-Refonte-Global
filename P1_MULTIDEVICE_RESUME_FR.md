@@ -266,3 +266,6 @@ docker-compose exec backend python backend/init_db_indexes.py
 
 
 
+
+
+

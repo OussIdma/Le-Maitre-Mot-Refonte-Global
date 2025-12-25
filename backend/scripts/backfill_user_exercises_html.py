@@ -190,3 +190,6 @@ if __name__ == '__main__':
     
     asyncio.run(backfill_exercises(dry_run=dry_run))
 
+
+
+

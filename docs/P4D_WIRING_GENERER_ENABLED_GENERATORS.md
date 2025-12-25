@@ -204,3 +204,5 @@ if enabled_generators_for_chapter and selected_generator_key:
 P4.D — Brancher /generer sur enabled_generators (DB)
 Date : 2024
 
+
+

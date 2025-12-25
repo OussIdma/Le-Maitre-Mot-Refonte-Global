@@ -265,3 +265,6 @@ useEffect(() => {
 2. **Filtrage frontend** : Le filtrage par type se fait côté frontend pour éviter de modifier les APIs
 3. **Compatibilité** : Le code doit fonctionner avec les exercices existants (migration P3.2)
 
+
+
+

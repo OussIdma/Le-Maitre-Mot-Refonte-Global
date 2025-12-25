@@ -138,3 +138,6 @@ event=dynamic_failed, outcome=fallback, reason=exception
 3. **Fallback explicite** : DYNAMIC → STATIC (un seul fallback)
 4. **Logs clairs** : `dynamic_generated` ou `static_fallback_used`
 
+
+
+

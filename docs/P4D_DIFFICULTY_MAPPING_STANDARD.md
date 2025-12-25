@@ -195,3 +195,5 @@ Aucune migration de base de données nécessaire. Les exercices existants contin
 P4.D HOTFIX — Mapping Difficulté UI → Générateur
 Date : 2024
 
+
+

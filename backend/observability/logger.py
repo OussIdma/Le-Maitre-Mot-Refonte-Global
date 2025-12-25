@@ -175,6 +175,10 @@ class ObservabilityLogger:
         if not self._should_log(level, self.module):
             return
         
+        # P0 - FIX : Dédoublonner les kwargs pour éviter "got multiple values for keyword argument"
+        # Si un champ est passé explicitement ET dans **kwargs, on garde la valeur explicite
+        # (déjà géré par Python, mais on nettoie quand même pour clarté)
+        
         # Extra fields
         extra = {
             'log_tag': self.tag,

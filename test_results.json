@@ -1,0 +1,758 @@
+{
+  "summary": {
+    "total": 17,
+    "pass": 17,
+    "fail": 0,
+    "timestamp": "2025-12-24T18:56:26.332551"
+  },
+  "results": [
+    {
+      "generator": "THALES_V2",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2528
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "THALES_V2",
+      "difficulty": "moyen",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2560
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "THALES_V2",
+      "difficulty": "difficile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2574
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SYMETRIE_AXIALE_V2",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 11,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 6313
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SYMETRIE_AXIALE_V2",
+      "difficulty": "moyen",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 11,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 6311
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SYMETRIE_AXIALE_V2",
+      "difficulty": "difficile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 11,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 6324
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V1",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 12,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2526
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V1",
+      "difficulty": "moyen",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 12,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2529
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V1",
+      "difficulty": "difficile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 12,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2557
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V2",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 23,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 5336
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V2",
+      "difficulty": "moyen",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 23,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 5344
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "SIMPLIFICATION_FRACTIONS_V2",
+      "difficulty": "difficile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 23,
+            "has_svg_enonce": true,
+            "has_svg_solution": true,
+            "has_geo_data": true
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 5383
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": true
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "2.0.0"
+    },
+    {
+      "generator": "CALCUL_NOMBRES_V1",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 7,
+            "has_svg_enonce": false,
+            "has_svg_solution": false,
+            "has_geo_data": false
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 797
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": false
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "CALCUL_NOMBRES_V1",
+      "difficulty": "standard",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 7,
+            "has_svg_enonce": false,
+            "has_svg_solution": false,
+            "has_geo_data": false
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 804
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": false
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "RAISONNEMENT_MULTIPLICATIF_V1",
+      "difficulty": "facile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": false,
+            "has_svg_solution": false,
+            "has_geo_data": false
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 2989
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": false
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "RAISONNEMENT_MULTIPLICATIF_V1",
+      "difficulty": "moyen",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": false,
+            "has_svg_solution": false,
+            "has_geo_data": false
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 3235
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": false
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    },
+    {
+      "generator": "RAISONNEMENT_MULTIPLICATIF_V1",
+      "difficulty": "difficile",
+      "seed": 42,
+      "tests": [
+        {
+          "status": "PASS",
+          "step": "GENERATION",
+          "result": {
+            "variables_count": 10,
+            "has_svg_enonce": false,
+            "has_svg_solution": false,
+            "has_geo_data": false
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "TEMPLATE_RENDERING"
+        },
+        {
+          "status": "PASS",
+          "step": "SAVE_SIMULATION",
+          "result": {
+            "json_size_bytes": 3473
+          }
+        },
+        {
+          "status": "PASS",
+          "step": "RELOAD_SIMULATION"
+        },
+        {
+          "status": "PASS",
+          "step": "PDF_EXPORT_SIMULATION",
+          "result": {
+            "variables_available": true,
+            "has_svg": false
+          }
+        }
+      ],
+      "status": "PASS",
+      "failed_step": null,
+      "error": null,
+      "version": "1.0.0"
+    }
+  ]
+}

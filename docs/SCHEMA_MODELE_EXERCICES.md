@@ -243,3 +243,6 @@ APRÈS (Migration P3.2)
 | Fallbacks possibles | 5+ | 1 | -80% |
 | Complexité cognitive | Élevée | Faible | ✅ |
 
+
+
+
