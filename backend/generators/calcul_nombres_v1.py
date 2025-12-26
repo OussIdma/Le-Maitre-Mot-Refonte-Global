@@ -696,8 +696,12 @@ class CalculNombresV1Generator(BaseGenerator):
         Returns:
             Dict avec variables, geo_data, meta
         """
+        # FIX P0 : Mapping alias pour backward-compatibility
+        ALIAS = {"echelle": "operations_simples"}
+        exercise_type_input = params.get("exercise_type", "operations_simples")
+        exercise_type = ALIAS.get(exercise_type_input, exercise_type_input)
+        
         # Extraire et valider les paramètres
-        exercise_type = params.get("exercise_type", "operations_simples")
         difficulty = params.get("difficulty", "standard")
         grade = params.get("grade", "6e")
         seed = params.get("seed")
@@ -717,6 +721,7 @@ class CalculNombresV1Generator(BaseGenerator):
                 }
             )
         
+        # Validation avec exercise_type mappé (pas l'input)
         self._validate_exercise_type(exercise_type)
         self._validate_grade(grade)
         self._validate_difficulty(difficulty)
@@ -771,6 +776,29 @@ class CalculNombresV1Generator(BaseGenerator):
                     }
                 )
         
+        # FIX P0 : S'assurer que calculs_intermediaires peut être list ou str
+        # Convertir string en list si nécessaire pour compatibilité templates
+        if "calculs_intermediaires" in variables:
+            calc_inter = variables["calculs_intermediaires"]
+            if isinstance(calc_inter, str):
+                # Si c'est une string avec des sauts de ligne, convertir en list
+                if "\n" in calc_inter:
+                    variables["calculs_intermediaires"] = [line.strip() for line in calc_inter.split("\n") if line.strip()]
+                else:
+                    # Garder comme string si pas de saut de ligne
+                    pass  # Déjà string, OK
+        
+        # FIX P0 : S'assurer que toutes les variables template sont présentes et bien formatées
+        # Les variables sont déjà présentes, mais on s'assure du format
+        if not isinstance(variables.get("enonce"), str):
+            variables["enonce"] = str(variables.get("enonce", ""))
+        if not isinstance(variables.get("solution"), str):
+            variables["solution"] = str(variables.get("solution", ""))
+        if not isinstance(variables.get("reponse_finale"), str):
+            variables["reponse_finale"] = str(variables.get("reponse_finale", ""))
+        if not isinstance(variables.get("consigne"), str):
+            variables["consigne"] = str(variables.get("consigne", ""))
+        
         # Retourner le résultat standard
         return {
             "variables": variables,
@@ -779,7 +807,7 @@ class CalculNombresV1Generator(BaseGenerator):
             "figure_svg_solution": None,
             "meta": {
                 "generator_key": "CALCUL_NOMBRES_V1",
-                "exercise_type": exercise_type,
+                "exercise_type": exercise_type,  # Utiliser le type mappé (pas l'input)
                 "difficulty": difficulty,
                 "grade": grade
             }
