@@ -561,32 +561,53 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         """Récupère les exercices d'un chapitre avec filtres optionnels"""
         from logger import get_logger
         diag_logger = get_logger()
-        
+
         chapter_upper = chapter_code.upper().replace("-", "_")
         await self.initialize_chapter(chapter_upper)
-        
-        query = {"chapter_code": chapter_upper}
-        
-        if offer:
-            query["offer"] = offer.lower()
+
+        # P0_FIX : Normaliser difficulty avant la query MongoDB (standard → moyen)
+        effective_difficulty = difficulty
         if difficulty:
-            query["difficulty"] = difficulty.lower()
-        
-        # P0 - DIAGNOSTIC : Log de la requête MongoDB exacte
+            try:
+                effective_difficulty = normalize_difficulty(difficulty)
+                if effective_difficulty != difficulty:
+                    logger.info(
+                        f"[P0_FIX] difficulty normalisée: '{difficulty}' → '{effective_difficulty}' pour query"
+                    )
+            except ValueError as e:
+                logger.warning(f"[P0_FIX] difficulty invalide '{difficulty}', ignorée: {e}")
+                effective_difficulty = None
+
+        query = {"chapter_code": chapter_upper}
+
+        # P0_FIX : Logique d'offre hiérarchique
+        # - pro a accès aux exercices free ET pro
+        # - free n'a accès qu'aux exercices free
+        if offer:
+            offer_lower = offer.lower()
+            if offer_lower == 'pro':
+                query["offer"] = {"$in": ["free", "pro"]}
+                logger.info(f"[P0_FIX] offer=pro → query inclut free ET pro")
+            else:
+                query["offer"] = offer_lower
+        if effective_difficulty:
+            query["difficulty"] = effective_difficulty.lower()
+
+        # P0_FIX : Log de la requête MongoDB exacte avec difficulty effective
         diag_logger.info(
-            f"[DIAG_6E_G07] MongoDB query: collection='{self.collection.name}', "
-            f"query={query}"
+            f"[P0_FIX] MongoDB query: collection='{self.collection.name}', "
+            f"query={query}, difficulty_input='{difficulty}', difficulty_effective='{effective_difficulty}'"
         )
-        
+
         exercises = await self.collection.find(
             query,
             {"_id": 0}
         ).sort("id", 1).to_list(1000)  # Augmenter la limite pour les chapitres avec beaucoup d'exercices
-        
+
         diag_logger.info(
-            f"[DIAG_6E_G07] MongoDB result: {len(exercises)} exercices trouvés"
+            f"[P0_FIX] MongoDB result: {len(exercises)} exercices trouvés pour {chapter_upper}"
         )
-        
+
         return exercises
     
     async def get_exercise_by_id(self, chapter_code: str, exercise_id: int) -> Optional[Dict[str, Any]]:

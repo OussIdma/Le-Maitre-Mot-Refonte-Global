@@ -28,6 +28,22 @@ from pydantic import field_validator
 from typing import Literal as PyLiteral
 
 
+def _is_truthy_dynamic(value) -> bool:
+    """
+    [P0_FIX] Helper robuste pour détecter is_dynamic.
+    Gère bool, int, str ("true", "1", etc.)
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        return value.lower().strip() in ("true", "1", "yes")
+    return False
+
+
 def normalize_code_officiel(code: str) -> str:
     """
     Normalise le code officiel au format canonique.
@@ -212,29 +228,43 @@ class CurriculumPersistenceService:
     async def get_chapter_by_code(self, code_officiel: str) -> Optional[Dict[str, Any]]:
         """Récupère un chapitre par son code officiel"""
         await self.initialize()
-        
-        # P0 - DIAGNOSTIC : Log de la requête exacte
+
+        # P0_FIX : Lookup case-insensitive avec regex
+        # Échapper les caractères spéciaux regex dans le code
+        escaped_code = re.escape(code_officiel)
+
         logger.info(
-            f"[DIAG_6E_G07] get_chapter_by_code() appelé avec code_officiel='{code_officiel}' "
-            f"(type: {type(code_officiel)})"
+            f"[P0_FIX] get_chapter_by_code() appelé avec code_officiel='{code_officiel}' "
+            f"(regex: ^{escaped_code}$, options: i)"
         )
-        
+
+        # P0_FIX : Recherche case-insensitive
         chapter = await self.collection.find_one(
-            {"code_officiel": code_officiel},
+            {"code_officiel": {"$regex": f"^{escaped_code}$", "$options": "i"}},
             {"_id": 0}
         )
-        
+
         if chapter:
+            # P0_FIX : Defaults pour chapitres incomplets
+            if "enabled_generators" not in chapter or chapter.get("enabled_generators") is None:
+                chapter["enabled_generators"] = []
+                logger.info(
+                    f"[P0_FIX] enabled_generators absent pour '{code_officiel}', défaut=[]"
+                )
+
+            # Log du pipeline pour diagnostic
+            pipeline_value = chapter.get('pipeline')
             logger.info(
-                f"[DIAG_6E_G07] ✅ Chapitre trouvé: code_officiel='{chapter.get('code_officiel')}', "
-                f"pipeline='{chapter.get('pipeline')}'"
+                f"[P0_FIX] ✅ Chapitre trouvé: code_officiel='{chapter.get('code_officiel')}', "
+                f"pipeline='{pipeline_value}' (type: {type(pipeline_value).__name__}), "
+                f"enabled_generators_count={len(chapter.get('enabled_generators', []))}"
             )
         else:
             logger.warning(
-                f"[DIAG_6E_G07] ❌ Chapitre NON TROUVÉ avec code_officiel='{code_officiel}'. "
-                f"Vérifier la casse dans MongoDB."
+                f"[P0_FIX] ❌ Chapitre NON TROUVÉ avec code_officiel='{code_officiel}' "
+                f"(regex case-insensitive). Vérifier que le code existe en DB."
             )
-        
+
         return chapter
     
     async def create_chapter(self, request: ChapterCreateRequest) -> Dict[str, Any]:
@@ -278,7 +308,8 @@ class CurriculumPersistenceService:
             from backend.services.exercise_persistence_service import get_exercise_persistence_service
             exercise_service = get_exercise_persistence_service(self.db)
             exercises = await exercise_service.get_exercises(chapter_code=chapter_code_upper)
-            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+            # P0_FIX : Utiliser helper robuste
+            dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
             
             if len(dynamic_exercises) == 0:
                 raise ValueError(
@@ -389,7 +420,8 @@ class CurriculumPersistenceService:
             from backend.services.exercise_persistence_service import get_exercise_persistence_service
             exercise_service = get_exercise_persistence_service(self.db)
             exercises = await exercise_service.get_exercises(chapter_code=chapter_code_upper)
-            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
+            # P0_FIX : Utiliser helper robuste
+            dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
             
             if len(dynamic_exercises) == 0:
                 raise ValueError(

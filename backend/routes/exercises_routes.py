@@ -54,6 +54,29 @@ obs_logger = get_obs_logger('PIPELINE')
 router = APIRouter()
 
 # ============================================================================
+# P0_FIX - HELPER ROBUSTE POUR is_dynamic
+# ============================================================================
+
+def _is_truthy_dynamic(value) -> bool:
+    """
+    [P0_FIX] Helper robuste pour détecter is_dynamic.
+
+    Gère les différents types possibles en DB:
+    - bool: True/False
+    - int: 1/0
+    - str: "true"/"false", "1"/"0", "yes"/"no"
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        return value.lower().strip() in ("true", "1", "yes")
+    return False
+
+# ============================================================================
 # P0 - HELPER PIPELINE SIMPLIFIÉ : DYNAMIC → STATIC fallback
 # ============================================================================
 
@@ -131,9 +154,17 @@ async def generate_exercise_with_fallback(
                 f"enonce_preview={str(ex.get('enonce_html', ''))[:50]}..."
             )
         
-        dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
-        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
-        
+        # P0_FIX : Utiliser helper robuste pour filtrer is_dynamic
+        dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+        static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
+
+        # P0_FIX : Log des counts avec détail des types is_dynamic
+        is_dynamic_types = set(type(ex.get("is_dynamic")).__name__ for ex in exercises)
+        logger.info(
+            f"[P0_FIX] Filtrage is_dynamic: dynamic={len(dynamic_exercises)}, "
+            f"static={len(static_exercises)}, is_dynamic_types={is_dynamic_types}"
+        )
+
         logger.info(
             f"[PIPELINE_DEBUG] generate_exercise_with_fallback() - Résultats:"
         )
@@ -312,8 +343,9 @@ async def generate_exercise_with_fallback(
             offer=request.offer if hasattr(request, 'offer') else None,
             difficulty=request.difficulte if hasattr(request, 'difficulte') else None
         )
-        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
-        
+        # P0_FIX : Utiliser helper robuste
+        static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
+
         logger.info(
             f"[FALLBACK_DEBUG] static_exercises_count={len(static_exercises)} "
             f"pour chapter_code={chapter_code}"
@@ -1229,9 +1261,6 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 logger.info(
                     f"[PIPELINE_DEBUG] pipeline_mode='{pipeline_mode}' (type: {type(pipeline_mode)})"
                 )
-                logger.info(
-                    f"[PIPELINE_DEBUG] enabled_generators={enabled_generators_for_chapter}"
-                )
             else:
                 logger.warning(
                     f"[PIPELINE_DEBUG] ⚠️ chapter_from_db is None! "
@@ -1289,8 +1318,9 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         offer=request.offer if hasattr(request, 'offer') else None,
                         difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                     )
-                    dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
-                    
+                    # P0_FIX : Utiliser helper robuste
+                    dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+
                     # P4.D - Filtrer selon enabled_generators si disponible
                     # enabled_generators_for_chapter est déjà normalisé plus haut
                     if enabled_generators_for_chapter:
@@ -1300,7 +1330,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         ]
                         logger.info(
                             f"[PROF_GENERATORS] Filtré {len(dynamic_exercises)} exercices dynamiques "
-                            f"parmi {len([ex for ex in exercises if ex.get('is_dynamic')])} "
+                            f"parmi {len([ex for ex in exercises if _is_truthy_dynamic(ex.get('is_dynamic'))])} "
                             f"selon enabled_generators={enabled_generators_for_chapter}"
                         )
                     
@@ -1483,8 +1513,9 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             offer=request.offer if hasattr(request, 'offer') else None,
                             difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                         )
-                        dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
-                        static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                        # P0_FIX : Utiliser helper robuste
+                        dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+                        static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
                         
                         # Log du pool filtré pour diagnostic
                         obs_logger.debug(
@@ -1519,8 +1550,9 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 offer=None,
                                 difficulty=None
                             )
-                            dynamic_exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
-                            static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                            # P0_FIX : Utiliser helper robuste
+                            dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+                            static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
                         # 1) Dyn filtré
                         if len(dynamic_exercises) > 0:
                             selected_exercise = safe_random_choice(dynamic_exercises, ctx, obs_logger)
@@ -1547,7 +1579,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             return dyn_exercise
                         
                         # 2) Dyn sans filtre (dégradé)
-                        dynamic_all = [ex for ex in exercises if ex.get("is_dynamic") is True]
+                        # P0_FIX : Utiliser helper robuste
+                        dynamic_all = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
                         if dynamic_all:
                             obs_logger.warning(
                                 "event=fallback",
@@ -1669,8 +1702,9 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             offer=None,
                             difficulty=None
                         )
-                        all_dynamic = [ex for ex in all_exercises if ex.get("is_dynamic") is True]
-                        all_static = [ex for ex in all_exercises if ex.get("is_dynamic") is not True]
+                        # P0_FIX : Utiliser helper robuste
+                        all_dynamic = [ex for ex in all_exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+                        all_static = [ex for ex in all_exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
                         
                         # Compter par difficulty/offer pour diagnostic
                         by_difficulty = {}
@@ -1775,7 +1809,8 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                         offer=request.offer if hasattr(request, 'offer') else None,
                         difficulty=request.difficulte if hasattr(request, 'difficulte') else None
                     )
-                    static_exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
+                    # P0_FIX : Utiliser helper robuste
+                    static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
                     if not static_exercises:
                         raise HTTPException(
                             status_code=422,
