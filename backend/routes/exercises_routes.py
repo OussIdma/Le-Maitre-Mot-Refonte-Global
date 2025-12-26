@@ -54,6 +54,151 @@ obs_logger = get_obs_logger('PIPELINE')
 router = APIRouter()
 
 # ============================================================================
+# P0 - HELPER STANDARDISATION 422 AVEC DIAGNOSTIC CONTEXT
+# ============================================================================
+
+def build_diagnostic_context(
+    request: Optional[ExerciseGenerateRequest] = None,
+    chapter_code: Optional[str] = None,
+    pipeline_mode: Optional[str] = None,
+    exercises: Optional[List[Dict[str, Any]]] = None,
+    enabled_generators: Optional[List[str]] = None,
+    generator_key_selected: Optional[str] = None,
+    preset: Optional[str] = None,
+    seed: Optional[int] = None,
+    offer_input: Optional[str] = None,
+    difficulty_input: Optional[str] = None,
+    offer_effective_query: Optional[str] = None,
+    difficulty_effective_query: Optional[str] = None,
+    chapter_from_db: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Construit le contexte de diagnostic obligatoire pour chaque 422.
+    
+    Returns:
+        Dict avec tous les champs de contexte pour diagnostic rapide.
+    """
+    context = {}
+    
+    # Code officiel et chapitre
+    if request:
+        context["code_officiel"] = request.code_officiel
+        context["offer_input"] = getattr(request, 'offer', None)
+        context["difficulty_input"] = getattr(request, 'difficulte', None)
+        context["seed"] = getattr(request, 'seed', None)
+    elif chapter_code:
+        context["code_officiel"] = chapter_code
+    
+    if chapter_code:
+        context["chapter_code"] = chapter_code
+    elif request and hasattr(request, 'code_officiel') and request.code_officiel:
+        context["chapter_code"] = request.code_officiel.upper().replace("-", "_")
+    
+    # Pipeline
+    context["pipeline_mode"] = pipeline_mode
+    
+    # Offer et difficulty (input vs query effective)
+    if offer_input is not None:
+        context["offer_input"] = offer_input
+    if difficulty_input is not None:
+        context["difficulty_input"] = difficulty_input
+    if offer_effective_query is not None:
+        context["offer_effective_query"] = offer_effective_query
+    if difficulty_effective_query is not None:
+        context["difficulty_effective_query"] = difficulty_effective_query
+    
+    # Exercices (comptages)
+    if exercises is not None:
+        context["total_exercises"] = len(exercises)
+        dynamic_count = sum(1 for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic")))
+        static_count = context["total_exercises"] - dynamic_count
+        context["dynamic_count"] = dynamic_count
+        context["static_count"] = static_count
+    else:
+        context["total_exercises"] = 0
+        context["dynamic_count"] = 0
+        context["static_count"] = 0
+    
+    # Enabled generators
+    if enabled_generators:
+        context["enabled_generators_count"] = len(enabled_generators)
+        context["enabled_generators_sample"] = enabled_generators[:5]  # Limiter à 5 pour éviter payload trop gros
+    else:
+        context["enabled_generators_count"] = 0
+        context["enabled_generators_sample"] = []
+    
+    # Generator sélectionné
+    if generator_key_selected:
+        context["generator_key_selected"] = generator_key_selected
+    
+    # Preset
+    if preset:
+        context["preset"] = preset
+    
+    # Seed
+    if seed is not None:
+        context["seed"] = seed
+    
+    # Info chapitre depuis DB
+    if chapter_from_db:
+        context["chapter_from_db_exists"] = True
+        context["chapter_pipeline"] = chapter_from_db.get("pipeline")
+        context["chapter_enabled_generators_count"] = len(chapter_from_db.get("enabled_generators", []))
+    else:
+        context["chapter_from_db_exists"] = False
+    
+    return context
+
+
+def raise_422_with_diagnostic(
+    error_code: str,
+    message: str,
+    hint: str,
+    context: Dict[str, Any],
+    error_legacy: Optional[str] = None,
+    logger_instance: Optional[Any] = None
+) -> None:
+    """
+    Lève un HTTPException(422) standardisé avec contexte de diagnostic.
+    
+    Args:
+        error_code: Code d'erreur unique (ex: "NO_EXERCISE_AVAILABLE")
+        message: Message d'erreur lisible
+        hint: Indication actionnable pour résoudre le problème
+        context: Contexte de diagnostic (via build_diagnostic_context)
+        error_legacy: Champ "error" legacy si déjà utilisé par le front
+        logger_instance: Logger à utiliser (default: logger global)
+    """
+    log = logger_instance or logger
+    
+    # Log avant de lever l'exception
+    log.error(
+        f"[DIAG_422] error_code={error_code} "
+        f"code_officiel={context.get('code_officiel', 'N/A')} "
+        f"pipeline={context.get('pipeline_mode', 'N/A')} "
+        f"total_exercises={context.get('total_exercises', 0)} "
+        f"dynamic_count={context.get('dynamic_count', 0)} "
+        f"static_count={context.get('static_count', 0)} "
+        f"enabled_generators_count={context.get('enabled_generators_count', 0)}"
+    )
+    
+    detail = {
+        "error_code": error_code,
+        "message": message,
+        "hint": hint,
+        "context": context
+    }
+    
+    # Conserver champ "error" legacy si fourni (pour compatibilité front)
+    if error_legacy:
+        detail["error"] = error_legacy
+    
+    raise HTTPException(
+        status_code=422,
+        detail=detail
+    )
+
+# ============================================================================
 # P0_FIX - HELPER ROBUSTE POUR is_dynamic
 # ============================================================================
 
@@ -164,7 +309,7 @@ async def generate_exercise_with_fallback(
             f"[P0_FIX] Filtrage is_dynamic: dynamic={len(dynamic_exercises)}, "
             f"static={len(static_exercises)}, is_dynamic_types={is_dynamic_types}"
         )
-
+        
         logger.info(
             f"[PIPELINE_DEBUG] generate_exercise_with_fallback() - Résultats:"
         )
@@ -345,7 +490,7 @@ async def generate_exercise_with_fallback(
         )
         # P0_FIX : Utiliser helper robuste
         static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
-
+        
         logger.info(
             f"[FALLBACK_DEBUG] static_exercises_count={len(static_exercises)} "
             f"pour chapter_code={chapter_code}"
@@ -982,6 +1127,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         Exercice généré avec énoncé HTML, SVG, solution et pdf_token
     """
     request_start = time.time()
+    
+    # P0 - DIAG_FLOW : Log d'entrée pour traçabilité
+    logger.info(
+        f"[DIAG_FLOW] ENTRY /generate "
+        f"code_officiel={getattr(request, 'code_officiel', None)} "
+        f"niveau={getattr(request, 'niveau', None)} "
+        f"chapitre={getattr(request, 'chapitre', None)} "
+        f"offer={getattr(request, 'offer', None)} "
+        f"difficulte={getattr(request, 'difficulte', None)} "
+        f"seed={getattr(request, 'seed', None)}"
+    )
     ensure_request_id()
     
     # P0 - Construire ui_params (paramètres UI bruts)
@@ -1136,13 +1292,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             curriculum_chapter = get_chapter_by_official_code(request.code_officiel)
             
             if not curriculum_chapter:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": "code_officiel_invalide",
-                        "message": f"Le code officiel '{request.code_officiel}' n'existe pas dans le référentiel.",
-                        "hint": "Utilisez un code au format 6e_N01, 6e_G01, etc."
-                    }
+                context = build_diagnostic_context(
+                    request=request,
+                    chapter_code=normalized_code_officiel,
+                    chapter_from_db=None
+                )
+                raise_422_with_diagnostic(
+                    error_code="CODE_OFFICIEL_INVALID",
+                    message=f"Le code officiel '{request.code_officiel}' n'existe pas dans le référentiel.",
+                    hint="Utilisez un code au format 6e_N01, 6e_G01, etc. Vérifiez la casse (6e_G07 vs 6E_G07).",
+                    context=context,
+                    error_legacy="code_officiel_invalide"
                 )
             
             # Utiliser les données legacy
@@ -1168,18 +1328,18 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         # Vérifier si c'est un chapitre de test (interdit en mode public)
         from curriculum.loader import is_test_chapter, should_show_test_chapters
         if is_test_chapter(request.code_officiel) and not should_show_test_chapters():
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error_code": "TEST_CHAPTER_FORBIDDEN",
-                    "error": "test_chapter_forbidden",
-                    "message": f"Le code officiel '{request.code_officiel}' est un chapitre de test et n'est pas accessible en mode public.",
-                    "hint": "Les chapitres de test sont réservés au développement. Activez SHOW_TEST_CHAPTERS=true pour y accéder.",
-                    "context": {
-                        "code_officiel": request.code_officiel,
-                        "is_test_chapter": True
-                    }
-                }
+            context = build_diagnostic_context(
+                request=request,
+                chapter_code=normalized_code_officiel,
+                chapter_from_db=chapter_from_db
+            )
+            context["is_test_chapter"] = True
+            raise_422_with_diagnostic(
+                error_code="TEST_CHAPTER_FORBIDDEN",
+                message=f"Le code officiel '{request.code_officiel}' est un chapitre de test et n'est pas accessible en mode public.",
+                hint="Les chapitres de test sont réservés au développement. Activez SHOW_TEST_CHAPTERS=true pour y accéder.",
+                context=context,
+                error_legacy="test_chapter_forbidden"
             )
         
         # ============================================================================
@@ -1298,19 +1458,20 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 try:
                     has_exercises = await sync_service.has_exercises_in_db(chapter_code_for_db)
                     if not has_exercises:
-                        raise HTTPException(
-                            status_code=422,
-                            detail={
-                                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
-                                "error": "template_pipeline_no_exercises",
-                                "message": (
-                                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
-                                    f"mais aucun exercice dynamique n'existe en DB pour ce chapitre."
-                                ),
-                                "chapter_code": request.code_officiel,
-                                "pipeline": "TEMPLATE",
-                                "hint": "Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'."
-                            }
+                        context = build_diagnostic_context(
+                            request=request,
+                            chapter_code=chapter_code_for_db,
+                            pipeline_mode="TEMPLATE",
+                            exercises=[],
+                            enabled_generators=enabled_generators_for_chapter,
+                            chapter_from_db=chapter_from_db
+                        )
+                        raise_422_with_diagnostic(
+                            error_code="TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                            message=f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' mais aucun exercice dynamique n'existe en DB pour ce chapitre.",
+                            hint="Créez au moins un exercice dynamique pour ce chapitre ou changez le pipeline à 'SPEC' ou 'MIXED'.",
+                            context=context,
+                            error_legacy="template_pipeline_no_exercises"
                         )
                     
                     exercises = await exercise_service.get_exercises(
@@ -1320,7 +1481,17 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     # P0_FIX : Utiliser helper robuste
                     dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
-
+                    
+                    # P0 - DIAG_FLOW : Log après filtrage
+                    logger.info(
+                        f"[DIAG_FLOW] AFTER_FILTER pipeline=TEMPLATE "
+                        f"chapter_code={chapter_code_for_db} "
+                        f"total_exercises={len(exercises)} "
+                        f"dynamic_count={len(dynamic_exercises)} "
+                        f"static_count={len(exercises) - len(dynamic_exercises)} "
+                        f"enabled_generators={enabled_generators_for_chapter}"
+                    )
+                    
                     # P4.D - Filtrer selon enabled_generators si disponible
                     # enabled_generators_for_chapter est déjà normalisé plus haut
                     if enabled_generators_for_chapter:
@@ -1347,20 +1518,31 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                                 f"Activez au moins un générateur dans l'admin (section 'Générateurs activés')."
                             )
                         
-                        raise HTTPException(
-                            status_code=422,
-                            detail={
-                                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
-                                "error": "template_pipeline_no_dynamic_exercises",
-                                "message": (
-                                    f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' "
-                                    f"mais aucun exercice dynamique (is_dynamic=true) n'existe en DB pour ce chapitre."
-                                ),
-                                "chapter_code": request.code_officiel,
-                                "pipeline": "TEMPLATE",
-                                "hint": hint_msg,
-                                "enabled_generators": enabled_generators_for_chapter if enabled_generators_for_chapter else None
-                            }
+                        # Normaliser difficulty pour contexte
+                        normalized_difficulty = None
+                        if hasattr(request, 'difficulte') and request.difficulte:
+                            try:
+                                normalized_difficulty = normalize_difficulty(request.difficulte)
+                            except:
+                                normalized_difficulty = request.difficulte
+                        
+                        context = build_diagnostic_context(
+                            request=request,
+                            chapter_code=chapter_code_for_db,
+                            pipeline_mode="TEMPLATE",
+                            exercises=exercises,
+                            enabled_generators=enabled_generators_for_chapter,
+                            offer_input=getattr(request, 'offer', None),
+                            difficulty_input=getattr(request, 'difficulte', None),
+                            difficulty_effective_query=normalized_difficulty,
+                            chapter_from_db=chapter_from_db
+                        )
+                        raise_422_with_diagnostic(
+                            error_code="TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                            message=f"Le chapitre '{request.code_officiel}' est configuré avec pipeline='TEMPLATE' mais aucun exercice dynamique (is_dynamic=true) n'existe en DB pour ce chapitre.",
+                            hint=hint_msg,
+                            context=context,
+                            error_legacy="template_pipeline_no_dynamic_exercises"
                         )
                     
                     # P4.D - Guardrail : vérifier que le générateur sélectionné est activé
@@ -1732,30 +1914,34 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             **ctx
                         )
                         
-                        raise HTTPException(
-                            status_code=422,
-                            detail={
-                                "error_code": "MIXED_PIPELINE_NO_EXERCISES_OR_TYPES",
-                                "error": "mixed_pipeline_no_exercises_or_types",
-                                "message": (
-                                    f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} "
-                                    f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
-                                    "Ajoutez un exercice pour ces filtres ou changez de difficulté/offre."
-                                ),
-                                "chapter_code": chapter_code_for_db,
-                                "pipeline": "MIXED",
-                                "filters": {
-                                    "offer": getattr(request, 'offer', None),
-                                    "difficulty": getattr(request, 'difficulte', None)
-                                },
-                                "diagnostic": {
-                                    "total_exercises_in_db": len(all_exercises),
-                                    "total_dynamic": len(all_dynamic),
-                                    "total_static": len(all_static),
-                                    "by_difficulty": by_difficulty,
-                                    "by_offer": by_offer
-                                }
-                            }
+                        # Normaliser difficulty pour contexte
+                        normalized_difficulty = None
+                        if hasattr(request, 'difficulte') and request.difficulte:
+                            try:
+                                normalized_difficulty = normalize_difficulty(request.difficulte)
+                            except:
+                                normalized_difficulty = request.difficulte
+                        
+                        context = build_diagnostic_context(
+                            request=request,
+                            chapter_code=chapter_code_for_db,
+                            pipeline_mode="MIXED",
+                            exercises=all_exercises,
+                            enabled_generators=enabled_generators_for_chapter,
+                            offer_input=getattr(request, 'offer', None),
+                            difficulty_input=getattr(request, 'difficulte', None),
+                            difficulty_effective_query=normalized_difficulty,
+                            chapter_from_db=chapter_from_db
+                        )
+                        # Ajouter diagnostic supplémentaire
+                        context["by_difficulty"] = by_difficulty
+                        context["by_offer"] = by_offer
+                        raise_422_with_diagnostic(
+                            error_code="MIXED_PIPELINE_NO_EXERCISES_OR_TYPES",
+                            message=f"Aucun exercice (dynamique ou statique) pour {chapter_code_for_db} avec offer='{getattr(request, 'offer', None)}' et difficulte='{getattr(request, 'difficulte', None)}'.",
+                            hint="Ajoutez un exercice pour ces filtres ou changez de difficulté/offre. Vérifiez les comptages par difficulty/offer dans context.",
+                            context=context,
+                            error_legacy="mixed_pipeline_no_exercises_or_types"
                         )
                     
                     # Fallback sur pipeline statique
@@ -1811,25 +1997,44 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                     )
                     # P0_FIX : Utiliser helper robuste
                     static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
+                    
+                    # P0 - DIAG_FLOW : Log après filtrage SPEC
+                    logger.info(
+                        f"[DIAG_FLOW] AFTER_FILTER pipeline=SPEC "
+                        f"chapter_code={chapter_code_for_db} "
+                        f"total_exercises={len(exercises)} "
+                        f"static_count={len(static_exercises)} "
+                        f"dynamic_count={len(exercises) - len(static_exercises)}"
+                    )
+                    
                     if not static_exercises:
-                        raise HTTPException(
-                            status_code=422,
-                            detail={
-                                "error_code": "NO_EXERCISE_AVAILABLE",
-                                "error": "no_exercise_available",
-                                "message": (
-                                    f"Aucun exercice statique saisi pour {chapter_code_for_db} "
-                                    f"avec offer='{request.offer}' et difficulte='{request.difficulte}'. "
-                                    "Ajoutez un exercice statique ou définissez exercise_types pour la génération SPEC."
-                                ),
-                                "chapter_code": chapter_code_for_db,
-                                "pipeline": "SPEC",
-                                "filters": {
-                                    "offer": getattr(request, 'offer', None),
-                                    "difficulty": getattr(request, 'difficulte', None)
-                                }
-                            }
+                        # Normaliser difficulty pour contexte
+                        normalized_difficulty = None
+                        if hasattr(request, 'difficulte') and request.difficulte:
+                            try:
+                                normalized_difficulty = normalize_difficulty(request.difficulte)
+                            except:
+                                normalized_difficulty = request.difficulte
+                        
+                        context = build_diagnostic_context(
+                            request=request,
+                            chapter_code=chapter_code_for_db,
+                            pipeline_mode="SPEC",
+                            exercises=exercises,
+                            enabled_generators=enabled_generators_for_chapter,
+                            offer_input=getattr(request, 'offer', None),
+                            difficulty_input=getattr(request, 'difficulte', None),
+                            difficulty_effective_query=normalized_difficulty,
+                            chapter_from_db=chapter_from_db
                         )
+                        raise_422_with_diagnostic(
+                            error_code="NO_EXERCISE_AVAILABLE",
+                            message=f"Aucun exercice statique saisi pour {chapter_code_for_db} avec offer='{getattr(request, 'offer', None)}' et difficulte='{getattr(request, 'difficulte', None)}'.",
+                            hint="Ajoutez un exercice statique ou définissez exercise_types pour la génération SPEC.",
+                            context=context,
+                            error_legacy="no_exercise_available"
+                        )
+                    
                         if static_exercises:
                             selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
                         timestamp = int(time.time() * 1000)

@@ -317,6 +317,100 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
                 }
             )
     
+    def _format_tableau_html(self, donnees: dict, type_exercice: str = "proportionnalite") -> str:
+        """
+        Génère le tableau HTML depuis les données brutes.
+        
+        Args:
+            donnees: Dictionnaire avec données exercice
+            type_exercice: Type (proportionnalite, pourcentage, vitesse, echelle)
+        
+        Returns:
+            HTML du tableau formaté
+        """
+        if not donnees:
+            return ""
+        
+        # Cas proportionnalité : utiliser _build_tableau_html existant
+        if type_exercice == "proportionnalite_tableau" and "tableau" in donnees:
+            tableau = donnees.get("tableau", {})
+            valeurs_base = tableau.get("ligne1", [])
+            valeurs_affichage = tableau.get("ligne2", [])
+            return self._build_tableau_html(valeurs_base, valeurs_affichage)
+        
+        # Cas pourcentage : affichage simple en tableau
+        if type_exercice == "pourcentage":
+            html = '<table style="margin: 1rem auto; border-collapse: collapse; font-size: 1.1rem; min-width: 300px;">\n'
+            html += '  <tbody>\n'
+            
+            if donnees.get("type") == "calcul_pourcentage":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Pourcentage</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("pourcentage")}%</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Valeur</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("valeur")}</td></tr>\n'
+            elif donnees.get("type") == "trouver_pourcentage":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Partie</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("partie")}</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Total</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("total")}</td></tr>\n'
+            elif donnees.get("type") == "trouver_valeur":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Pourcentage</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("pourcentage")}%</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Valeur partie</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("valeur_partie")}</td></tr>\n'
+            
+            html += '  </tbody>\n'
+            html += '</table>\n'
+            return html
+        
+        # Cas vitesse : affichage en tableau
+        if type_exercice == "vitesse":
+            html = '<table style="margin: 1rem auto; border-collapse: collapse; font-size: 1.1rem; min-width: 300px;">\n'
+            html += '  <tbody>\n'
+            
+            if donnees.get("type") == "calcul_vitesse":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance")} km</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Temps</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("temps")} h</td></tr>\n'
+            elif donnees.get("type") == "calcul_distance":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Vitesse</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("vitesse")} km/h</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Temps</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("temps")} h</td></tr>\n'
+            elif donnees.get("type") == "calcul_temps":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance")} km</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Vitesse</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("vitesse")} km/h</td></tr>\n'
+            
+            html += '  </tbody>\n'
+            html += '</table>\n'
+            return html
+        
+        # Cas échelle : affichage en tableau
+        if type_exercice == "echelle":
+            html = '<table style="margin: 1rem auto; border-collapse: collapse; font-size: 1.1rem; min-width: 300px;">\n'
+            html += '  <tbody>\n'
+            
+            if donnees.get("type") == "calcul_distance_reelle":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Échelle</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("echelle")}</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance sur la carte</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance_carte")} cm</td></tr>\n'
+            elif donnees.get("type") == "calcul_distance_carte":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Échelle</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("echelle")}</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance réelle</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance_reelle_km")} km</td></tr>\n'
+            elif donnees.get("type") == "calcul_echelle":
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance sur la carte</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance_carte")} cm</td></tr>\n'
+                html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">Distance réelle</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{donnees.get("distance_reelle_km")} km</td></tr>\n'
+            
+            html += '  </tbody>\n'
+            html += '</table>\n'
+            return html
+        
+        # Fallback générique : liste clé-valeur
+        html = '<table style="margin: 1rem auto; border-collapse: collapse; font-size: 1.1rem; min-width: 300px;">\n'
+        html += '  <tbody>\n'
+        for key, value in donnees.items():
+            # Skip clés internes
+            if key in ["niveau", "type_exercice", "type"]:
+                continue
+            
+            # Formatter clé (snake_case → Titre)
+            label = key.replace("_", " ").capitalize()
+            html += f'    <tr><td style="padding: 0.5rem; border: 1px solid #d1d5db; font-weight: 600;">{label}</td><td style="padding: 0.5rem; border: 1px solid #d1d5db;">{value}</td></tr>\n'
+        
+        html += '  </tbody>\n'
+        html += '</table>\n'
+        return html
+    
     def _build_tableau_html(
         self, 
         valeurs_base: List, 
@@ -413,6 +507,9 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
         
         # Énoncé sans HTML (seulement du texte)
         enonce = f"{intro}<br><br>Quelle est la valeur manquante ?"
+        
+        # FIX P0 : S'assurer que tableau_html est généré via _format_tableau_html pour cohérence
+        # (déjà généré via _build_tableau_html, mais on peut aussi utiliser _format_tableau_html)
         
         # Solution détaillée
         calculs = f"Étape 1 : On calcule le coefficient de proportionnalité.\n"
@@ -550,6 +647,9 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
                 "total": total
             }
         
+        # FIX P0 : Générer tableau_html depuis donnees
+        tableau_html = self._format_tableau_html(donnees, "pourcentage")
+        
         return {
             "enonce": enonce,
             "consigne": self.rng_choice(self._CONSIGNE_VARIANTS["pourcentage"]),  # P0.1 - Variant
@@ -557,6 +657,7 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
             "calculs_intermediaires": calculs,
             "reponse_finale": reponse_finale,
             "donnees": donnees,
+            "tableau_html": tableau_html,  # FIX P0 - Ajout
             "methode": "regle_de_trois_pourcentage",
             "niveau": grade,
             "type_exercice": "pourcentage"
@@ -665,6 +766,9 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
                 "vitesse": vitesse
             }
         
+        # FIX P0 : Générer tableau_html depuis donnees
+        tableau_html = self._format_tableau_html(donnees, "vitesse")
+        
         return {
             "enonce": enonce,
             "consigne": self.rng_choice(self._CONSIGNE_VARIANTS["vitesse"]),  # P0.1 - Variant
@@ -672,6 +776,7 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
             "calculs_intermediaires": calculs,
             "reponse_finale": reponse_finale,
             "donnees": donnees,
+            "tableau_html": tableau_html,  # FIX P0 - Ajout
             "methode": "formule_vitesse",
             "niveau": grade,
             "type_exercice": "vitesse"
@@ -778,6 +883,9 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
                 "echelle_calculee": f"1:{echelle_approx}"
             }
         
+        # FIX P0 : Générer tableau_html depuis donnees
+        tableau_html = self._format_tableau_html(donnees, "echelle")
+        
         return {
             "enonce": enonce,
             "consigne": self.rng_choice(self._CONSIGNE_VARIANTS["echelle"]),  # P0.1 - Variant
@@ -785,6 +893,7 @@ class RaisonnementMultiplicatifV1Generator(BaseGenerator):
             "calculs_intermediaires": calculs,
             "reponse_finale": reponse_finale,
             "donnees": donnees,
+            "tableau_html": tableau_html,  # FIX P0 - Ajout
             "methode": "calcul_echelle",
             "niveau": grade,
             "type_exercice": "echelle"
