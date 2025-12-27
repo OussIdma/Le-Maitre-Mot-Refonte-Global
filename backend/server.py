@@ -444,8 +444,13 @@ def _compute_build_id() -> str:
 
 APP_BUILD_ID = os.environ.get("APP_BUILD_ID", _compute_build_id())
 
-# P0 - Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# P0-A2: Rate limiter with dev bypass option
+# Set DISABLE_RATE_LIMIT=true in env to disable rate limiting in development
+_rate_limit_disabled = os.environ.get("DISABLE_RATE_LIMIT", "").lower() in ("true", "1", "yes")
+limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=not _rate_limit_disabled  # P0-A2: Disable in dev if env var set
+)
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -717,7 +722,7 @@ class LoginRequest(BaseModel):
 
 class VerifyLoginRequest(BaseModel):
     token: str
-    device_id: str
+    device_id: str | None = None
 
 # P2: Password auth models
 class SetPasswordRequest(BaseModel):
@@ -3787,12 +3792,12 @@ async def request_login(request_body: LoginRequest, request: Request):
         }
 
 @api_router.post("/auth/verify-login")
-@limiter.limit("10/15minutes")  # P0: Rate limit - 10 requests per 15 minutes
+@limiter.limit("60/15minutes")  # P0-A2: Increased to 60/15min (token required anyway)
 async def verify_login(request_body: VerifyLoginRequest, response: Response, request: Request):
     """
     Verify magic link token and create session.
     P0: Uses hashed tokens + sets httpOnly cookie.
-    P0: Rate limited to 10 req/15min per IP.
+    P0-A2: Rate limited to 60 req/15min per IP (higher than request-login because token is required).
     """
     auth_service = SecureAuthService(db)
     
@@ -3823,16 +3828,14 @@ async def verify_login(request_body: VerifyLoginRequest, response: Response, req
                 detail="Abonnement Pro expiré"
             )
         
-        # Mark token as used (prevents replay attacks)
-        token_hash = auth_service.hash_token(request_body.token)
-        await auth_service.mark_token_used(token_hash)
-        logger.info(f"Token marked as used for {email}")
-        
         # P1: Extract device info from request
         device_info = extract_device_info(request)
         
+        # Get device_id from request body (not from request object)
+        device_id = request_body.device_id or "unknown"
+        
         # Create login session with device info
-        session_token = await create_login_session(email, request.device_id, device_info)
+        session_token = await create_login_session(email, device_id, device_info)
         
         if not session_token:
             logger.error("Failed to create login session")
@@ -3856,6 +3859,12 @@ async def verify_login(request_body: VerifyLoginRequest, response: Response, req
         )
         
         logger.info(f"Login session created successfully for {email} (cookie set)")
+        
+        # Mark token as used AFTER successful session creation (prevents replay attacks)
+        # This ensures we don't mark the token as used if session creation fails
+        token_hash = auth_service.hash_token(request_body.token)
+        await auth_service.mark_token_used(token_hash)
+        logger.info(f"Token marked as used for {email}")
         
         return {
             "message": "Connexion réussie",
@@ -3990,29 +3999,47 @@ async def verify_checkout_token(request_body: VerifyLoginRequest, response: Resp
         )
 
 @api_router.post("/auth/logout")
-async def logout(request: Request):
-    """Logout user by invalidating session"""
+async def logout(request: Request, response: Response):
+    """
+    P0-A3: Logout user by invalidating session and clearing cookie.
+    Accepts session token from cookie (preferred) or header (backward compat).
+    """
     try:
-        # Get session token from header
-        session_token = request.headers.get("X-Session-Token")
-        
+        # P0-A3: Try cookie first (secure), fallback to header (backward compat)
+        session_token = request.cookies.get("session_token")
         if not session_token:
+            session_token = request.headers.get("X-Session-Token")
+
+        if not session_token:
+            # P0-A3: Still delete cookie even if no token found (clean state)
+            response.delete_cookie(
+                key="session_token",
+                path="/",
+                samesite="lax"
+            )
             raise HTTPException(
                 status_code=400,
                 detail="Token de session manquant"
             )
-        
-        # Remove session
+
+        # Remove session from DB
         result = await db.login_sessions.delete_one({"session_token": session_token})
-        
+
+        # P0-A3: Always delete cookie regardless of DB result (clean state)
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        is_secure = environment == 'production'
+        response.delete_cookie(
+            key="session_token",
+            path="/",
+            secure=is_secure,
+            samesite="lax"
+        )
+
         if result.deleted_count == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Session non trouvée"
-            )
-        
+            logger.warning(f"Logout: session not found in DB (cookie cleared anyway)")
+
         return {"message": "Déconnexion réussie"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
