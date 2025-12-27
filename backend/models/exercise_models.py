@@ -56,27 +56,43 @@ class ExerciseGenerateRequest(BaseModel):
         default=None,
         description="Paramètres UI bruts (pour traçabilité et debug)"
     )
-    
+    # P0 Gold - Mode générateur direct (alternative au mode code_officiel/legacy)
+    generator_key: Optional[str] = Field(
+        default=None,
+        description="Clé du générateur à utiliser directement (ex: CALCUL_NOMBRES_V1). Si fourni, bypass le pipeline normal."
+    )
+    overrides: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Paramètres à passer au générateur (overrides sur les defaults)"
+    )
+
     @model_validator(mode='after')
     def validate_request_mode(self):
         """
         Valide qu'au moins un mode de sélection est fourni.
-        
-        Si code_officiel est fourni, niveau peut être déduit.
-        Sinon, niveau et chapitre doivent être fournis.
+
+        Modes supportés (par ordre de priorité):
+        1. generator_key: utilisation directe d'un générateur Factory
+        2. code_officiel: référentiel officiel (6e_N08, etc.)
+        3. niveau + chapitre: mode legacy
         """
+        # Mode 1: generator_key direct (P0 Gold)
+        if self.generator_key:
+            return self
+
+        # Mode 2: code_officiel
         if self.code_officiel:
-            # Mode code_officiel : on déduit le niveau si non fourni
+            # On déduit le niveau si non fourni
             if not self.niveau and self.code_officiel.startswith(('6e_', '5e_', '4e_', '3e_')):
                 self.niveau = self.code_officiel.split('_')[0]
             return self
-        
-        # Mode legacy : niveau et chapitre requis
+
+        # Mode 3: legacy (niveau + chapitre requis)
         if not self.niveau or not self.chapitre:
             raise ValueError(
-                "Soit 'code_officiel', soit 'niveau' et 'chapitre' doivent être fournis"
+                "Soit 'generator_key', soit 'code_officiel', soit 'niveau' et 'chapitre' doivent être fournis"
             )
-        
+
         return self
     
     @field_validator('difficulte')
@@ -136,6 +152,8 @@ class ExerciseGenerateResponse(BaseModel):
     solution_html: str = Field(..., description="Solution détaillée au format HTML")
     pdf_token: str = Field(..., description="Token pour télécharger le PDF")
     metadata: Dict[str, Any] = Field(..., description="Métadonnées supplémentaires incluant is_fallback et generator_code")
+    # P0 Gold - Ajout generation_meta pour mode generator_key direct
+    generation_meta: Optional[Dict[str, Any]] = Field(None, description="Métadonnées de génération (seed, params_used, generator_key, etc.)")
     
     class Config:
         schema_extra = {

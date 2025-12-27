@@ -1194,7 +1194,10 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         difficulty=getattr(request, 'difficulte', None),
         offer=getattr(request, 'offer', None),
     )
-    
+
+    # P0 Gold - Initialiser ctx avant utilisation dans generator_key block
+    ctx = get_request_context()
+
     # ============================================================================
     # P0 - SUPPRESSION INTERCEPTS LEGACY GM07/GM08
     # ============================================================================
@@ -1202,11 +1205,162 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     # Ils sont gérés par le pipeline normal (DYNAMIC → STATIC fallback).
     # Plus besoin d'intercepts hardcodés.
     # ============================================================================
-    
+
+    # ============================================================================
+    # P0 GOLD - MODE GENERATOR_KEY DIRECT
+    # ============================================================================
+    # Si generator_key est fourni, bypass complet du pipeline normal.
+    # Utilise directement GeneratorFactory.generate() avec les overrides.
+    # ============================================================================
+
+    if request.generator_key:
+        logger.info(
+            f"[GENERATOR_DIRECT] generator_key={request.generator_key}, "
+            f"overrides={list((request.overrides or {}).keys())}, seed={request.seed}"
+        )
+
+        try:
+            from backend.generators.factory import GeneratorFactory
+            import uuid
+
+            # Merge seed dans overrides si fourni
+            overrides = dict(request.overrides or {})
+            if request.seed is not None:
+                overrides["seed"] = request.seed
+
+            result = GeneratorFactory.generate(
+                key=request.generator_key,
+                exercise_params={},
+                overrides=overrides,
+                seed=request.seed
+            )
+
+            # Construire la réponse avec generation_meta
+            duration_ms = int((time.time() - request_start) * 1000)
+            obs_logger.info(
+                "event=generator_direct_success",
+                event="generator_direct_success",
+                outcome="success",
+                duration_ms=duration_ms,
+                generator_key=request.generator_key,
+                **ctx
+            )
+
+            # P0 Gold - Construire une réponse conforme au response_model ExerciseGenerateResponse
+            gen_meta = result.get("generation_meta", {})
+            variables = result.get("variables", {})
+
+            # Déterminer niveau: overrides > request > meta > fallback
+            niveau = (
+                overrides.get("grade") or
+                overrides.get("niveau") or
+                getattr(request, "niveau", None) or
+                "6e"  # fallback
+            )
+
+            # Déterminer chapitre: overrides > request > generator_key
+            chapitre = (
+                overrides.get("chapitre") or overrides.get("chapter") or
+                getattr(request, "chapitre", None) or
+                gen_meta.get("exercise_type") or
+                request.generator_key
+            )
+
+            # Construire enonce_html depuis variables ou minimal
+            figure_svg_enonce = result.get("figure_svg_enonce")
+            enonce_html = variables.get("enonce_html") or variables.get("enonce")
+            if not enonce_html:
+                # Construire un énoncé minimal à partir des variables
+                enonce_parts = []
+                if variables.get("consigne"):
+                    enonce_parts.append(f"<p>{variables['consigne']}</p>")
+                if variables.get("expression") or variables.get("calcul"):
+                    expr = variables.get("expression") or variables.get("calcul")
+                    enonce_parts.append(f"<p class='math-expression'>{expr}</p>")
+                if figure_svg_enonce:
+                    enonce_parts.append(f"<div class='exercise-figure'>{figure_svg_enonce}</div>")
+                enonce_html = f"<div class='exercise-enonce'>{''.join(enonce_parts) or '<p>Résoudre l exercice suivant.</p>'}</div>"
+
+            # Construire solution_html depuis variables ou minimal
+            figure_svg_solution = result.get("figure_svg_solution")
+            solution_html = variables.get("solution_html") or variables.get("solution") or variables.get("correction")
+            if not solution_html:
+                solution_parts = []
+                if variables.get("resultat") or variables.get("reponse"):
+                    rep = variables.get("resultat") or variables.get("reponse")
+                    solution_parts.append(f"<p><strong>Réponse :</strong> {rep}</p>")
+                if variables.get("etapes"):
+                    solution_parts.append(f"<div class='solution-steps'>{variables['etapes']}</div>")
+                if figure_svg_solution:
+                    solution_parts.append(f"<div class='solution-figure'>{figure_svg_solution}</div>")
+                solution_html = f"<div class='exercise-solution'>{''.join(solution_parts) or '<p>Voir correction.</p>'}</div>"
+
+            # Générer id et pdf_token
+            effective_seed = gen_meta.get("seed") or request.seed or "random"
+            exercise_id = f"gen_{request.generator_key}_{effective_seed}_{uuid.uuid4().hex[:8]}"
+
+            # Retourner une réponse conforme au response_model
+            return {
+                "id_exercice": exercise_id,
+                "niveau": niveau,
+                "chapitre": chapitre,
+                "enonce_html": enonce_html,
+                "solution_html": solution_html,
+                "svg": figure_svg_enonce,
+                "figure_svg": figure_svg_enonce,
+                "figure_svg_enonce": figure_svg_enonce,
+                "figure_svg_solution": figure_svg_solution,
+                "pdf_token": exercise_id,
+                "metadata": {
+                    "generator_key": request.generator_key,
+                    "is_dynamic": True,
+                    "is_fallback": False,
+                    "variables": variables,
+                    "duration_ms": duration_ms,
+                },
+                # P0 Gold - generation_meta au root level pour accès direct (jq '.generation_meta.seed')
+                "generation_meta": gen_meta,
+            }
+
+        except ValueError as ve:
+            # P0 Gold - Erreur de validation de params => HTTP 400
+            error_msg = str(ve)
+            logger.error(f"[GENERATOR_DIRECT] ValueError: {error_msg}")
+            obs_logger.error(
+                "event=generator_direct_invalid_params",
+                event="generator_direct_invalid_params",
+                outcome="error",
+                reason="invalid_params",
+                generator_key=request.generator_key,
+                error_message=error_msg,
+                **ctx
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "INVALID_PARAMS",
+                    "error": "validation_failed",
+                    "message": error_msg,
+                    "generator_key": request.generator_key,
+                    "params_received": list((request.overrides or {}).keys()),
+                }
+            )
+        except Exception as e:
+            logger.error(f"[GENERATOR_DIRECT] Exception: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "GENERATION_FAILED",
+                    "error": "generation_failed",
+                    "message": str(e),
+                    "generator_key": request.generator_key,
+                }
+            )
+
     # ============================================================================
     # TESTS_DYN INTERCEPT: Chapitre de test pour exercices dynamiques
     # ============================================================================
-    
+
     if is_tests_dyn_request(request.code_officiel):
         nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
         logger.info(f"🎲 TESTS_DYN Request intercepted: offer={request.offer}, difficulty={request.difficulte}, count={nb}")
@@ -2439,6 +2593,41 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                             generator_key=selected_premium_generator,
                             **ctx
                         )
+                    except ValueError as ve:
+                        # P0 Gold - Erreurs de validation de params => HTTP 400 explicite (pas de fallback)
+                        error_msg = str(ve)
+                        if "Paramètres non déclarés" in error_msg or "Paramètre obligatoire manquant" in error_msg:
+                            obs_logger.error(
+                                "event=invalid_params_strict",
+                                event="invalid_params_strict",
+                                outcome="error",
+                                reason="invalid_params",
+                                generator_key=selected_premium_generator,
+                                error_message=error_msg,
+                                **ctx
+                            )
+                            raise HTTPException(
+                                status_code=400,
+                                detail={
+                                    "error_code": "INVALID_PARAMS",
+                                    "error": "validation_failed",
+                                    "message": error_msg,
+                                    "generator_key": selected_premium_generator,
+                                    "params_received": list(overrides_dict.keys()),
+                                }
+                            )
+                        # Autres ValueError => fallback sur legacy
+                        obs_logger.error(
+                            "event=premium_factory_error",
+                            event="premium_factory_error",
+                            outcome="error",
+                            reason="generation_failed",
+                            generator_key=selected_premium_generator,
+                            error_message=error_msg,
+                            **ctx
+                        )
+                        logger.error(f"Erreur Factory {selected_premium_generator}: {ve}")
+                        use_premium_factory = False
                     except Exception as e:
                         # Log l'erreur mais ne pas bloquer (fallback sur legacy)
                         obs_logger.error(

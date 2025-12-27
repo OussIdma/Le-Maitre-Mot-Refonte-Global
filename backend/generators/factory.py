@@ -33,8 +33,18 @@ obs_logger = get_obs_logger('GENERATOR_FACTORY')
 
 class GeneratorFactory:
     """Factory centrale pour tous les générateurs."""
-    
+
     _generators: Dict[str, Type[BaseGenerator]] = {}
+
+    # P0 Gold - Paramètres globaux acceptés pour tous les générateurs (exemptés de validation schema)
+    _GLOBAL_PARAMS: set = {"seed"}
+
+    # P0 Gold - Champs UI/meta à ignorer lors de la validation stricte (transmis par l'UI mais non utilisés par le générateur)
+    _UI_META_FIELDS: set = {
+        "grade", "niveau", "chapter", "chapitre", "chapter_code", "code_officiel",
+        "exercise_type", "type_exercice", "figure_type", "is_dynamic",
+        "offer", "difficulte", "difficulty", "nb_exercices",
+    }
     
     # P4.1 - Générateurs désactivés (non utilisables)
     # Cette liste est mise à jour manuellement après classification
@@ -173,7 +183,55 @@ class GeneratorFactory:
         if not gen_class:
             return None
         return gen_class(seed=seed)
-    
+
+    @classmethod
+    def _validate_params_strict(
+        cls,
+        generator_key: str,
+        params: Dict[str, Any],
+        allow_global: Optional[set] = None
+    ) -> Dict[str, Any]:
+        """
+        P0 Gold - Validation STRICTE des paramètres contre le schéma du générateur.
+
+        STRICT: paramètre inconnu => ValueError (pas de fallback silencieux).
+
+        Args:
+            generator_key: Clé du générateur (normalisée)
+            params: Paramètres à valider
+            allow_global: Clés autorisées hors schéma (ex: {"seed"})
+
+        Returns:
+            params validés (inchangés si tout est OK)
+
+        Raises:
+            ValueError: si param inconnu OU obligatoire manquant
+        """
+        allow_global = allow_global or cls._GLOBAL_PARAMS
+
+        gen_class = cls._generators.get(generator_key)
+        if not gen_class:
+            raise ValueError(f"Générateur '{generator_key}' non trouvé")
+
+        schema = gen_class.get_schema()
+        schema_keys = {param.name for param in schema}
+
+        # Unknown = tout ce qui n'est pas dans schema, ni global, ni UI_META_FIELDS
+        # Les UI_META_FIELDS sont transmis par l'UI mais ignorés par le générateur
+        unknown_params = set(params.keys()) - schema_keys - allow_global - cls._UI_META_FIELDS
+        if unknown_params:
+            raise ValueError(
+                f"Paramètres non déclarés : {', '.join(sorted(unknown_params))}. "
+                f"Valides : {', '.join(sorted(schema_keys | allow_global))}"
+            )
+
+        # Vérifier obligatoires (schema seulement)
+        for param_schema in schema:
+            if param_schema.required and param_schema.name not in params:
+                raise ValueError(f"Paramètre obligatoire manquant : '{param_schema.name}'")
+
+        return params
+
     @classmethod
     def generate(
         cls,
@@ -248,16 +306,32 @@ class GeneratorFactory:
                     event="generator_unknown",
                     outcome="error",
                     reason="generator_key_unknown",
-                    generator_key=key,
                     available_generators=list(cls._generators.keys()),
-                    **ctx
+                    **ctx  # ctx contient déjà generator_key
                 )
                 raise ValueError(f"Générateur inconnu: {key}. Disponibles: {list(cls._generators.keys())}")
             
             # Fusion des paramètres
             merged = gen_class.merge_params(exercise_params or {}, overrides or {})
-            
-            # Validation
+
+            # P0 Gold - Récupérer seed depuis merged si non fourni directement
+            # Priorité: argument seed > overrides.seed > exercise_params.seed
+            effective_seed = seed
+            if effective_seed is None and "seed" in merged:
+                effective_seed = merged.get("seed")
+                if effective_seed is not None:
+                    try:
+                        effective_seed = int(effective_seed)
+                    except (ValueError, TypeError):
+                        effective_seed = None
+
+            # P0 Gold - Validation STRICTE des paramètres (unknown => ValueError)
+            # Inclure seed dans merged pour validation
+            if effective_seed is not None:
+                merged["seed"] = effective_seed
+            cls._validate_params_strict(normalized, merged)
+
+            # Validation des types et valeurs
             valid, result = gen_class.validate_params(merged)
             if not valid:
                 ctx.pop("exc_info", None)
@@ -271,9 +345,9 @@ class GeneratorFactory:
                     **ctx
                 )
                 raise ValueError(f"Paramètres invalides: {result}")
-            
-            # Génération
-            generator = gen_class(seed=seed)
+
+            # Génération avec effective_seed
+            generator = gen_class(seed=effective_seed)
             output = generator.generate(result)
             
             # Ajouter les métadonnées de génération
@@ -284,7 +358,7 @@ class GeneratorFactory:
                 "exercise_type": meta.exercise_type,
                 "svg_mode": meta.svg_mode,
                 "params_used": result,
-                "seed": seed
+                "seed": effective_seed
             }
             
             # Log succès
