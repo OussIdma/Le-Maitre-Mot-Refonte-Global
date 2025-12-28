@@ -24,7 +24,7 @@ from typing import Literal
 logger = get_logger()
 
 # Router admin exercices
-router = APIRouter(prefix="/api/admin/exercises", tags=["Admin Exercises"])
+router = APIRouter(prefix="/api/admin", tags=["Admin Exercises"])
 
 
 # =============================================================================
@@ -80,7 +80,7 @@ async def get_curriculum_sync_service_dep(db=Depends(get_db)):
 # =============================================================================
 
 @router.get(
-    "/pilot-chapters",
+    "/exercises/pilot-chapters",
     summary="Liste des chapitres pilotes",
     description="Retourne la liste des chapitres pilotes (GM07, GM08, TESTS_DYN) avec leurs types d'exercices"
 )
