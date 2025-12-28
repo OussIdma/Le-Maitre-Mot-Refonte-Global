@@ -70,10 +70,13 @@ class TestSchemaValidation:
             presets = gen_class.get_presets()
 
             schema_names = {p.name for p in schema}
+            # Paramètres globaux autorisés (seed, etc.) + UI meta fields
+            global_params = GeneratorFactory._GLOBAL_PARAMS | GeneratorFactory._UI_META_FIELDS
 
             for preset in presets:
                 preset_params = set(preset.params.keys())
-                invalid_params = preset_params - schema_names
+                # Exclure les paramètres globaux et UI meta de la validation
+                invalid_params = preset_params - schema_names - global_params
 
                 assert len(invalid_params) == 0, \
                     f"{key} preset '{preset.key}': params invalides: {invalid_params}"
