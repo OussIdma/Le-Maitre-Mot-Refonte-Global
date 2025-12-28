@@ -923,7 +923,48 @@ const ChapterExercisesAdminPage = () => {
       }
     };
   };
-  
+
+  // Fetch templates from DB for a given generator_key (DB-first approach)
+  const fetchTemplatesFromDB = async (generatorKey) => {
+    try {
+      console.log('🔍 Fetching templates from DB for:', generatorKey);
+      const response = await fetch(
+        `${BACKEND_URL}/api/v1/admin/generator-templates?generator_key=${encodeURIComponent(generatorKey)}`
+      );
+      if (!response.ok) {
+        console.warn('⚠️ DB templates fetch failed:', response.status);
+        return null;
+      }
+      const templates = await response.json();
+      if (templates && templates.length > 0) {
+        // Return first match (default variant or first available)
+        const defaultTemplate = templates.find(t => t.variant_id === 'default') || templates[0];
+        console.log('✅ DB template found:', defaultTemplate.generator_key);
+        return {
+          enonce: defaultTemplate.enonce_template_html || '',
+          solution: defaultTemplate.solution_template_html || ''
+        };
+      }
+      console.log('ℹ️ No DB templates found for:', generatorKey);
+      return null;
+    } catch (error) {
+      console.error('❌ Error fetching DB templates:', error);
+      return null;
+    }
+  };
+
+  // Get templates with DB-first fallback to hardcoded
+  const getTemplatesForGenerator = async (generatorKey) => {
+    // Try DB first
+    const dbTemplates = await fetchTemplatesFromDB(generatorKey);
+    if (dbTemplates && (dbTemplates.enonce || dbTemplates.solution)) {
+      return dbTemplates;
+    }
+    // Fallback to hardcoded getDynamicTemplates
+    console.log('ℹ️ Falling back to hardcoded templates for:', generatorKey);
+    return getDynamicTemplates(generatorKey);
+  };
+
   // Ouvrir modal édition
   const handleOpenEdit = (exercise) => {
     setModalMode('edit');
@@ -2331,56 +2372,65 @@ const ChapterExercisesAdminPage = () => {
                         ({availableGenerators.length} disponible{availableGenerators.length > 1 ? 's' : ''})
                       </span>
                     </Label>
-                    <Select 
-                      value={formData.generator_key || ''} 
+                    <Select
+                      value={formData.generator_key || ''}
                       disabled={availableGenerators.length === 0}
-                      onValueChange={(v) => {
+                      onValueChange={async (v) => {
                         console.log('🎯 Générateur sélectionné:', v);
                         console.log('📊 État actuel availableGenerators:', availableGenerators);
-                        const templates = getDynamicTemplates(v);
+
+                        // DB-first: fetch templates from database, fallback to hardcoded
+                        const templates = await getTemplatesForGenerator(v);
+                        console.log('📝 Templates chargés:', { enonce: templates.enonce?.substring(0, 50), solution: templates.solution?.substring(0, 50) });
+
                         setFormData(p => {
                           // Pour les générateurs premium (SIMPLIFICATION_FRACTIONS_V2), initialiser les variants A/B/C si absents
                           const isPremiumGen = v === 'SIMPLIFICATION_FRACTIONS_V2';
-                          const shouldInitVariants = isPremiumGen && 
+                          const shouldInitVariants = isPremiumGen &&
                             (!Array.isArray(p.template_variants) || p.template_variants.length === 0);
+
+                          // Anti-empty protection: don't overwrite with empty strings if we have existing templates
+                          const newEnonce = templates.enonce || p.enonce_template_html || '';
+                          const newSolution = templates.solution || p.solution_template_html || '';
+
                           const baseUpdate = {
-                            ...p, 
+                            ...p,
                             generator_key: v,
-                            enonce_template_html: templates.enonce,
-                            solution_template_html: templates.solution
+                            enonce_template_html: newEnonce,
+                            solution_template_html: newSolution
                           };
-                          
+
                           // Initialiser les variants A/B/C pour les générateurs premium avec les bons templates
                           if (shouldInitVariants) {
                             const variantTemplates = getSimplificationFractionsV2Templates();
                             baseUpdate.template_variants = [
-                              { 
-                                id: 'A', 
-                                variant_id: 'A', 
-                                label: 'Direct', 
-                                weight: 1, 
-                                enonce_template_html: variantTemplates.A.enonce, 
-                                solution_template_html: variantTemplates.A.solution 
+                              {
+                                id: 'A',
+                                variant_id: 'A',
+                                label: 'Direct',
+                                weight: 1,
+                                enonce_template_html: variantTemplates.A.enonce,
+                                solution_template_html: variantTemplates.A.solution
                               },
-                              { 
-                                id: 'B', 
-                                variant_id: 'B', 
-                                label: 'Guidé', 
-                                weight: 1, 
-                                enonce_template_html: variantTemplates.B.enonce, 
-                                solution_template_html: variantTemplates.B.solution 
+                              {
+                                id: 'B',
+                                variant_id: 'B',
+                                label: 'Guidé',
+                                weight: 1,
+                                enonce_template_html: variantTemplates.B.enonce,
+                                solution_template_html: variantTemplates.B.solution
                               },
-                              { 
-                                id: 'C', 
-                                variant_id: 'C', 
-                                label: 'Diagnostic', 
-                                weight: 1, 
-                                enonce_template_html: variantTemplates.C.enonce, 
-                                solution_template_html: variantTemplates.C.solution 
+                              {
+                                id: 'C',
+                                variant_id: 'C',
+                                label: 'Diagnostic',
+                                weight: 1,
+                                enonce_template_html: variantTemplates.C.enonce,
+                                solution_template_html: variantTemplates.C.solution
                               }
                             ];
                           }
-                          
+
                           return baseUpdate;
                         });
                       }}

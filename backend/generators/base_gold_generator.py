@@ -108,6 +108,39 @@ class BaseGoldGenerator(BaseGenerator, ABC):
         """
         raise NotImplementedError("Les sous-classes doivent implémenter get_meta()")
 
+    @classmethod
+    def _enrich_presets_with_templates(cls, presets: List['Preset']) -> List['Preset']:
+        """
+        Enrichit les presets avec les templates enoncetemplate et solutiontemplate.
+        
+        Cette méthode helper est appelée par les routes pour enrichir automatiquement
+        les presets des générateurs Gold avec les templates nécessaires au Frontend.
+        """
+        from backend.generators.base_generator import Preset
+        
+        enriched_presets = []
+        for preset in presets:
+            # Créer une copie du dict params pour ne pas modifier l'original
+            enriched_params = dict(preset.params)
+            
+            # Ajouter les templates par défaut si absents
+            if "enoncetemplate" not in enriched_params:
+                enriched_params["enoncetemplate"] = "Énonce par défaut"
+            if "solutiontemplate" not in enriched_params:
+                enriched_params["solutiontemplate"] = "Solution par défaut"
+            
+            # Créer un nouveau Preset avec les params enrichis
+            enriched_preset = Preset(
+                key=preset.key,
+                label=preset.label,
+                description=preset.description,
+                niveau=preset.niveau,
+                params=enriched_params
+            )
+            enriched_presets.append(enriched_preset)
+        
+        return enriched_presets
+
     # =========================================================================
     # HELPERS DE VALIDATION
     # =========================================================================

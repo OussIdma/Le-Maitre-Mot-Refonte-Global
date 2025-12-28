@@ -274,6 +274,110 @@ async def list_generators_endpoint():
     return {"generators": summaries, "count": len(summaries)}
 
 
+# =============================================================================
+# P0 GOLD - ENDPOINT SCHEMA UI (source de vérité pour l'UI)
+# =============================================================================
+
+class UISchemaParamResponse(BaseModel):
+    """Schéma d'un paramètre pour l'UI."""
+    name: str
+    type: str
+    label: str
+    options: Optional[List[Any]] = None
+    required: bool
+    default: Any
+
+
+class UISchemaPresetResponse(BaseModel):
+    """Preset pour l'UI."""
+    id: str
+    label: str
+    params: Dict[str, Any]
+
+
+class UISchemaResponse(BaseModel):
+    """
+    P0 Gold - Schéma complet d'un générateur pour l'UI dynamique.
+
+    Ce format est la source de vérité unique pour construire les formulaires UI.
+    """
+    generatorkey: str
+    label: str
+    description: str
+    version: str
+    param_schema: List[UISchemaParamResponse]
+    defaults: Dict[str, Any]
+    presets: List[UISchemaPresetResponse]
+
+
+@router.get("/generators/{generator_key}/ui-schema", response_model=UISchemaResponse, tags=["Factory", "Gold"])
+async def get_generator_ui_schema(generator_key: str):
+    """
+    P0 Gold - Retourne le schéma UI complet d'un générateur (source de vérité pour UI).
+
+    Ce endpoint est conçu pour que l'UI puisse construire dynamiquement les formulaires
+    de configuration d'un générateur. Le schema retourné contient toutes les informations
+    nécessaires : paramètres avec types, defaults, et presets.
+    """
+    from backend.generators.factory import GeneratorFactory
+
+    normalized_key = generator_key.upper()
+    gen_class = GeneratorFactory.get(normalized_key)
+
+    if not gen_class:
+        available = GeneratorFactory.list_all()
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error_code": "GENERATOR_NOT_FOUND",
+                "error": "generator_not_found",
+                "message": f"Générateur '{generator_key}' non trouvé",
+                "available_generators": [g["key"] for g in available]
+            }
+        )
+
+    meta = gen_class.get_meta()
+    schema = gen_class.get_schema()
+    defaults = gen_class.get_defaults()
+    presets = gen_class.get_presets()
+    
+    # Enrichir les presets avec des templates par défaut (UNIVERSEL - tous les générateurs)
+    for preset in presets:
+        if not hasattr(preset, 'params') or preset.params is None:
+            preset.params = {}
+        if "enoncetemplate" not in preset.params:
+            preset.params["enoncetemplate"] = "<p><strong>Énoncé à compléter</strong></p>"
+        if "solutiontemplate" not in preset.params:
+            preset.params["solutiontemplate"] = "<p>Solution à compléter</p>"
+
+    return UISchemaResponse(
+        generatorkey=meta.key,
+        label=meta.label,
+        description=meta.description,
+        version=meta.version,
+        param_schema=[
+            UISchemaParamResponse(
+                name=p.name,
+                type=p.type.value if hasattr(p.type, 'value') else str(p.type),
+                label=getattr(p, 'label', p.description) if hasattr(p, 'label') else p.description,
+                options=p.options,
+                required=p.required,
+                default=p.default,
+            )
+            for p in schema
+        ],
+        defaults=defaults,
+        presets=[
+            UISchemaPresetResponse(
+                id=p.key,
+                label=p.label,
+                params=p.params
+            )
+            for p in presets
+        ],
+    )
+
+
 @router.post("/preview-dynamic", response_model=DynamicPreviewResponse, tags=["Generators"])
 async def preview_dynamic_exercise(request: DynamicPreviewRequest):
     """Prévisualise un exercice dynamique AVANT de le sauvegarder."""
@@ -520,7 +624,7 @@ async def list_all_generators():
 
 class FactorySchemaResponse(BaseModel):
     """Réponse du schéma Factory."""
-    generator_key: str
+    generatorkey: str
     meta: Dict[str, Any]
     defaults: Dict[str, Any]
     schema: List[Dict[str, Any]]
@@ -545,7 +649,7 @@ async def get_factory_schema(generator_key: str):
         legacy = legacy_get_schema(generator_key.upper())
         if legacy:
             return FactorySchemaResponse(
-                generator_key=generator_key.upper(),
+                generatorkey=generator_key.upper(),
                 meta={
                     "key": generator_key.upper(),
                     "label": legacy.label,
@@ -569,6 +673,21 @@ async def get_factory_schema(generator_key: str):
                 "available": [g["key"] for g in available]
             }
         )
+    
+    # Convertir generator_key en generatorkey pour alignement Frontend
+    if isinstance(schema, dict) and "generator_key" in schema:
+        schema = dict(schema)
+        schema["generatorkey"] = schema.pop("generator_key")
+    
+    # Enrichir les presets avec des templates par défaut (UNIVERSEL - tous les générateurs)
+    if isinstance(schema, dict) and "presets" in schema:
+        for preset in schema["presets"]:
+            if "params" not in preset:
+                preset["params"] = {}
+            if "enoncetemplate" not in preset["params"]:
+                preset["params"]["enoncetemplate"] = "<p><strong>Énoncé à compléter</strong></p>"
+            if "solutiontemplate" not in preset["params"]:
+                preset["params"]["solutiontemplate"] = "<p>Solution à compléter</p>"
     
     return FactorySchemaResponse(**schema)
 
@@ -660,8 +779,18 @@ async def generate_from_factory(request: FactoryGenerateRequest):
         )
         
     except ValueError as e:
+        # P0 Gold - Transformer ValueError en HTTP 400 avec détail standardisé
         logger.error(f"❌ Factory validation error: {str(e)}")
-        raise HTTPException(status_code=400, detail={"error": "validation_failed", "message": str(e)})
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "INVALID_PARAMS",
+                "error": "validation_failed",
+                "message": str(e),
+                "generator_key": request.generator_key,
+                "params_received": list((request.overrides or {}).keys()),
+            }
+        )
     except Exception as e:
         logger.error(f"❌ Factory generate error: {str(e)}")
         raise HTTPException(status_code=500, detail={"error": "generation_failed", "message": str(e)})

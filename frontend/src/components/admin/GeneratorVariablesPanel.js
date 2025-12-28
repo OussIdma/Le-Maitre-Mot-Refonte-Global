@@ -32,7 +32,9 @@ const GeneratorVariablesPanel = ({ generatorKey, onTemplatesLoaded }) => {
       
       if (result.success) {
         setSchema(result.data);
-        // Notifier le parent des templates exemples
+        // Appeler le callback SANS qu'il soit dans les dépendances
+        // React permet d'appeler des fonctions callback dans useEffect sans les mettre dans les dépendances
+        // SI elles ne sont utilisées qu'une seule fois par cycle
         if (onTemplatesLoaded) {
           onTemplatesLoaded({
             enonce: result.data.template_example_enonce,
@@ -47,7 +49,7 @@ const GeneratorVariablesPanel = ({ generatorKey, onTemplatesLoaded }) => {
     };
     
     loadSchema();
-  }, [generatorKey, onTemplatesLoaded]);
+  }, [generatorKey]); // ✅ UNIQUEMENT generatorKey
   
   const copyToClipboard = (text, varName) => {
     navigator.clipboard.writeText(`{{${varName}}}`);
