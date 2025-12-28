@@ -429,12 +429,15 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
                 seed=request.seed,
             )
 
-            variables = result.get("variables", {})
+            variables = result.get("variables", {}) or {}
             # La Factory peut aussi retourner des résultats/geo_data utiles pour le template
+            # S'assurer que results et geo_data sont des dicts (pas None)
+            results = result.get("results") or {}
+            geo_data = result.get("geo_data") or {}
             all_vars = {
                 **variables,
-                **result.get("results", {}),
-                **result.get("geo_data", {}),
+                **results,
+                **geo_data,
             }
 
             # IMPORTANT : si le générateur est un THALES (THALES_V2, ou alias),
@@ -454,8 +457,8 @@ async def preview_dynamic_exercise(request: DynamicPreviewRequest):
                 difficulty=request.difficulty,
             )
 
-            variables = gen_result.get("variables", {})
-            results = gen_result.get("results", {})
+            variables = gen_result.get("variables", {}) or {}
+            results = gen_result.get("results", {}) or {}
             all_vars = {**variables, **results}
 
             # Harmoniser le comportement avec le pipeline élève (TESTS_DYN) pour THALES_V1 :
@@ -742,7 +745,9 @@ async def generate_from_factory(request: FactoryGenerateRequest):
             seed=request.seed
         )
         
-        variables = result.get("variables", {})
+        variables = result.get("variables", {}) or {}
+        results = result.get("results") or {}
+        geo_data = result.get("geo_data") or {}
         
         # Rendre les templates si fournis
         enonce_html = None
@@ -750,7 +755,7 @@ async def generate_from_factory(request: FactoryGenerateRequest):
         
         if request.enonce_template:
             import re
-            all_vars = {**variables, **result.get("results", {}), **result.get("geo_data", {})}
+            all_vars = {**variables, **results, **geo_data}
             enonce_html = render_template(request.enonce_template, all_vars)
             
             unreplaced = re.findall(r'\{\{(\w+)\}\}', enonce_html)
@@ -759,7 +764,9 @@ async def generate_from_factory(request: FactoryGenerateRequest):
         
         if request.solution_template:
             import re
-            all_vars = {**variables, **result.get("results", {}), **result.get("geo_data", {})}
+            results = result.get("results") or {}
+            geo_data = result.get("geo_data") or {}
+            all_vars = {**variables, **results, **geo_data}
             solution_html = render_template(request.solution_template, all_vars)
             
             unreplaced = re.findall(r'\{\{(\w+)\}\}', solution_html)
