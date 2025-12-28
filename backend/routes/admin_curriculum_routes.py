@@ -21,6 +21,9 @@ from backend.services.curriculum_persistence_service import (
 )
 
 router = APIRouter(prefix="/api/v1/admin/curriculum", tags=["admin-curriculum"])
+
+# Router legacy pour compatibilité avec frontend
+legacy_router = APIRouter(prefix="/api/admin/curriculum", tags=["admin-curriculum-legacy"])
 obs_logger = get_logger()
 
 # Dépendance pour obtenir le service
@@ -401,6 +404,26 @@ async def get_curriculum(
                 "message": f"Erreur lors de la récupération: {str(e)}"
             }
         )
+
+
+# Route legacy pour compatibilité frontend (sans /v1)
+@legacy_router.get("/{niveau}")
+async def get_curriculum_legacy(
+    niveau: str,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """Route legacy: même fonction que get_curriculum mais avec prefix /api/admin/curriculum"""
+    return await get_curriculum(niveau=niveau, service=service)
+
+
+# Route legacy pour compatibilité frontend (sans /v1)
+@legacy_router.get("/{niveau}")
+async def get_curriculum_legacy(
+    niveau: str,
+    service: CurriculumPersistenceService = Depends(get_curriculum_service)
+):
+    """Route legacy: même fonction que get_curriculum mais avec prefix /api/admin/curriculum"""
+    return await get_curriculum(niveau=niveau, service=service)
 
 
 @router.get("/options")

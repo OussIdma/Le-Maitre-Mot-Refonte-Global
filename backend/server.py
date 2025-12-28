@@ -6435,8 +6435,9 @@ from backend.routes.exercises_routes import router as exercises_router
 app.include_router(exercises_router, prefix="/api/v1/exercises", tags=["Exercises v1"])
 
 # Include Admin Curriculum router (V1 - READ-ONLY)
-from backend.routes.admin_curriculum_routes import router as admin_curriculum_router
+from backend.routes.admin_curriculum_routes import router as admin_curriculum_router, legacy_router as admin_curriculum_legacy_router
 app.include_router(admin_curriculum_router, tags=["Admin Curriculum"])
+app.include_router(admin_curriculum_legacy_router, tags=["Admin Curriculum Legacy"])
 
 # Routes admin exercices (CRUD pour exercices figés)
 from backend.routes.admin_exercises_routes import router as admin_exercises_router

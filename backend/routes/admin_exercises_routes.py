@@ -24,7 +24,7 @@ from typing import Literal
 logger = get_logger()
 
 # Router admin exercices
-router = APIRouter(prefix="/api/admin", tags=["Admin Exercises"])
+router = APIRouter(prefix="/api/admin/exercises", tags=["Admin Exercises"])
 
 
 # =============================================================================
@@ -78,6 +78,45 @@ async def get_curriculum_sync_service_dep(db=Depends(get_db)):
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
+
+@router.get(
+    "/pilot-chapters",
+    summary="Liste des chapitres pilotes",
+    description="Retourne la liste des chapitres pilotes (GM07, GM08, TESTS_DYN) avec leurs types d'exercices"
+)
+async def get_pilot_chapters(service=Depends(get_exercise_service)):
+    """Retourne la liste des chapitres pilotes"""
+    from backend.services.exercise_persistence_service import ExercisePersistenceService
+    
+    pilot_chapters = []
+    exercise_types = set()
+    
+    for chapter_code in ExercisePersistenceService.PILOT_CHAPTERS:
+        try:
+            exercises = await service.get_exercises(chapter_code=chapter_code)
+            chapter_exercise_types = set()
+            
+            for ex in exercises:
+                if ex.get("is_dynamic") and ex.get("generator_key"):
+                    chapter_exercise_types.add(ex.get("generator_key"))
+                    exercise_types.add(ex.get("generator_key"))
+            
+            pilot_chapters.append({
+                "code": chapter_code,
+                "exercise_types": list(chapter_exercise_types)
+            })
+        except Exception as e:
+            logger.warning(f"Erreur chargement chapitre pilote {chapter_code}: {e}")
+            pilot_chapters.append({
+                "code": chapter_code,
+                "exercise_types": []
+            })
+    
+    return {
+        "pilot_chapters": pilot_chapters,
+        "exercise_types": list(exercise_types)
+    }
+
 
 @router.get(
     "/chapters/{chapter_code}/exercises",
