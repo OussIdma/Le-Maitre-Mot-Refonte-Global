@@ -44,6 +44,10 @@ class GeneratorFactory:
         "grade", "niveau", "chapter", "chapitre", "chapter_code", "code_officiel",
         "exercise_type", "type_exercice", "figure_type", "is_dynamic",
         "offer", "difficulte", "difficulty", "nb_exercices",
+        # P0 FIX - Templates stockés dans variables mais non passés au générateur
+        "enoncetemplate", "solutiontemplate",
+        "enonce_template", "solution_template",
+        "enonce_template_html", "solution_template_html",
     }
     
     # P4.1 - Générateurs désactivés (non utilisables)

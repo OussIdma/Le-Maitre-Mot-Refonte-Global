@@ -1,0 +1,4 @@
+services:
+  backend:
+    environment:
+      - DEV_SHOW_MAGIC_LINK=1

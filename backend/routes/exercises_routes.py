@@ -235,94 +235,46 @@ async def generate_exercise_with_fallback(
 ) -> dict:
     """
     Pipeline simplifié P0 : Essaie DYNAMIC, fallback STATIC si échec.
-    
+    P0-C PERF: Single DB query, split dynamic/static in memory.
+
     Returns:
         Exercice généré (dynamique ou statique)
-    
+
     Raises:
         HTTPException si aucun exercice disponible
     """
     from backend.services.tests_dyn_handler import format_dynamic_exercise
-    
-    # 1. Essayer DYNAMIC d'abord
+
+    # P0-C PERF: Single query - fetch ALL exercises once, split in memory
+    requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else None
+
+    logger.info(
+        f"[PERF_FIX] Single query for chapter={chapter_code}, "
+        f"offer={request.offer if hasattr(request, 'offer') else None}, "
+        f"difficulty={requested_difficulty}"
+    )
+
     try:
-        # P4.C - Coercer la difficulté si un générateur dynamique est sélectionné
-        requested_difficulty = request.difficulte if hasattr(request, 'difficulte') and request.difficulte else None
-        
-        # P0 - DIAGNOSTIC COMPLET pour 6E_G07
-        logger.info(
-            f"[DIAG_6E_G07] generate_exercise_with_fallback() appelé avec "
-            f"chapter_code={chapter_code}"
-        )
-        logger.info(
-            f"[DIAG_6E_G07] Filtres: offer={request.offer if hasattr(request, 'offer') else None}, "
-            f"difficulty={requested_difficulty}"
-        )
-        
-        exercises = await exercise_service.get_exercises(
+        all_exercises = await exercise_service.get_exercises(
             chapter_code=chapter_code,
             offer=request.offer if hasattr(request, 'offer') else None,
             difficulty=requested_difficulty
         )
-        
-        # P0 - Logs de diagnostic pour comprendre pourquoi les exercices dynamiques ne sont pas trouvés
-        logger.info(
-            f"[DIAG_6E_G07] ========================================="
-        )
-        logger.info(
-            f"[DIAG_6E_G07] Requête MongoDB: collection='exercises', "
-            f"query={{chapter_code: '{chapter_code.upper().replace('-', '_')}'"
-        )
-        if request.offer if hasattr(request, 'offer') else None:
-            logger.info(
-                f"[DIAG_6E_G07]   + offer: '{request.offer}'"
-            )
-        if requested_difficulty:
-            logger.info(
-                f"[DIAG_6E_G07]   + difficulty: '{requested_difficulty}'"
-            )
-        logger.info(
-            f"[DIAG_6E_G07] }}"
-        )
-        logger.info(
-            f"[DIAG_6E_G07] total_exercises={len(exercises)}"
-        )
-        
-        # Log détaillé de chaque exercice pour diagnostic
-        for idx, ex in enumerate(exercises):
-            logger.info(
-                f"[DIAG_6E_G07] exercise[{idx}]: id={ex.get('id')} "
-                f"is_dynamic={ex.get('is_dynamic')} (type: {type(ex.get('is_dynamic'))}) "
-                f"generator_key={ex.get('generator_key')} "
-                f"offer={ex.get('offer')} "
-                f"difficulty={ex.get('difficulty')} "
-                f"enonce_preview={str(ex.get('enonce_html', ''))[:50]}..."
-            )
-        
-        # P0_FIX : Utiliser helper robuste pour filtrer is_dynamic
-        dynamic_exercises = [ex for ex in exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
-        static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
+    except Exception as e:
+        logger.error(f"[PERF_FIX] DB query failed for {chapter_code}: {e}")
+        all_exercises = []
 
-        # P0_FIX : Log des counts avec détail des types is_dynamic
-        is_dynamic_types = set(type(ex.get("is_dynamic")).__name__ for ex in exercises)
-        logger.info(
-            f"[P0_FIX] Filtrage is_dynamic: dynamic={len(dynamic_exercises)}, "
-            f"static={len(static_exercises)}, is_dynamic_types={is_dynamic_types}"
-        )
-        
-        logger.info(
-            f"[PIPELINE_DEBUG] generate_exercise_with_fallback() - Résultats:"
-        )
-        logger.info(
-            f"[PIPELINE_DEBUG]   total_exercises={len(exercises)}"
-        )
-        logger.info(
-            f"[PIPELINE_DEBUG]   dynamic_count={len(dynamic_exercises)}"
-        )
-        logger.info(
-            f"[PIPELINE_DEBUG]   static_count={len(static_exercises)}"
-        )
-        
+    # P0-C PERF: Split in memory (NO second DB call)
+    dynamic_exercises = [ex for ex in all_exercises if _is_truthy_dynamic(ex.get("is_dynamic"))]
+    static_exercises = [ex for ex in all_exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
+
+    logger.info(
+        f"[PERF_FIX] Single query result: total={len(all_exercises)}, "
+        f"dynamic={len(dynamic_exercises)}, static={len(static_exercises)}"
+    )
+
+    # 1. Essayer DYNAMIC d'abord (using pre-fetched dynamic_exercises from single query)
+    try:
         # P4.D - Filtrer selon enabled_generators si disponible (passé via ctx)
         enabled_generators_raw = ctx.get("enabled_generators", [])
         dynamic_count_before_filter = len(dynamic_exercises)
@@ -477,25 +429,15 @@ async def generate_exercise_with_fallback(
             )
             # Continuer même si le log échoue
     
-    # 2. Fallback STATIC
+    # 2. Fallback STATIC (P0-C PERF: using pre-fetched static_exercises from single query)
     try:
         logger.info(
             f"[FALLBACK_DEBUG] Tentative fallback STATIC pour {chapter_code} "
-            f"(aucun exercice dynamique trouvé ou erreur)"
+            f"(aucun exercice dynamique trouvé ou erreur). "
+            f"P0-C PERF: Using cached static_exercises={len(static_exercises)}"
         )
-        exercises = await exercise_service.get_exercises(
-            chapter_code=chapter_code,
-            offer=request.offer if hasattr(request, 'offer') else None,
-            difficulty=request.difficulte if hasattr(request, 'difficulte') else None
-        )
-        # P0_FIX : Utiliser helper robuste
-        static_exercises = [ex for ex in exercises if not _is_truthy_dynamic(ex.get("is_dynamic"))]
-        
-        logger.info(
-            f"[FALLBACK_DEBUG] static_exercises_count={len(static_exercises)} "
-            f"pour chapter_code={chapter_code}"
-        )
-        
+        # P0-C PERF: NO second DB call - reuse static_exercises from initial query
+
         if len(static_exercises) > 0:
             selected_static = safe_random_choice(static_exercises, ctx, obs_logger)
             

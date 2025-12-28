@@ -478,7 +478,23 @@ const ChapterExercisesAdminPage = () => {
 
   const handleSaveStatic = async () => {
     try {
+      // ✅ VALIDATION: Vérifier que chapterCode existe
+      if (!chapterCode) {
+        toast({
+          title: "Erreur",
+          description: "Erreur: chapterCode manquant. Impossible de sauvegarder l'exercice.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       setSaving(true);
+      
+      // ✅ AJOUT: Inclure chaptercode dans le payload
+      const staticPayload = {
+        ...staticFormData,
+        chaptercode: chapterCode
+      };
       
       if (staticModalMode === 'create') {
         const response = await fetch(
@@ -486,7 +502,7 @@ const ChapterExercisesAdminPage = () => {
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(staticFormData)
+            body: JSON.stringify(staticPayload)
           }
         );
         
@@ -505,7 +521,7 @@ const ChapterExercisesAdminPage = () => {
           {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(staticFormData)
+            body: JSON.stringify(staticPayload)
           }
         );
         
@@ -1162,6 +1178,16 @@ const ChapterExercisesAdminPage = () => {
   const handleSubmit = async () => {
     if (!validateForm()) return;
     
+    // ✅ VALIDATION: Vérifier que chapterCode existe
+    if (!chapterCode) {
+      toast({
+        title: "Erreur",
+        description: "Erreur: chapterCode manquant. Impossible de créer l'exercice.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setSaving(true);
     
     try {
@@ -1170,6 +1196,17 @@ const ChapterExercisesAdminPage = () => {
       // - les champs legacy enonce_template_html/solution_template_html restent un miroir
       //   (compat uniquement, jamais source principale en mode variants)
       const payload = { ...formData };
+      
+      // ✅ AJOUT: Inclure chaptercode dans le payload (obligatoire pour création et mise à jour)
+      if (modalMode === 'create') {
+        // En création, toujours ajouter chaptercode
+        payload.chaptercode = chapterCode;
+      } else {
+        // En mise à jour, ajouter seulement si absent
+        if (!payload.chaptercode) {
+          payload.chaptercode = chapterCode;
+        }
+      }
       
       // S'assurer que variables est toujours un objet (même vide) pour les exercices dynamiques
       if (payload.is_dynamic) {

@@ -38,6 +38,12 @@ from backend.models.mathalea_models import (
     ExerciseItemConfig,
     ProPdfRequest
 )
+from backend.constants.collections import (
+    EXERCISE_TYPES_COLLECTION,
+    COMPETENCES_COLLECTION,
+    EXERCISE_SHEETS_COLLECTION,
+    SHEET_ITEMS_COLLECTION
+)
 
 # Router avec préfixe pour isoler du système existant
 router = APIRouter(prefix="/api/mathalea", tags=["MathALÉA System"])
@@ -52,10 +58,10 @@ db_name = os.environ.get('DB_NAME', 'le_maitre_mot_db')
 db = client[db_name]  # Use unified DB
 
 # Collections dédiées (ne perturbent pas les collections existantes)
-competences_collection = db.competences
-exercise_types_collection = db.exercise_types  # Same collection as catalogue
-exercise_sheets_collection = db.exercise_sheets
-sheet_items_collection = db.sheet_items
+competences_collection = db[COMPETENCES_COLLECTION]
+exercise_types_collection = db[EXERCISE_TYPES_COLLECTION]  # Same collection as catalogue
+exercise_sheets_collection = db[EXERCISE_SHEETS_COLLECTION]
+sheet_items_collection = db[SHEET_ITEMS_COLLECTION]
 
 
 # ============================================================================

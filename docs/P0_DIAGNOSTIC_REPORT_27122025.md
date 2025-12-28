@@ -217,3 +217,4 @@ docker-compose logs backend --tail=200 | grep -iE "verify-login|device_id|Error 
 **Environnement** : Mac, Docker Compose  
 **Backend** : le-maitre-mot-backend (healthy)
 
+

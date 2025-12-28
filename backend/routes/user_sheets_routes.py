@@ -391,10 +391,32 @@ async def remove_exercise_from_sheet(
 async def export_sheet_pdf(
     sheet_uid: str,
     include_solutions: bool = False,
+    include_corrections: Optional[bool] = None,  # P0 Gold - Alias pour compatibilité
     user_email: str = Depends(get_user_email)
 ):
-    """Exporter une fiche en PDF (P3.1)"""
+    """
+    Exporter une fiche en PDF (P3.1 / P0 Gold).
+
+    Args:
+        sheet_uid: UID de la fiche
+        include_solutions: True pour inclure le corrigé, False pour sujet seul
+        include_corrections: Alias de include_solutions pour compatibilité
+
+    VERROU "Sujet ≠ Corrigé":
+    - Si include_solutions=False: le PDF ne contient AUCUN élément de solution
+    - Si include_solutions=True: le PDF contient sujet + corrigé séparés
+    """
+    # P0 Gold - Alias: include_corrections prend la priorité si fourni
+    if include_corrections is not None:
+        include_solutions = include_corrections
+        logger.info(f"[EXPORT_PDF] Using include_corrections alias: {include_corrections}")
+
     sheet = await verify_sheet_ownership(sheet_uid, user_email)
+
+    logger.info(
+        f"[EXPORT_PDF] sheet_uid={sheet_uid}, user={user_email}, "
+        f"include_solutions={include_solutions}"
+    )
     
     # Charger les exercices complets
     exercises = sheet.get("exercises", [])
@@ -550,14 +572,22 @@ async def export_sheet_pdf(
             timeout=30
         )
         
-        logger.info(f"P3.1: PDF généré pour fiche {sheet_uid} - {len(pdf_bytes)} bytes")
-        
+        # P0 Gold - Suffixe pour différencier sujet/corrigé
+        filename_suffix = "_sujet_corrige" if include_solutions else "_sujet"
+        safe_title = sheet["title"].replace('"', "'")  # Éviter les problèmes de quotes
+        filename = f"{safe_title}{filename_suffix}.pdf"
+
+        logger.info(
+            f"[EXPORT_PDF] PDF généré pour fiche {sheet_uid} - {len(pdf_bytes)} bytes, "
+            f"include_solutions={include_solutions}, filename={filename}"
+        )
+
         # Retourner le PDF
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="{sheet["title"]}.pdf"'
+                "Content-Disposition": f'attachment; filename="{filename}"'
             }
         )
         

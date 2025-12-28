@@ -16,6 +16,7 @@ from backend.services.exercise_persistence_service import (
     get_exercise_persistence_service
 )
 from backend.services.curriculum_sync_service import get_curriculum_sync_service
+from backend.services.collection_guard_rails import check_collection_typos
 from curriculum.loader import get_chapter_by_official_code
 from logger import get_logger
 from typing import Literal
@@ -181,7 +182,8 @@ async def create_exercise(
     chapter_code: str,
     request: ExerciseCreateRequest,
     service=Depends(get_exercise_service),
-    sync_service=Depends(get_curriculum_sync_service_dep)
+    sync_service=Depends(get_curriculum_sync_service_dep),
+    db=Depends(get_db)
 ):
     """Crée un nouvel exercice et synchronise automatiquement le chapitre dans le curriculum"""
     logger.info(f"Admin: Création exercice dans {chapter_code}")
@@ -194,15 +196,31 @@ async def create_exercise(
         try:
             sync_result = await sync_service.sync_chapter_to_curriculum(chapter_code)
             if sync_result['created']:
-                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé automatiquement dans le curriculum")
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé dans curriculum")
             elif sync_result['updated']:
-                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans le curriculum")
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans curriculum")
         except Exception as sync_error:
-            # Ne pas faire échouer la création d'exercice si la sync échoue
             logger.warning(
-                f"[AUTO-SYNC] Échec synchronisation curriculum pour {chapter_code}: {sync_error}. "
-                "L'exercice a été créé mais le chapitre n'est pas synchronisé."
+                f"[AUTO-SYNC] Échec sync curriculum pour {chapter_code}: {sync_error}"
             )
+        
+        # 3. ✨ NOUVEAU: Synchroniser automatiquement vers exercise_types
+        # (Uniquement pour les exercices dynamiques)
+        if request.is_dynamic and request.generator_key:
+            try:
+                et_sync_result = await sync_service.sync_chapter_to_exercise_types(chapter_code)
+                logger.info(
+                    f"[AUTO-SYNC] exercise_types synchronisé pour {chapter_code}: "
+                    f"créés={et_sync_result['created']}, mis à jour={et_sync_result['updated']}, "
+                    f"generators={et_sync_result['generator_keys']}"
+                )
+            except Exception as et_sync_error:
+                # Ne pas faire échouer la création si la sync exercise_types échoue
+                logger.warning(
+                    f"[AUTO-SYNC] Échec sync exercise_types pour {chapter_code}: {et_sync_error}. "
+                    "L'exercice a été créé mais exercise_types n'est pas synchronisé. "
+                    "Utilisez l'endpoint /sync-curriculum pour corriger."
+                )
         
         return ExerciseCRUDResponse(
             success=True,
@@ -319,6 +337,18 @@ async def import_exercises(
         await sync_service.sync_chapter_to_curriculum(normalized_code)
     except Exception as sync_error:
         logger.warning(f"[AUTO-SYNC] Échec sync curriculum après import {chapter_code}: {sync_error}")
+    
+    # ✨ NOUVEAU: Sync exercise_types après import batch
+    try:
+        et_sync_result = await sync_service.sync_chapter_to_exercise_types(normalized_code)
+        logger.info(
+            f"[AUTO-SYNC] exercise_types synchronisé après import batch pour {normalized_code}: "
+            f"créés={et_sync_result['created']}, mis à jour={et_sync_result['updated']}"
+        )
+    except Exception as et_sync_error:
+        logger.warning(
+            f"[AUTO-SYNC] Échec sync exercise_types après import pour {normalized_code}: {et_sync_error}"
+        )
 
     if errors and not created:
         raise HTTPException(
@@ -350,27 +380,40 @@ async def update_exercise(
     exercise_id: int,
     request: ExerciseUpdateRequest,
     service=Depends(get_exercise_service),
-    sync_service=Depends(get_curriculum_sync_service_dep)
+    sync_service=Depends(get_curriculum_sync_service_dep),
+    db=Depends(get_db)
 ):
-    """Met à jour un exercice et synchronise automatiquement le chapitre dans le curriculum"""
+    """Met à jour un exercice et synchronise automatiquement curriculum + exercise_types"""
     logger.info(f"Admin: Mise à jour exercice {chapter_code} #{exercise_id}")
     
     try:
-        # Mettre à jour l'exercice
+        # 1. Mettre à jour l'exercice dans admin_exercises
         exercise = await service.update_exercise(chapter_code, exercise_id, request)
+        logger.info(f"✅ Exercice #{exercise_id} mis à jour dans admin_exercises")
         
-        # Synchroniser automatiquement le chapitre dans le curriculum
+        # 2. Synchroniser automatiquement vers curriculum
         try:
             sync_result = await sync_service.sync_chapter_to_curriculum(chapter_code)
             if sync_result['created']:
-                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé automatiquement dans le curriculum")
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} créé dans curriculum")
             elif sync_result['updated']:
-                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans le curriculum")
+                logger.info(f"[AUTO-SYNC] Chapitre {chapter_code} mis à jour dans curriculum")
         except Exception as sync_error:
-            # Ne pas faire échouer la mise à jour d'exercice si la sync échoue
             logger.warning(
-                f"[AUTO-SYNC] Échec synchronisation curriculum pour {chapter_code}: {sync_error}. "
-                "L'exercice a été mis à jour mais le chapitre n'est pas synchronisé."
+                f"[AUTO-SYNC] Échec sync curriculum pour {chapter_code}: {sync_error}"
+            )
+        
+        # 3. ✨ NOUVEAU: Synchroniser automatiquement vers exercise_types
+        # (Pour tous les exercices du chapitre, pas seulement celui mis à jour)
+        try:
+            et_sync_result = await sync_service.sync_chapter_to_exercise_types(chapter_code)
+            logger.info(
+                f"[AUTO-SYNC] exercise_types synchronisé pour {chapter_code}: "
+                f"créés={et_sync_result['created']}, mis à jour={et_sync_result['updated']}"
+            )
+        except Exception as et_sync_error:
+            logger.warning(
+                f"[AUTO-SYNC] Échec sync exercise_types pour {chapter_code}: {et_sync_error}"
             )
         
         return ExerciseCRUDResponse(
@@ -395,22 +438,39 @@ async def update_exercise(
 async def delete_exercise(
     chapter_code: str,
     exercise_id: int,
-    service=Depends(get_exercise_service)
+    service=Depends(get_exercise_service),
+    sync_service=Depends(get_curriculum_sync_service_dep)
 ):
-    """Supprime un exercice"""
+    """Supprime un exercice et synchronise automatiquement exercise_types (cleanup)"""
     logger.info(f"Admin: Suppression exercice {chapter_code} #{exercise_id}")
     
     try:
+        # 1. Supprimer l'exercice de admin_exercises
         deleted = await service.delete_exercise(chapter_code, exercise_id)
         
-        if deleted:
-            return ExerciseCRUDResponse(
-                success=True,
-                message=f"Exercice #{exercise_id} supprimé avec succès",
-                exercise=None
-            )
-        else:
+        if not deleted:
             raise HTTPException(status_code=500, detail="Erreur lors de la suppression")
+        
+        logger.info(f"✅ Exercice #{exercise_id} supprimé de admin_exercises")
+        
+        # 2. ✨ NOUVEAU: Synchroniser exercise_types pour cleanup des orphelins
+        # Si c'était le dernier exercice avec ce generator_key, l'exercise_type sera supprimé
+        try:
+            et_sync_result = await sync_service.sync_chapter_to_exercise_types(chapter_code)
+            logger.info(
+                f"[AUTO-SYNC] exercise_types synchronisé après suppression pour {chapter_code}: "
+                f"supprimés={et_sync_result['deleted']}"
+            )
+        except Exception as et_sync_error:
+            logger.warning(
+                f"[AUTO-SYNC] Échec cleanup exercise_types pour {chapter_code}: {et_sync_error}"
+            )
+        
+        return ExerciseCRUDResponse(
+            success=True,
+            message=f"Exercice #{exercise_id} supprimé avec succès",
+            exercise=None
+        )
     
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -418,6 +478,25 @@ async def delete_exercise(
         raise
     except Exception as e:
         logger.error(f"Erreur suppression exercice: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/collections/guard-rails",
+    summary="Vérifier les guard rails des collections",
+    description="Détecte les typos et incohérences dans les noms de collections MongoDB"
+)
+async def check_collections_guard_rails(db=Depends(get_db)):
+    """Vérifie les guard rails des collections"""
+    try:
+        results = await check_collection_typos(db)
+        return {
+            "warnings": results["warnings"],
+            "errors": results["errors"],
+            "status": "error" if results["errors"] else ("warning" if results["warnings"] else "ok")
+        }
+    except Exception as e:
+        logger.error(f"Erreur guard rails: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

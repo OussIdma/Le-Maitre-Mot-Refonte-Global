@@ -265,7 +265,7 @@ async def update_chapter_generators(chapter_code: str, request: UpdateChapterGen
                 except ValueError as e:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Difficulté invalide '{diff}' pour le générateur '{gen_key}': {e}"
+                        detail=f"Difficulté invalide '{diff}' pour le générateur '{gen_key}': {str(e)}"
                     )
             
             # P4.C - Auto-compléter les presets manquants

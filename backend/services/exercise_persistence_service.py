@@ -28,12 +28,10 @@ from backend.utils.difficulty_utils import (
 from backend.observability import get_request_context
 from backend.observability.logger import get_logger as get_obs_logger
 from fastapi import HTTPException
+from backend.constants.collections import EXERCISES_COLLECTION
 import re
 
 logger = logging.getLogger(__name__)
-
-# Collection MongoDB pour les exercices
-EXERCISES_COLLECTION = "admin_exercises"
 
 # Chemin vers le dossier data
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")

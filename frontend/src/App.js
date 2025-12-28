@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import "./App.css";
 import axios from "axios";
@@ -188,9 +188,16 @@ function LoginVerify() {
   const [verifying, setVerifying] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false); // Prevent multiple calls
+  // P0-A1: useRef guard prevents multiple calls (React StrictMode safe)
+  const didCallRef = useRef(false);
 
   useEffect(() => {
+    // P0-A1: Guard with useRef - prevents duplicate calls in StrictMode
+    if (didCallRef.current) {
+      console.log('[LoginVerify] Already called, skipping (StrictMode guard)');
+      return;
+    }
+
     const token = searchParams.get('token');
     if (!token) {
       setError("Token manquant");
@@ -198,20 +205,12 @@ function LoginVerify() {
       return;
     }
 
-    // Prevent multiple simultaneous calls
-    if (!isVerifying) {
-      verifyLogin(token);
-    }
-  }, [searchParams, isVerifying]);
+    // Mark as called BEFORE async call to prevent race conditions
+    didCallRef.current = true;
+    verifyLogin(token);
+  }, [searchParams]); // P0-A1: Removed isVerifying from deps
 
   const verifyLogin = async (token) => {
-    // Prevent multiple simultaneous calls
-    if (isVerifying) {
-      console.log('Login verification already in progress, skipping duplicate call');
-      return;
-    }
-    
-    setIsVerifying(true);
     
     try {
       // Generate device ID
@@ -247,7 +246,6 @@ function LoginVerify() {
       setError(error.response?.data?.detail || 'Erreur lors de la vérification');
     } finally {
       setVerifying(false);
-      setIsVerifying(false);
     }
   };
 
