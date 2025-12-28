@@ -517,6 +517,22 @@ def _register_all_generators():
     except ImportError:
         pass
 
+    # P1-PHASE2 Batch 2: Generateurs Fractions
+    try:
+        from backend.generators.fraction_representation_v1 import FractionRepresentationV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.fractions_egales_v1 import FractionsEgalesV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.fraction_comparaison_v1 import FractionComparaisonV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
 
 # Auto-register au chargement du module
 _register_all_generators()

@@ -666,7 +666,8 @@
       "chapitre_backend": "Fractions",
       "exercise_types": [
         "CALCUL_FRACTIONS",
-        "FRACTION_REPRESENTATION"
+        "FRACTION_REPRESENTATION",
+        "FRACTION_REPRESENTATION_V1"
       ],
       "schema_requis": true,
       "difficulte_min": 1,
@@ -688,7 +689,9 @@
       "exercise_types": [
         "CALCUL_FRACTIONS",
         "FRACTIONS_EGALES",
-        "FRACTION_COMPARAISON"
+        "FRACTION_COMPARAISON",
+        "FRACTIONS_EGALES_V1",
+        "FRACTION_COMPARAISON_V1"
       ],
       "schema_requis": false,
       "difficulte_min": 1,
