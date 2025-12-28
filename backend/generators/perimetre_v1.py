@@ -37,7 +37,7 @@ class PerimetreV1Generator(BaseGenerator):
             version="1.0.0",
             niveaux=["6e"],
             exercise_type="PERIMETRE",
-            svg_mode="NONE",
+            svg_mode="AUTO",
             supports_double_svg=False,
             is_dynamic=True,
             supported_grades=["6e"],
@@ -129,11 +129,15 @@ class PerimetreV1Generator(BaseGenerator):
         variables["figure"] = figure
         variables["difficulty"] = difficulty
 
+        # Générer les SVG pour la figure
+        figure_svg_enonce = self._generate_svg_enonce(figure, variables)
+        figure_svg_solution = self._generate_svg_solution(figure, variables)
+
         return {
             "variables": variables,
             "geo_data": None,
-            "figure_svg_enonce": None,
-            "figure_svg_solution": None,
+            "figure_svg_enonce": figure_svg_enonce,
+            "figure_svg_solution": figure_svg_solution,
             "meta": {"generator_key": "PERIMETRE_V1"},
         }
 
@@ -228,3 +232,65 @@ class PerimetreV1Generator(BaseGenerator):
             "reponse_finale": f"{perimetre} {unite}",
             "consigne": "Additionne les trois cotes du triangle.",
         }
+
+    def _generate_svg_enonce(self, figure: str, variables: Dict[str, Any]) -> str:
+        """Genere le SVG de la figure pour l'enonce."""
+        scale = 30  # Pixels par unite
+        padding = 20
+        unite = variables.get("unite", "cm")
+
+        if figure == "carre":
+            cote = variables.get("cote", 5)
+            width = cote * scale + 2 * padding
+            height = cote * scale + 2 * padding + 30
+
+            return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+  <rect x="{padding}" y="{padding}" width="{cote * scale}" height="{cote * scale}" 
+        fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
+  <text x="{padding + cote * scale / 2}" y="{padding + cote * scale + 20}" 
+        text-anchor="middle" font-size="14" fill="#1976d2">{cote} {unite}</text>
+</svg>'''
+
+        elif figure == "rectangle":
+            longueur = variables.get("longueur", 10)
+            largeur = variables.get("largeur", 5)
+            width = longueur * scale + 2 * padding
+            height = largeur * scale + 2 * padding + 30
+
+            return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+  <rect x="{padding}" y="{padding}" width="{longueur * scale}" height="{largeur * scale}" 
+        fill="#e8f5e9" stroke="#388e3c" stroke-width="2"/>
+  <text x="{padding + longueur * scale / 2}" y="{padding + largeur * scale + 20}" 
+        text-anchor="middle" font-size="14" fill="#388e3c">{longueur} {unite}</text>
+  <text x="{padding - 5}" y="{padding + largeur * scale / 2}" 
+        text-anchor="end" font-size="14" fill="#388e3c">{largeur} {unite}</text>
+</svg>'''
+
+        else:  # triangle
+            a = variables.get("cote_a", 5)
+            b = variables.get("cote_b", 5)
+            c = variables.get("cote_c", 5)
+            # Utiliser le plus grand côté comme base pour l'affichage
+            base = max(a, b, c)
+            # Hauteur approximative pour un triangle équilatéral
+            hauteur = base * 0.866  # sqrt(3)/2
+            width = base * scale + 2 * padding
+            height = hauteur * scale + 2 * padding + 50
+
+            # Triangle rectangle pour simplifier l'affichage
+            points = f"{padding},{padding + hauteur * scale} {padding + base * scale},{padding + hauteur * scale} {padding},{padding}"
+
+            return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+  <polygon points="{points}" fill="#fff3e0" stroke="#f57c00" stroke-width="2"/>
+  <text x="{padding + base * scale / 2}" y="{padding + hauteur * scale + 20}" 
+        text-anchor="middle" font-size="12" fill="#f57c00">{a} {unite}</text>
+  <text x="{padding - 5}" y="{padding + hauteur * scale / 2}" 
+        text-anchor="end" font-size="12" fill="#f57c00">{b} {unite}</text>
+  <text x="{padding + base * scale / 2}" y="{padding - 5}" 
+        text-anchor="middle" font-size="12" fill="#f57c00">{c} {unite}</text>
+</svg>'''
+
+    def _generate_svg_solution(self, figure: str, variables: Dict[str, Any]) -> str:
+        """Genere le SVG de la figure pour la solution (identique a l'enonce pour le perimetre)."""
+        # Pour le perimetre, la solution montre la meme figure avec le resultat
+        return self._generate_svg_enonce(figure, variables)

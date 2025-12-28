@@ -36,7 +36,7 @@ class DroiteGradueeV1Generator(BaseGenerator):
             version="1.0.0",
             niveaux=["6e"],
             exercise_type="DROITE_GRADUEE",
-            svg_mode="NONE",
+            svg_mode="AUTO",
             supports_double_svg=False,
             is_dynamic=True,
             supported_grades=["6e"],
@@ -111,11 +111,15 @@ class DroiteGradueeV1Generator(BaseGenerator):
         variables["number_type"] = number_type
         variables["difficulty"] = difficulty
 
+        # Générer les SVG pour la droite graduée
+        figure_svg_enonce = self._generate_svg_enonce(exercise_type, variables)
+        figure_svg_solution = self._generate_svg_solution(exercise_type, variables)
+
         return {
             "variables": variables,
             "geo_data": None,
-            "figure_svg_enonce": None,
-            "figure_svg_solution": None,
+            "figure_svg_enonce": figure_svg_enonce,
+            "figure_svg_solution": figure_svg_solution,
             "meta": {"generator_key": "DROITE_GRADUEE_V1"},
         }
 
@@ -203,3 +207,84 @@ class DroiteGradueeV1Generator(BaseGenerator):
             "reponse_finale": f"{borne_inf} < {nombre} < {borne_sup}",
             "consigne": "Trouve les deux entiers consecutifs qui encadrent ce nombre.",
         }
+
+    def _generate_svg_enonce(self, exercise_type: str, variables: Dict[str, Any]) -> str:
+        """Genere le SVG de la droite graduee pour l'enonce."""
+        if exercise_type == "encadrer":
+            # Pour encadrer, on affiche une droite simple avec les bornes
+            nombre = variables.get("nombre", 0)
+            borne_inf = variables.get("borne_inf", 0)
+            borne_sup = variables.get("borne_sup", 1)
+            
+            width = 600
+            height = 150
+            padding = 50
+            scale = (width - 2 * padding) / (borne_sup - borne_inf + 1)
+            
+            # Position du nombre
+            x_nombre = padding + (nombre - borne_inf) * scale
+            
+            svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+  <!-- Droite -->
+  <line x1="{padding}" y1="{height // 2}" x2="{width - padding}" y2="{height // 2}" 
+        stroke="#333" stroke-width="3"/>
+  
+  <!-- Graduations et labels -->
+  <line x1="{padding}" y1="{height // 2 - 10}" x2="{padding}" y2="{height // 2 + 10}" 
+        stroke="#333" stroke-width="2"/>
+  <text x="{padding}" y="{height // 2 + 35}" text-anchor="middle" font-size="14" fill="#333">{borne_inf}</text>
+  
+  <line x1="{width - padding}" y1="{height // 2 - 10}" x2="{width - padding}" y2="{height // 2 + 10}" 
+        stroke="#333" stroke-width="2"/>
+  <text x="{width - padding}" y="{height // 2 + 35}" text-anchor="middle" font-size="14" fill="#333">{borne_sup}</text>
+  
+  <!-- Point pour le nombre -->
+  <circle cx="{x_nombre}" cy="{height // 2}" r="6" fill="#f57c00"/>
+  <text x="{x_nombre}" y="{height // 2 - 20}" text-anchor="middle" font-size="12" fill="#f57c00" font-weight="bold">{nombre}</text>
+</svg>'''
+            return svg
+        
+        # Pour lire et placer
+        graduations = variables.get("graduations", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        origin = variables.get("origin", 0)
+        step = variables.get("step", 1)
+        position = variables.get("position", 0)
+        nombre = variables.get("nombre", 0)
+        
+        if not graduations:
+            return ""
+        
+        width = 600
+        height = 150
+        padding = 50
+        min_val = min(graduations)
+        max_val = max(graduations)
+        scale = (width - 2 * padding) / (max_val - min_val) if max_val > min_val else 1
+        
+        svg_parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">']
+        svg_parts.append(f'  <!-- Droite -->')
+        svg_parts.append(f'  <line x1="{padding}" y1="{height // 2}" x2="{width - padding}" y2="{height // 2}" stroke="#333" stroke-width="3"/>')
+        
+        # Graduations
+        for grad in graduations:
+            x = padding + (grad - min_val) * scale
+            svg_parts.append(f'  <line x1="{x}" y1="{height // 2 - 10}" x2="{x}" y2="{height // 2 + 10}" stroke="#333" stroke-width="2"/>')
+            svg_parts.append(f'  <text x="{x}" y="{height // 2 + 35}" text-anchor="middle" font-size="14" fill="#333">{grad}</text>')
+        
+        # Point A pour lire ou position pour placer
+        if exercise_type == "lire":
+            x_point = padding + (nombre - min_val) * scale
+            svg_parts.append(f'  <circle cx="{x_point}" cy="{height // 2}" r="6" fill="#f57c00"/>')
+            svg_parts.append(f'  <text x="{x_point}" y="{height // 2 - 20}" text-anchor="middle" font-size="12" fill="#f57c00" font-weight="bold">A</text>')
+        elif exercise_type == "placer":
+            x_point = padding + (nombre - min_val) * scale
+            svg_parts.append(f'  <circle cx="{x_point}" cy="{height // 2}" r="6" fill="#4caf50"/>')
+            svg_parts.append(f'  <text x="{x_point}" y="{height // 2 - 20}" text-anchor="middle" font-size="12" fill="#4caf50" font-weight="bold">{nombre}</text>')
+        
+        svg_parts.append('</svg>')
+        return '\n'.join(svg_parts)
+
+    def _generate_svg_solution(self, exercise_type: str, variables: Dict[str, Any]) -> str:
+        """Genere le SVG de la droite graduee pour la solution."""
+        # Pour la solution, on affiche la même chose mais avec la réponse visible
+        return self._generate_svg_enonce(exercise_type, variables)
