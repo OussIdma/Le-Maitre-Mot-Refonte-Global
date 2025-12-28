@@ -491,6 +491,32 @@ def _register_all_generators():
     except ImportError:
         pass
 
+    # P1-PHASE2 Batch 1: Nouveaux générateurs Gold
+    try:
+        from backend.generators.nombres_entiers_v1 import NombresEntiersV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.droite_graduee_v1 import DroiteGradueeV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.criteres_divisibilite_v1 import CriteresDivisibiliteV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.multiples_diviseurs_v1 import MultiplesDiviseursV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
+    try:
+        from backend.generators.perimetre_v1 import PerimetreV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
 
 # Auto-register au chargement du module
 _register_all_generators()

@@ -330,7 +330,8 @@
       "exercise_types": [
         "PERIMETRE_AIRE",
         "RECTANGLE",
-        "CERCLE"
+        "CERCLE",
+        "PERIMETRE_V1"
       ],
       "schema_requis": true,
       "difficulte_min": 1,
@@ -478,7 +479,8 @@
         "CONVERSION_LONGUEURS",
         "COMPARAISON_LONGUEURS",
         "PERIMETRE",
-        "PROBLEME_LONGUEURS"
+        "PROBLEME_LONGUEURS",
+        "PERIMETRE_V1"
       ],
       "premium_generators": [],
       "schema_requis": false,
@@ -507,7 +509,8 @@
       "chapitre_backend": "Nombres entiers et décimaux",
       "exercise_types": [
         "NOMBRES_LECTURE",
-        "CALCUL_DECIMAUX"
+        "CALCUL_DECIMAUX",
+        "NOMBRES_ENTIERS_V1"
       ],
       "schema_requis": false,
       "difficulte_min": 1,
@@ -528,7 +531,8 @@
       "chapitre_backend": "Nombres entiers et décimaux",
       "exercise_types": [
         "NOMBRES_COMPARAISON",
-        "CALCUL_DECIMAUX"
+        "CALCUL_DECIMAUX",
+        "NOMBRES_ENTIERS_V1"
       ],
       "schema_requis": false,
       "difficulte_min": 1,
@@ -549,7 +553,8 @@
       "chapitre_backend": "Nombres entiers et décimaux",
       "exercise_types": [
         "DROITE_GRADUEE_ENTIERS",
-        "DROITE_GRADUEE_DECIMAUX"
+        "DROITE_GRADUEE_DECIMAUX",
+        "DROITE_GRADUEE_V1"
       ],
       "schema_requis": true,
       "difficulte_min": 1,
@@ -638,7 +643,9 @@
       "chapitre_backend": "Calcul mental",
       "exercise_types": [
         "CRITERES_DIVISIBILITE",
-        "MULTIPLES"
+        "MULTIPLES",
+        "CRITERES_DIVISIBILITE_V1",
+        "MULTIPLES_DIVISEURS_V1"
       ],
       "schema_requis": false,
       "difficulte_min": 1,
