@@ -1,0 +1,137 @@
+# P0 Gold - Workflow CI pour valider les générateurs
+# ==================================================
+#
+# Ce workflow exécute trois types de tests:
+# 1. Standard (bloquant): no-crash 100 seeds pour TOUS les générateurs
+# 2. Gold (bloquant): tests stricts pour générateurs certifiés Gold
+# 3. Invariants (bloquant): tests d'invariants métier stables
+
+name: Validate Generators
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/generators/**'
+      - 'backend/tests/test_generators_*.py'
+      - 'backend/tests/invariants/**'
+      - '.github/workflows/validate_generators.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/generators/**'
+      - 'backend/tests/test_generators_*.py'
+      - 'backend/tests/invariants/**'
+
+jobs:
+  # ==========================================================================
+  # JOB 1: No-Crash Standard (TOUS les générateurs)
+  # ==========================================================================
+  standard-no-crash:
+    name: Standard - No Crash 100 Seeds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Run no-crash tests (all generators)
+        run: |
+          python -m pytest backend/tests/test_generators_no_crash.py -v --timeout=300
+        env:
+          PYTHONPATH: .
+
+  # ==========================================================================
+  # JOB 2: Gold Performance (générateurs certifiés uniquement)
+  # ==========================================================================
+  gold-performance:
+    name: Gold - Performance & Invariants
+    runs-on: ubuntu-latest
+    needs: standard-no-crash  # Exécuter après le test standard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Run Gold performance tests
+        run: |
+          python -m pytest backend/tests/test_generators_gold.py -v --timeout=120
+        env:
+          PYTHONPATH: .
+          # Liste des générateurs Gold (séparés par virgule)
+          GOLD_GENERATORS: "CALCUL_NOMBRES_V1,SIMPLIFICATION_FRACTIONS_V2"
+
+  # ==========================================================================
+  # JOB 3: Invariants (tests d'invariants métier stables)
+  # ==========================================================================
+  invariants:
+    name: Gold - Invariants Tests
+    runs-on: ubuntu-latest
+    needs: standard-no-crash  # Exécuter après le test standard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Run invariants tests
+        run: |
+          python -m pytest backend/tests/invariants/ -v --timeout=120
+        env:
+          PYTHONPATH: .
+
+  # ==========================================================================
+  # JOB 4: Validation Schema (vérifier cohérence schema/params)
+  # ==========================================================================
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run schema validation tests
+        run: |
+          python -m pytest backend/tests/test_generators_schema.py -v
+        env:
+          PYTHONPATH: .
