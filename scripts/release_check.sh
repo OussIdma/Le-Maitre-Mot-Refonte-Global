@@ -83,6 +83,22 @@ if ! run_test "Smoke API P0" "pytest backend/tests/test_smoke_api_p0.py -v"; the
     EXIT_CODE=1
 fi
 
+# 4.5. Tests contrôle d'accès export PDF (PR7.1 + PR8)
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "4️⃣.5  Tests contrôle d'accès export PDF (PR7.1 + PR8)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if ! run_test "Export Access Control" "pytest backend/tests/test_export_access_control.py -v"; then
+    EXIT_CODE=1
+fi
+
+# 4.6. Tests package import/export (PR10)
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "4️⃣.6  Tests package import/export (PR10)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if ! run_test "Package Import/Export (PR10)" "pytest backend/tests/test_package_import_export.py -v"; then
+    EXIT_CODE=1
+fi
+
 # 5. Tests frontend - Auth et NavBar (P0 non-régression)
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "5️⃣  Tests frontend - Auth & NavBar (P0)"
@@ -103,6 +119,11 @@ if [ -d "frontend" ]; then
     # --runInBand pour éviter les problèmes de concurrence
     # --testPathPattern pour ne tester que les fichiers spécifiques
     if ! run_test "Frontend Auth Tests" "npm test -- --runInBand --testPathPattern='NavBar.test|useAuth.test' --watchAll=false --passWithNoTests 2>&1"; then
+        EXIT_CODE=1
+    fi
+    
+    # PR9: Tests Builder Flow (P0 non-régression UX)
+    if ! run_test "Frontend Builder Flow Tests (PR9)" "npm test -- --runInBand --testPathPattern='BuilderFlow.test' --watchAll=false --passWithNoTests 2>&1"; then
         EXIT_CODE=1
     fi
     cd ..

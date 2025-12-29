@@ -208,3 +208,5 @@ async def delete_exercise_type_sync(
         f"code_ref={generator_key}. ExerciseType conservé pour compatibilité."
     )
 
+
+

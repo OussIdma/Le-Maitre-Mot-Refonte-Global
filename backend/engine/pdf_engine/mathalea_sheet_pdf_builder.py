@@ -285,11 +285,14 @@ def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_stu
     # PR6.3: Structure HTML selon layout
     # NOTE: eco-columns est créé au niveau parent (_build_html_student)
     # Ici on gère juste les blocs fullwidth qui doivent sortir
+    # P0: Wrapper pour garder header + début énoncé ensemble (éviter titres orphelins)
     html = f"""
     <div class="exercise">
-        <div class="exercise-header">
-            <h2><span class="exercise-number">{ex_number}</span>{titre}</h2>
-            {f'<p class="exercise-domain">{domaine}</p>' if domaine else ''}
+        <div class="exercise-header-wrapper">
+            <div class="exercise-header">
+                <h2><span class="exercise-number">{ex_number}</span>{titre}</h2>
+                {f'<p class="exercise-domain">{domaine}</p>' if domaine else ''}
+            </div>
         </div>
         
         <div class="questions">
@@ -314,7 +317,8 @@ def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_stu
                 for block in q_fullwidth_blocks:
                     html += f'<div class="fullwidth-block">{block}</div>'
                 html += '<div class="eco-columns">'  # Rouvrir eco-columns
-                html += f'<div class="exercise"><div class="exercise-header"><h2><span class="exercise-number">{ex_number}</span>{titre}</h2></div><div class="questions">'  # Rouvrir exercise + questions (sans domaine car déjà affiché)
+                # P0: Rouvrir avec wrapper pour garder header + début énoncé ensemble
+                html += f'<div class="exercise"><div class="exercise-header-wrapper"><div class="exercise-header"><h2><span class="exercise-number">{ex_number}</span>{titre}</h2></div></div><div class="questions">'  # Rouvrir exercise + questions (sans domaine car déjà affiché)
     
     else:
         # Layout classic ou pas de fullwidth: rendu normal
@@ -654,18 +658,31 @@ def _get_base_css() -> str:
         }
         
         /* --- Exercice "manuel scolaire" --- */
-        /* PR6.2: Supprimer page-break-inside: avoid pour éviter "1 exo = 1 page" */
+        /* P0: Amélioration mise en page - éviter titres orphelins et coupures moches */
         .exercise {
-            margin-bottom: 15px;  /* PR6.2: Réduire marge (était 30px) */
-            page-break-inside: auto;  /* PR6.2: auto au lieu de avoid */
+            margin-bottom: 15px;
+            page-break-inside: auto;  /* Permettre la coupure de l'exercice si trop long */
             break-inside: auto;
+            orphans: 3;  /* Minimum 3 lignes en bas de page */
+            widows: 3;   /* Minimum 3 lignes en haut de page */
         }
         
+        /* P0: Empêcher le header d'être seul en bas de page */
         .exercise-header {
             background-color: #f5f5f5;
             padding: 10px;
             border-left: 4px solid #3498db;
             margin-bottom: 15px;
+            page-break-after: avoid;  /* Ne pas couper après le header */
+            break-after: avoid;
+            orphans: 2;  /* Minimum 2 lignes avec le header */
+            widows: 2;
+        }
+        
+        /* P0: Wrapper pour garder header + début énoncé ensemble */
+        .exercise-header-wrapper {
+            page-break-inside: avoid;  /* Éviter de couper entre header et début énoncé */
+            break-inside: avoid;
         }
         
         .exercise-number {
@@ -704,23 +721,31 @@ def _get_base_css() -> str:
         }
         
         .question {
-            margin-bottom: 12px;  /* PR6.2: Réduire marge (était 20px) */
-            page-break-inside: auto;  /* PR6.2: auto au lieu de avoid */
+            margin-bottom: 12px;
+            page-break-inside: auto;  /* Permettre la coupure si question très longue */
             break-inside: auto;
+            orphans: 2;  /* Minimum 2 lignes en bas de page */
+            widows: 2;   /* Minimum 2 lignes en haut de page */
         }
         
+        /* P0: Empêcher le header de question d'être seul */
         .question-header {
             color: #2c3e50;
             margin-bottom: 5px;
+            page-break-after: avoid;  /* Ne pas couper après "Question X:" */
+            break-after: avoid;
         }
         
         .instruction {
             font-weight: 700;
         }
         
+        /* P0: Garder au moins 2 lignes d'énoncé avec le header */
         .question-enonce {
             margin-left: 20px;
             line-height: 1.6;
+            orphans: 2;  /* Minimum 2 lignes en bas de page */
+            widows: 2;   /* Minimum 2 lignes en haut de page */
         }
         
         .answer-space {
@@ -766,15 +791,17 @@ def _get_base_css() -> str:
         }
         
         /* --- Figures et tableaux (anti-débordement) --- */
-        /* PR6.2: Garder avoid uniquement pour les figures/tableaux (pas pour les exercices) */
+        /* P0: Garder les figures avec l'exercice si possible */
         .figure,
         .table-wrapper,
         .exercise-figure,
         .fullwidth {
             break-inside: avoid;
             page-break-inside: avoid;
+            page-break-before: avoid;  /* P0: Éviter que la figure parte seule */
+            break-before: avoid;
             max-width: 100%;
-            margin: 10px 0;  /* PR6.2: Réduire marge (était 14px) */
+            margin: 8px 0;  /* P0: Réduire marge pour garder la figure proche */
             text-align: center;
         }
         
@@ -968,19 +995,33 @@ def _get_eco_css() -> str:
         }
         
         /* --- Exercice "manuel scolaire" --- */
+        /* P0: Amélioration mise en page - éviter titres orphelins et coupures moches */
         .exercise {
             margin-bottom: 10px;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: auto;  /* P0: Permettre la coupure si exercice très long */
+            break-inside: auto;
             display: inline-block;
             width: 100%;
+            orphans: 3;  /* Minimum 3 lignes en bas de page */
+            widows: 3;   /* Minimum 3 lignes en haut de page */
         }
         
+        /* P0: Empêcher le header d'être seul en bas de page */
         .exercise-header {
             background-color: #f5f5f5;
             padding: 8px;
             border-left: 3px solid #3498db;
             margin-bottom: 12px;
+            page-break-after: avoid;  /* Ne pas couper après le header */
+            break-after: avoid;
+            orphans: 2;  /* Minimum 2 lignes avec le header */
+            widows: 2;
+        }
+        
+        /* P0: Wrapper pour garder header + début énoncé ensemble */
+        .exercise-header-wrapper {
+            page-break-inside: avoid;  /* Éviter de couper entre header et début énoncé */
+            break-inside: avoid;
         }
         
         .exercise-number {
@@ -1021,24 +1062,32 @@ def _get_eco_css() -> str:
         
         .question {
             margin-bottom: 15px;
-            page-break-inside: avoid;
-            break-inside: avoid;
+            page-break-inside: auto;  /* P0: Permettre la coupure si question très longue */
+            break-inside: auto;
+            orphans: 2;  /* Minimum 2 lignes en bas de page */
+            widows: 2;   /* Minimum 2 lignes en haut de page */
         }
         
+        /* P0: Empêcher le header de question d'être seul */
         .question-header {
             color: #2c3e50;
             margin-bottom: 4px;
             font-size: 10pt;
+            page-break-after: avoid;  /* Ne pas couper après "Question X:" */
+            break-after: avoid;
         }
         
         .instruction {
             font-weight: 700;
         }
         
+        /* P0: Garder au moins 2 lignes d'énoncé avec le header */
         .question-enonce {
             margin-left: 15px;
             line-height: 1.5;
             font-size: 10pt;
+            orphans: 2;  /* Minimum 2 lignes en bas de page */
+            widows: 2;   /* Minimum 2 lignes en haut de page */
         }
         
         .answer-space {
@@ -1051,13 +1100,16 @@ def _get_eco_css() -> str:
         }
         
         /* --- Figures et tableaux (anti-débordement) --- */
+        /* P0: Garder les figures avec l'exercice si possible */
         .figure,
         .table-wrapper,
         .exercise-figure {
             break-inside: avoid;
             page-break-inside: avoid;
+            page-break-before: avoid;  /* P0: Éviter que la figure parte seule */
+            break-before: avoid;
             max-width: 100%;
-            margin: 10px 0;
+            margin: 8px 0;  /* P0: Réduire marge pour garder la figure proche */
             text-align: center;
         }
         

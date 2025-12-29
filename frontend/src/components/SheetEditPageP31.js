@@ -30,6 +30,8 @@ import {
   X
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
+import { useExportPdfGate } from "../lib/exportPdfUtils";
+import { useAuth } from "../hooks/useAuth";
 import {
   Dialog,
   DialogContent,
@@ -299,7 +301,18 @@ function SheetEditPageP31() {
     }
   };
 
+  // PR7.1: Utiliser le hook de gating pour les exports PDF
+  const { canExport, checkBeforeExport, handleExportError, isPro: isProFromGate } = useExportPdfGate();
+  const { isPro: isProFromAuth } = useAuth();
+  const isPro = isProFromGate || isProFromAuth;
+
   const handleExportPDF = async (includeSolutions = false) => {
+    // PR7.1: Vérifier si l'utilisateur peut exporter (compte requis)
+    if (!checkBeforeExport(() => handleExportPDF(includeSolutions))) {
+      // Modal "Créer un compte" ouverte, ne pas appeler l'API
+      return;
+    }
+
     try {
       const token = localStorage.getItem('lemaitremot_session_token');
       
@@ -333,6 +346,24 @@ function SheetEditPageP31() {
       });
     } catch (error) {
       console.error('Erreur export PDF:', error);
+      
+      // PR7.1 + PR8: Gérer les erreurs d'authentification et premium
+      // Note: SheetEditPageP31 n'a pas de modal premium, donc on passe null
+      if (handleExportError(error, null, { type: 'export_pdf' })) {
+        // Erreur gérée (modal ouverte), ne pas afficher d'autre message
+        return;
+      }
+      
+      // PR8: Gérer erreur 403 PREMIUM_REQUIRED_ECO (rediriger vers pricing)
+      if (error.response?.status === 403) {
+        const errorDetail = error.response?.data?.detail;
+        const errorCode = typeof errorDetail === 'object' ? errorDetail.code || errorDetail.error : null;
+        if (errorCode === 'PREMIUM_REQUIRED_ECO' || errorDetail?.error === 'premium_required') {
+          window.location.href = '/pricing?upgrade=eco';
+          return;
+        }
+      }
+      
       toast({
         title: "Erreur",
         description: "Impossible de générer le PDF",
@@ -382,15 +413,39 @@ function SheetEditPageP31() {
             />
           </div>
           <div className="flex items-center gap-4">
-            {/* Toggle Layout PDF - PR6 */}
-            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
-              <Label htmlFor="pdf-layout-toggle-edit" className="text-sm font-medium cursor-pointer">
-                Éco (2 colonnes)
-              </Label>
+            {/* Toggle Layout PDF - PR8: Éco = Premium uniquement */}
+            <div 
+              className={`flex items-center gap-2 p-2 rounded-md ${
+                !isPro ? 'bg-gray-100 opacity-60' : 'bg-gray-50'
+              }`}
+              onClick={() => {
+                if (!isPro) {
+                  window.location.href = '/pricing?upgrade=eco';
+                }
+              }}
+              style={{ cursor: !isPro ? 'pointer' : 'default' }}
+            >
+              <div className="flex items-center gap-2">
+                <Label htmlFor="pdf-layout-toggle-edit" className="text-sm font-medium cursor-pointer">
+                  Éco (2 colonnes)
+                </Label>
+                {!isPro && (
+                  <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                    Premium
+                  </Badge>
+                )}
+              </div>
               <Switch
                 id="pdf-layout-toggle-edit"
                 checked={pdfLayout === "eco"}
-                onCheckedChange={(checked) => setPdfLayout(checked ? "eco" : "classic")}
+                disabled={!isPro}
+                onCheckedChange={(checked) => {
+                  if (isPro) {
+                    setPdfLayout(checked ? "eco" : "classic");
+                  } else {
+                    window.location.href = '/pricing?upgrade=eco';
+                  }
+                }}
               />
             </div>
             

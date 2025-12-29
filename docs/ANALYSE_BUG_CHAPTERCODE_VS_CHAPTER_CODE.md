@@ -291,3 +291,5 @@ db.admin_exercises.aggregate([
 
 **Action immédiate** : Exécuter les requêtes de diagnostic MongoDB pour identifier le format réel des données.
 
+
+

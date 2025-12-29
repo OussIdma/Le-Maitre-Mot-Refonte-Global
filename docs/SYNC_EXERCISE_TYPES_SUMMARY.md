@@ -105,3 +105,5 @@ curl -s "http://localhost:8000/api/admin/collections/guard-rails" | jq
 - **Avant**: `NO_EXERCISE_AVAILABLE` même avec exercices en DB
 - **Après**: Auto-sync automatique, exercices visibles via MathALÉA
 
+
+

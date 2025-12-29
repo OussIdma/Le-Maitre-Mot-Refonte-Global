@@ -5320,13 +5320,15 @@ async def export_pdf(request: ExportRequest, http_request: Request):
     )
     
     try:
-        # Check authentication - ONLY session token method (no legacy email fallback)
+        # PR7.1: Check authentication - ONLY session token method (no legacy email fallback)
+        from backend.services.access_control import assert_can_export_pdf
+        
         session_token = http_request.headers.get("X-Session-Token")
         is_pro_user = False
         user_email = None
         template_config = {}
         
-        # Authenticate using session token only
+        # PR7.1: Récupérer user_email si token présent
         if session_token:
             logger.info(f"Session token provided: {session_token[:20]}...")
             email = await validate_session_token(session_token)
@@ -5377,20 +5379,8 @@ async def export_pdf(request: ExportRequest, http_request: Request):
         else:
             logger.info("No session token provided - treating as guest user")
         
-        # Pro users have unlimited exports
-        if not is_pro_user:
-            # Check guest quota
-            if not request.guest_id:
-                raise HTTPException(status_code=400, detail="Guest ID required for non-Pro users")
-                
-            quota_status = await check_guest_quota(request.guest_id)
-            
-            if quota_status["quota_exceeded"]:
-                raise HTTPException(status_code=402, detail={
-                    "error": "quota_exceeded", 
-                    "message": "Limite de 3 exports gratuits atteinte. Passez à l'abonnement Pro pour continuer.",
-                    "action": "upgrade_required"
-                })
+        # PR7.1: Valider qu'un compte est requis pour exporter (AVANT toute génération)
+        assert_can_export_pdf(user_email)
         
         # Find the document
         doc = await db.documents.find_one({"id": request.document_id})
@@ -5720,16 +5710,20 @@ async def export_pdf(request: ExportRequest, http_request: Request):
 async def export_pdf_advanced(request: EnhancedExportRequest, http_request: Request):
     """Export document as PDF with advanced layout options (Pro only)"""
     try:
-        # Check authentication - Pro only feature
+        # PR7.1: Check authentication using centralized access control
+        from backend.services.access_control import assert_can_export_pdf
+        
         session_token = http_request.headers.get("X-Session-Token")
-        if not session_token:
-            raise HTTPException(status_code=401, detail="Session token requis pour les options avancées")
+        user_email = None
         
-        email = await validate_session_token(session_token)
-        if not email:
-            raise HTTPException(status_code=401, detail="Session token invalide")
+        if session_token:
+            user_email = await validate_session_token(session_token)
         
-        is_pro, user = await check_user_pro_status(email)
+        # PR7.1: Valider qu'un compte est requis (retourne 401 avec code AUTH_REQUIRED_EXPORT)
+        assert_can_export_pdf(user_email)
+        
+        # Vérifier que l'utilisateur est Pro
+        is_pro, user = await check_user_pro_status(user_email)
         if not is_pro:
             raise HTTPException(status_code=403, detail="Fonctionnalité Pro uniquement")
         
@@ -6659,23 +6653,24 @@ async def export_selection_pdf(
     logger = get_logger()
     
     try:
-        # P0: Validate session token
-        session_token = request.headers.get("X-Session-Token")
-        if not session_token:
-            raise HTTPException(
-                status_code=401,
-                detail="Authentification requise. Veuillez vous connecter."
-            )
+        # PR7.1: Validate session token and check export permission
+        from backend.services.access_control import assert_can_export_pdf
         
-        user_email = await validate_session_token(session_token)
-        if not user_email:
-            raise HTTPException(
-                status_code=401,
-                detail="Session invalide ou expirée"
-            )
+        session_token = request.headers.get("X-Session-Token")
+        user_email = None
+        
+        if session_token:
+            user_email = await validate_session_token(session_token)
+        
+        # PR7.1: Valider qu'un compte est requis pour exporter (retourne 401 avec code AUTH_REQUIRED_EXPORT)
+        assert_can_export_pdf(user_email)
         
         # P0: Check if user is Pro
         is_pro, _ = await check_user_pro_status(user_email)
+        
+        # PR8: Vérifier que l'utilisateur peut utiliser le layout demandé (eco = Premium uniquement)
+        from backend.services.access_control import assert_can_use_layout
+        assert_can_use_layout(user_email, is_pro, layout)
         
         # P0: Check quota for Free users
         if not is_pro:
@@ -6850,6 +6845,10 @@ app.include_router(admin_curriculum_legacy_router, tags=["Admin Curriculum Legac
 # Routes admin exercices (CRUD pour exercices figés)
 from backend.routes.admin_exercises_routes import router as admin_exercises_router
 app.include_router(admin_exercises_router, tags=["Admin Exercises"])
+
+# Routes admin package (PR10 - Import/Export global)
+from backend.routes.admin_package_routes import router as admin_package_router
+app.include_router(admin_package_router, tags=["Admin Package"])
 
 # Route catalogue curriculum (pour /generate)
 from backend.routes.curriculum_catalog_routes import router as curriculum_catalog_router, legacy_router as curriculum_catalog_legacy_router

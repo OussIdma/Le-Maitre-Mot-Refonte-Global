@@ -3,17 +3,20 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import { useLogin } from "../contexts/LoginContext";
+import { useSelection } from "../contexts/SelectionContext";
 import { Badge } from "./ui/badge";
-import { 
-  GraduationCap, 
-  FileText, 
-  Sparkles, 
-  FolderOpen, 
-  LogIn, 
+import {
+  GraduationCap,
+  FileText,
+  Sparkles,
+  FolderOpen,
+  LogIn,
   LogOut,
   Crown,
   Home,
-  Settings
+  Settings,
+  ShoppingCart,
+  User
 } from "lucide-react";
 
 function Header({ isPro, userEmail, onLogin, onLogout }) {
@@ -21,7 +24,8 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { openLogin } = useLogin();
-  
+  const { selectionCount } = useSelection();
+
   // Si onLogin n'est pas fourni, utiliser le contexte
   const handleLoginClick = () => {
     if (onLogin) {
@@ -93,6 +97,21 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               {t('nav.mySheets')}
             </Button>
 
+            <Button
+              variant={isActive('/fiches/nouvelle') ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => navigate('/fiches/nouvelle')}
+              className="relative"
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              {t('nav.composeSheet', 'Composer')}
+              {selectionCount > 0 && (
+                <Badge className="ml-2 bg-green-600 text-white text-xs">
+                  {selectionCount}
+                </Badge>
+              )}
+            </Button>
+
             {isPro && (
               <Button
                 variant={isActive('/pro/settings') ? 'default' : 'ghost'}
@@ -119,13 +138,22 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
 
           {/* User section */}
           <div className="flex items-center gap-2">
-            {isPro && userEmail ? (
+            {userEmail ? (
               <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center bg-blue-50 px-3 py-1.5 rounded-lg">
-                  <Crown className="h-4 w-4 text-blue-600 mr-2" />
+                <div className="hidden sm:flex items-center px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: isPro ? '#eff6ff' : '#f0fdf4' }}>
+                  {isPro ? (
+                    <Crown className="h-4 w-4 text-blue-600 mr-2" />
+                  ) : (
+                    <User className="h-4 w-4 text-green-600 mr-2" />
+                  )}
                   <div className="text-right">
-                    <p className="text-xs font-semibold text-blue-900">{t('pro.status')}</p>
-                    <p className="text-xs text-blue-700">{userEmail.split('@')[0]}</p>
+                    <p className="text-xs font-semibold" style={{ color: isPro ? '#1e3a5f' : '#166534' }}>
+                      {isPro ? t('pro.status') : t('free.status', 'Compte Free')}
+                    </p>
+                    <p className="text-xs" style={{ color: isPro ? '#1d4ed8' : '#16a34a' }}>
+                      {userEmail.split('@')[0]}
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -189,6 +217,21 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
             {t('nav.mySheetsShort')}
           </Button>
 
+          <Button
+            variant={isActive('/fiches/nouvelle') ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => navigate('/fiches/nouvelle')}
+            className="relative"
+          >
+            <ShoppingCart className="h-4 w-4 mr-1" />
+            {t('nav.composeShort', 'Composer')}
+            {selectionCount > 0 && (
+              <Badge className="ml-1 bg-green-600 text-white text-xs">
+                {selectionCount}
+              </Badge>
+            )}
+          </Button>
+
           {isPro && (
             <Button
               variant={isActive('/pro/settings') ? 'default' : 'outline'}
@@ -196,7 +239,7 @@ function Header({ isPro, userEmail, onLogin, onLogout }) {
               onClick={() => {
                 const match = location.pathname.match(/\/builder\/([^/]+)/);
                 const sheetId = match ? match[1] : localStorage.getItem('current_sheet_id');
-                
+
                 if (sheetId) {
                   navigate('/pro/settings', { state: { from: 'builder', sheetId } });
                 } else {

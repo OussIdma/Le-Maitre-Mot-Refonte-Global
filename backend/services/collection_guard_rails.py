@@ -89,3 +89,5 @@ async def log_collection_guard_rails(db: AsyncIOMotorDatabase) -> None:
             logger.error(error)
         logger.error("=" * 60)
 
+
+

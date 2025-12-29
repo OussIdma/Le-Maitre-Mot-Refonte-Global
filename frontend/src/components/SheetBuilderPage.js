@@ -9,6 +9,9 @@ import ProExportModal from "./ProExportModal";
 import UpgradeProModal from "./UpgradeProModal";
 import { useToast } from "../hooks/use-toast";
 import { useAuth } from "../hooks/useAuth";
+import { useExportPdfGate } from "../lib/exportPdfUtils";
+import { useLogin } from "../contexts/LoginContext";
+import PremiumEcoModal from "./PremiumEcoModal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Badge } from "./ui/badge";
@@ -55,6 +58,9 @@ function SheetBuilderPage() {
   
   // P0: Utiliser useAuth() pour cohérence avec ExerciseGeneratorPage
   const { sessionToken, userEmail, isPro } = useAuth();
+  // PR7.1: Utiliser le hook de gating pour les exports PDF
+  const { canExport, checkBeforeExport, handleExportError } = useExportPdfGate();
+  const { openLogin, openRegister } = useLogin();
   
   // États pour génération/export
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
@@ -475,42 +481,10 @@ function SheetBuilderPage() {
       return;
     }
     
-    // P0: Vérifier le quota avant export (si !isPro)
-    if (!isPro) {
-      const guestId = localStorage.getItem('lemaitremot_guest_id');
-      
-      if (!guestId) {
-        // P0 FIX: Ne pas créer guest_id ici - App.js le fait
-        toast({
-          title: "Erreur",
-          description: "Guest ID manquant. Veuillez rafraîchir la page.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Vérifier le quota
-      try {
-        const quotaResponse = await axios.get(`${API}/quota/check?guest_id=${guestId}`);
-        const quota = quotaResponse.data;
-        
-        if (quota.quota_exceeded) {
-          // Quota dépassé - ouvrir modal upgrade
-          setShowUpgradeModal(true);
-          toast({
-            title: "Quota d'exports atteint",
-            description: `Vous avez utilisé vos ${quota.max_exports} exports gratuits. Passez à Pro pour continuer.`,
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        // Mettre à jour le quota affiché
-        setQuotaStatus(quota);
-      } catch (error) {
-        console.error('Erreur vérification quota:', error);
-        // Continuer quand même si erreur (pas bloquant)
-      }
+    // PR7.1: Vérifier si l'utilisateur peut exporter (compte requis)
+    if (!checkBeforeExport(() => handleGeneratePDF())) {
+      // Modal "Créer un compte" ouverte, ne pas appeler l'API
+      return;
     }
     
     setIsGeneratingPDF(true);
@@ -525,14 +499,6 @@ function SheetBuilderPage() {
         config.headers = {
           'X-Session-Token': sessionToken
         };
-      } else {
-        // P0: Ajouter guest_id si pas Pro
-        const guestId = localStorage.getItem('lemaitremot_guest_id');
-        if (guestId) {
-          config.headers = {
-            'X-Guest-ID': guestId
-          };
-        }
       }
       
       // Le backend retourne un JSON avec 2 PDFs en base64
@@ -569,6 +535,24 @@ function SheetBuilderPage() {
     } catch (error) {
       console.error('Erreur génération PDF:', error);
       
+      // PR7.1 + PR8: Gérer les erreurs d'authentification et premium
+      if (handleExportError(error, () => setShowPremiumEcoModal(true), { type: 'export_pdf' })) {
+        // Erreur gérée (modal ouverte), ne pas afficher d'autre message
+        setIsGeneratingPDF(false);
+        return;
+      }
+      
+      // PR8: Gérer erreur 403 PREMIUM_REQUIRED_ECO
+      if (error.response?.status === 403) {
+        const errorDetail = error.response?.data?.detail;
+        const errorCode = typeof errorDetail === 'object' ? errorDetail.code || errorDetail.error : null;
+        if (errorCode === 'PREMIUM_REQUIRED_ECO' || errorDetail?.error === 'premium_required') {
+          setShowPremiumEcoModal(true);
+          setIsGeneratingPDF(false);
+          return;
+        }
+      }
+      
       // P0: Gérer erreur 402 (quota dépassé)
       if (error.response?.status === 402 && error.response?.data?.detail?.error === 'quota_exceeded') {
         const quotaDetail = error.response.data.detail;
@@ -580,6 +564,7 @@ function SheetBuilderPage() {
         });
         // Recharger le quota
         await loadQuotaStatus();
+        setIsGeneratingPDF(false);
         return;
       }
       
@@ -987,15 +972,39 @@ function SheetBuilderPage() {
                       </Button>
                       
                       <div className="space-y-2">
-                        {/* Toggle Layout PDF - PR6 */}
-                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
-                          <Label htmlFor="pdf-layout-toggle" className="text-sm font-medium cursor-pointer">
-                            Éco (2 colonnes)
-                          </Label>
+                        {/* Toggle Layout PDF - PR8: Éco = Premium uniquement */}
+                        <div 
+                          className={`flex items-center justify-between p-2 rounded-md ${
+                            !isPro ? 'bg-gray-100 opacity-60' : 'bg-gray-50'
+                          }`}
+                          onClick={() => {
+                            if (!isPro) {
+                              setShowPremiumEcoModal(true);
+                            }
+                          }}
+                          style={{ cursor: !isPro ? 'pointer' : 'default' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="pdf-layout-toggle" className="text-sm font-medium cursor-pointer">
+                              Éco (2 colonnes)
+                            </Label>
+                            {!isPro && (
+                              <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                                Premium
+                              </Badge>
+                            )}
+                          </div>
                           <Switch
                             id="pdf-layout-toggle"
                             checked={pdfLayout === "eco"}
-                            onCheckedChange={(checked) => setPdfLayout(checked ? "eco" : "classic")}
+                            disabled={!isPro}
+                            onCheckedChange={(checked) => {
+                              if (isPro) {
+                                setPdfLayout(checked ? "eco" : "classic");
+                              } else {
+                                setShowPremiumEcoModal(true);
+                              }
+                            }}
                           />
                         </div>
                         
@@ -1085,6 +1094,13 @@ function SheetBuilderPage() {
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
         context="export"
+      />
+      
+      {/* PR8: Modal Premium pour layout Éco */}
+      <PremiumEcoModal
+        isOpen={showPremiumEcoModal}
+        onClose={() => setShowPremiumEcoModal(false)}
+        onStayClassic={() => setPdfLayout("classic")}
       />
     </div>
   );

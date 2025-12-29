@@ -15,6 +15,8 @@ import uuid
 import shutil
 from pathlib import Path
 import base64
+import hashlib
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,109 @@ competences_collection = db[COMPETENCES_COLLECTION]
 exercise_types_collection = db[EXERCISE_TYPES_COLLECTION]  # Same collection as catalogue
 exercise_sheets_collection = db[EXERCISE_SHEETS_COLLECTION]
 sheet_items_collection = db[SHEET_ITEMS_COLLECTION]
+
+
+# ============================================================================
+# P0: PDF CACHE HELPERS
+# ============================================================================
+
+# Cache TTL: 24 hours (MongoDB TTL index will auto-delete expired documents)
+PDF_CACHE_TTL_HOURS = 24
+
+
+def compute_pdf_cache_key(sheet_id: str, layout: str, items_config: List[Dict]) -> str:
+    """
+    Compute a deterministic cache key for PDF exports.
+
+    The key is based on:
+    - sheet_id: unique identifier for the sheet
+    - layout: "eco" or "classic"
+    - items_config: sorted list of item configs (exercise_type_id, nb_questions, seed, difficulty)
+
+    Returns a SHA256 hash string.
+    """
+    # Build a deterministic representation of the configuration
+    cache_data = {
+        "sheet_id": sheet_id,
+        "layout": layout,
+        "items": sorted([
+            {
+                "exercise_type_id": item.get("exercise_type_id"),
+                "nb_questions": item.get("config", {}).get("nb_questions"),
+                "seed": item.get("config", {}).get("seed"),
+                "difficulty": item.get("config", {}).get("difficulty")
+            }
+            for item in items_config
+        ], key=lambda x: x.get("exercise_type_id", ""))
+    }
+
+    # Create a stable JSON representation
+    cache_json = json.dumps(cache_data, sort_keys=True)
+
+    # Return SHA256 hash
+    return hashlib.sha256(cache_json.encode()).hexdigest()
+
+
+async def get_cached_pdf(db_instance, cache_key: str) -> Optional[Dict]:
+    """
+    Retrieve cached PDF from MongoDB.
+
+    Returns the cached document or None if not found/expired.
+    """
+    try:
+        cached = await db_instance.pdf_cache.find_one({"cache_key": cache_key})
+        if cached:
+            # Check if still valid (TTL handles auto-deletion, but double-check)
+            expires_at = cached.get("expires_at")
+            if expires_at and expires_at > datetime.now(timezone.utc):
+                logger.info(f"[PDF_CACHE] HIT cache_key={cache_key[:16]}...")
+                return cached
+            else:
+                logger.info(f"[PDF_CACHE] EXPIRED cache_key={cache_key[:16]}...")
+                return None
+        return None
+    except Exception as e:
+        logger.warning(f"[PDF_CACHE] Error reading cache: {e}")
+        return None
+
+
+async def store_pdf_in_cache(
+    db_instance,
+    cache_key: str,
+    student_pdf_b64: str,
+    correction_pdf_b64: str,
+    metadata: Dict
+) -> bool:
+    """
+    Store generated PDF in MongoDB cache with TTL.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=PDF_CACHE_TTL_HOURS)
+
+        cache_doc = {
+            "cache_key": cache_key,
+            "student_pdf": student_pdf_b64,
+            "correction_pdf": correction_pdf_b64,
+            "metadata": metadata,
+            "created_at": now,
+            "expires_at": expires_at  # TTL index will use this field
+        }
+
+        # Upsert to avoid duplicates
+        await db_instance.pdf_cache.update_one(
+            {"cache_key": cache_key},
+            {"$set": cache_doc},
+            upsert=True
+        )
+
+        logger.info(f"[PDF_CACHE] STORED cache_key={cache_key[:16]}... expires_at={expires_at.isoformat()}")
+        return True
+    except Exception as e:
+        logger.error(f"[PDF_CACHE] Error storing cache: {e}")
+        return False
 
 
 # ============================================================================
@@ -887,7 +992,11 @@ async def generate_exercise_endpoint(request: GenerateExerciseRequest):
 # ============================================================================
 
 @router.post("/sheets/{sheet_id}/generate-pdf")
-async def generate_sheet_pdf(sheet_id: str):
+async def generate_sheet_pdf(
+    sheet_id: str,
+    request: Request,
+    x_session_token: Optional[str] = Header(None, alias="X-Session-Token")
+):
     """
     Générer les 3 PDFs pour une feuille d'exercices
     
@@ -897,12 +1006,23 @@ async def generate_sheet_pdf(sheet_id: str):
     3. Génère 3 PDFs: sujet, élève, corrigé
     4. Retourne les PDFs en base64
     
+    PR7.1: Export PDF nécessite un compte (Free ou Pro)
+    
     Returns:
         Dict avec 3 clés contenant les PDFs en base64:
         - subject_pdf: PDF sujet (pour professeur)
         - student_pdf: PDF élève (pour distribution)
         - correction_pdf: PDF corrigé (avec solutions)
     """
+    # PR7.1: Vérifier l'authentification
+    from backend.services.access_control import assert_can_export_pdf
+    from backend.server import validate_session_token
+    
+    user_email = None
+    if x_session_token:
+        user_email = await validate_session_token(x_session_token)
+    assert_can_export_pdf(user_email)
+    
     from engine.pdf_engine.mathalea_sheet_pdf_builder import (
         build_sheet_subject_pdf,
         build_sheet_student_pdf,
@@ -1025,26 +1145,25 @@ async def export_standard_pdf(
     sheet_id: str,
     request: Request,
     layout: str = "eco",  # Query param: "eco" ou "classic"
-    x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
-    x_guest_id: Optional[str] = Header(None, alias="X-Guest-ID")
+    x_session_token: Optional[str] = Header(None, alias="X-Session-Token")
 ):
     """
     Export Standard - Génère 2 PDFs simplifiés (Élève + Corrigé)
-    
-    P0 BUSINESS: Protection contre exports illimités gratuits
-    
+
+    P0 BUSINESS: Export PDF nécessite un compte (Free ou Pro)
+
     SPRINT FUSION PDF - Export standard simplifié:
     1. Génère le preview de la feuille
     2. Crée 2 PDFs uniquement:
        - student_pdf: Énoncé + zones de réponse (pour distribution aux élèves)
        - correction_pdf: Énoncé + corrections détaillées
     3. Pas de logo, pas de personnalisation, design simple et clair
-    
+
     Guards:
-    - Si X-Session-Token présent: vérifie Pro (pas de quota si Pro)
-    - Sinon: exige X-Guest-ID (header uniquement - P0 FIX: une seule méthode)
-    - Guest: quota 3 exports / 30 jours (compté dans db.exports)
-    
+    - X-Session-Token REQUIS (plus de guest - P0 FIX)
+    - Free users: quota 10 exports / jour
+    - Pro users: pas de quota
+
     Returns:
         Dict avec 2 clés contenant les PDFs en base64:
         {
@@ -1052,84 +1171,89 @@ async def export_standard_pdf(
             "correction_pdf": "<base64>",
             "filename_base": "LeMaitreMot_<NomFiche>"
         }
+
+    # TEST INSTRUCTIONS (curl):
+    # 401 sans session:
+    #   curl -X POST http://localhost:8000/api/mathalea/sheets/SHEET_ID/export-standard
+    # 200 avec session:
+    #   curl -X POST -H "X-Session-Token: TOKEN" http://localhost:8000/api/mathalea/sheets/SHEET_ID/export-standard
+    # 429 après 10 exports/jour (free):
+    #   Répéter 11 fois l'export avec un compte free
     """
     from engine.pdf_engine.mathalea_sheet_pdf_builder import (
         build_sheet_student_pdf,
         build_sheet_correction_pdf
     )
-    from backend.server import validate_session_token, check_user_pro_status, check_guest_quota
-    
+    from backend.server import validate_session_token, check_user_pro_status
+
     # Utiliser app.state.db si disponible (pour les tests), sinon db global
     db_to_use = getattr(request.app.state, 'db', db)
     exercise_sheets_collection_local = db_to_use[EXERCISE_SHEETS_COLLECTION]
     sheet_items_collection_local = db_to_use[SHEET_ITEMS_COLLECTION]
     exercise_types_collection_local = db_to_use[EXERCISE_TYPES_COLLECTION]
+
+    # ========================================================================
+    # PR7.1: AUTHENTIFICATION REQUISE - Plus de guest exports
+    # ========================================================================
+    from backend.services.access_control import assert_can_export_pdf
     
-    # P0: Vérification auth et quota
-    is_pro_user = False
     user_email = None
-    guest_id_final = None
-    user_type = "guest"  # Par défaut
-    
-    # 1. Si X-Session-Token présent, vérifier Pro
     if x_session_token:
-        try:
-            user_email = await validate_session_token(x_session_token)
-            if user_email:
-                is_pro_user, _ = await check_user_pro_status(user_email)
-                if is_pro_user:
-                    user_type = "pro"
-                    logger.info(
-                        f"[EXPORT_QUOTA] user_type=pro user_email={user_email} sheet_id={sheet_id} - pas de quota"
-                    )
-                else:
-                    user_type = "non_pro"
-                    logger.info(
-                        f"[EXPORT_QUOTA] user_type=non_pro user_email={user_email} sheet_id={sheet_id} - nécessite guest_id"
-                    )
-        except Exception as e:
-            logger.warning(f"[EXPORT_QUOTA] Erreur validation session: {e} - traité comme guest")
-            # Continue comme guest si session invalide
+        user_email = await validate_session_token(x_session_token)
     
-    # 2. Si pas Pro, exiger X-Guest-ID (header uniquement - P0 FIX)
+    # PR7.1: Valider qu'un compte est requis pour exporter (retourne 401 avec code AUTH_REQUIRED_EXPORT)
+    assert_can_export_pdf(user_email)
+
+    # Vérifier le statut Pro
+    is_pro_user, pro_user_doc = await check_user_pro_status(user_email)
+    user_type = "pro" if is_pro_user else "free"
+    
+    # PR8: Vérifier que l'utilisateur peut utiliser le layout demandé (eco = Premium uniquement)
+    from backend.services.access_control import assert_can_use_layout
+    assert_can_use_layout(user_email, is_pro_user, layout)
+
+    # ========================================================================
+    # P0: QUOTAS - 10 exports/jour pour Free, illimité pour Pro
+    # ========================================================================
+    exports_today = 0
+    max_exports_per_day = 10
+
     if not is_pro_user:
-        guest_id_final = x_guest_id
-        if not guest_id_final:
+        # Vérifier le quota journalier pour les utilisateurs Free
+        today = datetime.now(timezone.utc).date()
+        today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+        # Compter les exports du jour pour cet utilisateur
+        exports_today = await db_to_use.user_exports.count_documents({
+            "user_email": user_email,
+            "created_at": {"$gte": today_start}
+        })
+
+        if exports_today >= max_exports_per_day:
             logger.warning(
-                f"[EXPORT_QUOTA] user_type=guest sheet_id={sheet_id} - X-Guest-ID manquant"
+                f"[EXPORT_QUOTA] user_type=free user_email={user_email} sheet_id={sheet_id} "
+                f"exports_today={exports_today} max={max_exports_per_day} - QUOTA_EXCEEDED"
             )
             raise HTTPException(
-                status_code=400,
+                status_code=429,
                 detail={
-                    "error": "guest_id_required",
-                    "message": "Guest ID requis pour les utilisateurs non-Pro. Fournissez X-Guest-ID (header).",
-                    "hint": "Les utilisateurs Pro peuvent utiliser X-Session-Token pour un accès illimité."
+                    "error": "daily_quota_exceeded",
+                    "action": "upgrade_to_pro",
+                    "message": f"Limite de {max_exports_per_day} exports/jour atteinte. Passez à Pro pour des exports illimités.",
+                    "exports_today": exports_today,
+                    "exports_remaining": 0,
+                    "max_exports_per_day": max_exports_per_day,
+                    "resets_at": (today_start + timedelta(days=1)).isoformat()
                 }
             )
-        
-        # 3. Vérifier le quota guest
-        quota_status = await check_guest_quota(guest_id_final)
-        
-        if quota_status["quota_exceeded"]:
-            logger.warning(
-                f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
-                f"exports_used={quota_status['exports_used']} max_exports={quota_status['max_exports']} - QUOTA_EXCEEDED"
-            )
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": "quota_exceeded",
-                    "action": "upgrade_required",
-                    "message": f"Limite de {quota_status['max_exports']} exports gratuits atteinte (30 derniers jours). Passez à l'abonnement Pro pour continuer.",
-                    "exports_used": quota_status["exports_used"],
-                    "exports_remaining": quota_status["exports_remaining"],
-                    "max_exports": quota_status["max_exports"]
-                }
-            )
-        
+
         logger.info(
-            f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
-            f"exports_used={quota_status['exports_used']} exports_remaining={quota_status['exports_remaining']} - QUOTA_OK"
+            f"[EXPORT_QUOTA] user_type=free user_email={user_email} sheet_id={sheet_id} "
+            f"exports_today={exports_today} exports_remaining={max_exports_per_day - exports_today} - QUOTA_OK"
+        )
+    else:
+        logger.info(
+            f"[EXPORT_QUOTA] user_type=pro user_email={user_email} sheet_id={sheet_id} - pas de quota"
         )
     
     try:
@@ -1137,17 +1261,71 @@ async def export_standard_pdf(
         sheet = await exercise_sheets_collection_local.find_one({"id": sheet_id}, {"_id": 0})
         if not sheet:
             raise HTTPException(status_code=404, detail="ExerciseSheet not found")
-        
-        # 2. Générer le preview
+
+        # 2. Récupérer les items
         cursor = sheet_items_collection_local.find({"sheet_id": sheet_id}, {"_id": 0}).sort("order", 1)
         items = await cursor.to_list(length=1000)
-        
+
         if not items:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot generate PDF for empty sheet"
             )
-        
+
+        # ====================================================================
+        # P0: CACHE CHECK - Vérifier si les PDFs sont déjà en cache
+        # ====================================================================
+        # Récupérer le layout effectif (forcé à eco pour free users)
+        effective_layout = layout
+        if not is_pro_user and layout == "classic":
+            effective_layout = "eco"
+
+        # Calculer la clé de cache
+        cache_key = compute_pdf_cache_key(sheet_id, effective_layout, items)
+
+        # Vérifier le cache
+        cached_pdf = await get_cached_pdf(db_to_use, cache_key)
+        if cached_pdf:
+            # Cache HIT - Retourner les PDFs du cache
+            logger.info(f"[PDF_CACHE] Returning cached PDF for sheet_id={sheet_id}")
+
+            # Quand même enregistrer l'export pour les quotas (Free users)
+            if not is_pro_user:
+                try:
+                    export_doc = {
+                        "user_email": user_email,
+                        "sheet_id": sheet_id,
+                        "type": "sheet_export",
+                        "layout": effective_layout,
+                        "from_cache": True,
+                        "created_at": datetime.now(timezone.utc)
+                    }
+                    await db_to_use.user_exports.insert_one(export_doc)
+                except Exception as e:
+                    logger.error(f"[EXPORT_QUOTA] Erreur enregistrement export (cache): {e}")
+
+            return {
+                "student_pdf": cached_pdf["student_pdf"],
+                "correction_pdf": cached_pdf["correction_pdf"],
+                "filename_base": f"LeMaitreMot_{sheet['titre'].replace(' ', '_')}",
+                "metadata": {
+                    "sheet_id": sheet_id,
+                    "titre": sheet["titre"],
+                    "niveau": sheet["niveau"],
+                    "nb_exercises": len(items),
+                    "generated_at": cached_pdf.get("created_at", datetime.now(timezone.utc)).isoformat(),
+                    "from_cache": True,
+                    "user_type": user_type,
+                    "user_email": user_email,
+                    "exports_today": exports_today + 1 if not is_pro_user else None,
+                    "exports_remaining": max_exports_per_day - exports_today - 1 if not is_pro_user else None
+                }
+            }
+
+        # Cache MISS - Continuer avec la génération
+        logger.info(f"[PDF_CACHE] MISS cache_key={cache_key[:16]}... - generating PDF")
+
+        # 3. Générer le preview
         preview_items = []
         for item_dict in items:
             try:
@@ -1209,41 +1387,60 @@ async def export_standard_pdf(
             layout = "eco"  # Fallback si valeur invalide
         
         # Si utilisateur Pro, peut choisir classic, sinon default eco
-        if not is_pro_user and layout == "classic":
-            # Gratuit: forcer eco
-            layout = "eco"
-            logger.info(f"[EXPORT] Utilisateur gratuit - layout forcé à 'eco'")
-        
-        # 3. Générer les 2 PDFs uniquement
-        logger.info(f"📄 Génération export standard pour la feuille {sheet_id} (layout={layout})")
-        student_pdf_bytes = build_sheet_student_pdf(preview, layout=layout)
-        correction_pdf_bytes = build_sheet_correction_pdf(preview, layout=layout)
-        
-        # 4. Créer le nom de fichier base
+        # Note: effective_layout already computed above (eco forced for free users)
+
+        # 4. Générer les 2 PDFs uniquement
+        logger.info(f"📄 Génération export standard pour la feuille {sheet_id} (layout={effective_layout})")
+        student_pdf_bytes = build_sheet_student_pdf(preview, layout=effective_layout)
+        correction_pdf_bytes = build_sheet_correction_pdf(preview, layout=effective_layout)
+
+        # 5. Encoder en base64
+        student_pdf_b64 = base64.b64encode(student_pdf_bytes).decode('utf-8')
+        correction_pdf_b64 = base64.b64encode(correction_pdf_bytes).decode('utf-8')
+
+        # 6. Stocker dans le cache
+        cache_metadata = {
+            "sheet_id": sheet_id,
+            "titre": sheet["titre"],
+            "niveau": sheet["niveau"],
+            "nb_exercises": len(preview_items),
+            "layout": effective_layout
+        }
+        await store_pdf_in_cache(
+            db_to_use,
+            cache_key,
+            student_pdf_b64,
+            correction_pdf_b64,
+            cache_metadata
+        )
+
+        # 7. Créer le nom de fichier base
         filename_base = f"LeMaitreMot_{sheet['titre'].replace(' ', '_')}"
-        
-        # 5. P0: Enregistrer l'export dans db.exports (si guest)
-        if not is_pro_user and guest_id_final:
+
+        # 8. P0: Enregistrer l'export dans user_exports (pour quotas Free)
+        if not is_pro_user:
             try:
                 export_doc = {
-                    "guest_id": guest_id_final,
+                    "user_email": user_email,
                     "sheet_id": sheet_id,
                     "type": "sheet_export",
+                    "layout": effective_layout,
+                    "from_cache": False,
                     "created_at": datetime.now(timezone.utc)
                 }
-                await db.exports.insert_one(export_doc)
+                await db_to_use.user_exports.insert_one(export_doc)
                 logger.info(
-                    f"[EXPORT_QUOTA] user_type=guest guest_id={guest_id_final[:8]}... sheet_id={sheet_id} "
-                    f"- export enregistré dans db.exports"
+                    f"[EXPORT_QUOTA] user_type=free user_email={user_email} sheet_id={sheet_id} "
+                    f"- export enregistré ({exports_today + 1}/{max_exports_per_day})"
                 )
             except Exception as e:
                 logger.error(f"[EXPORT_QUOTA] Erreur enregistrement export: {e}")
                 # Ne pas bloquer l'export si l'enregistrement échoue
-        
-        # 6. Encoder en base64 et retourner
+
+        # 9. Retourner la réponse
         response = {
-            "student_pdf": base64.b64encode(student_pdf_bytes).decode('utf-8'),
-            "correction_pdf": base64.b64encode(correction_pdf_bytes).decode('utf-8'),
+            "student_pdf": student_pdf_b64,
+            "correction_pdf": correction_pdf_b64,
             "filename_base": filename_base,
             "metadata": {
                 "sheet_id": sheet_id,
@@ -1251,12 +1448,15 @@ async def export_standard_pdf(
                 "niveau": sheet["niveau"],
                 "nb_exercises": len(preview_items),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "user_type": "pro" if is_pro_user else "guest",
-                "guest_id": guest_id_final[:8] + "..." if guest_id_final and len(guest_id_final) > 8 else guest_id_final if guest_id_final else None
+                "from_cache": False,
+                "user_type": user_type,
+                "user_email": user_email,
+                "exports_today": exports_today + 1 if not is_pro_user else None,
+                "exports_remaining": max_exports_per_day - exports_today - 1 if not is_pro_user else None
             }
         }
-        
-        logger.info(f"✅ Export standard généré: 2 PDFs pour la feuille {sheet_id} (user_type={'pro' if is_pro_user else 'guest'})")
+
+        logger.info(f"✅ Export standard généré: 2 PDFs pour la feuille {sheet_id} (user_type={user_type})")
         return response
         
     except HTTPException:

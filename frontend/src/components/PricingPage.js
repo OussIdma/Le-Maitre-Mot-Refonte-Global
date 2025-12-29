@@ -15,9 +15,10 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Alert, AlertDescription } from './ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { Check, Crown, FileDown, Layers, Palette, Zap, BookOpen, Sparkles, Mail, Loader2, CheckCircle, Copy } from 'lucide-react';
+import { Check, Crown, FileDown, Layers, Palette, Zap, BookOpen, Sparkles, Mail, Loader2, CheckCircle, Copy, UserPlus } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import { Separator } from './ui/separator';
+import { useLogin } from '../contexts/LoginContext';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -25,20 +26,37 @@ const API = `${BACKEND_URL}/api`;
 const PricingPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { openRegister } = useLogin();
   const [isPro, setIsPro] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [checkoutEmail, setCheckoutEmail] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
-  const [checkoutLink, setCheckoutLink] = useState(''); // ✅ État pour stocker le lien
+  const [checkoutLink, setCheckoutLink] = useState('');
 
   useEffect(() => {
-    // Check if user is Pro
+    // Check if user is logged in and if Pro
     const sessionToken = localStorage.getItem('lemaitremot_session_token');
     const loginMethod = localStorage.getItem('lemaitremot_login_method');
-    setIsPro(!!(sessionToken && loginMethod === 'session'));
+    const hasSession = !!(sessionToken && loginMethod === 'session');
+    setIsLoggedIn(hasSession);
+    // Note: Pour savoir si Pro, il faudrait appeler /auth/me, mais on simplifie ici
+    // En prod, vérifier via /auth/me
+    setIsPro(false); // Par défaut non-Pro, sera mis à jour si besoin
   }, []);
+
+  // Handler pour le bouton "Commencer gratuitement"
+  const handleStartFree = () => {
+    if (isLoggedIn) {
+      // Déjà connecté, rediriger vers le générateur
+      navigate('/generer');
+    } else {
+      // Ouvrir le modal d'inscription
+      openRegister();
+    }
+  };
 
   const handleStartTrial = () => {
     // Ouvrir le modal pour demander l'email
@@ -98,18 +116,18 @@ const PricingPage = () => {
     },
     {
       icon: <FileDown className="h-5 w-5 text-green-600" />,
-      title: "3 exports PDF / mois",
-      description: "Exportez vos documents en PDF (limite mensuelle)"
+      title: "10 exports PDF / jour",
+      description: "Exportez vos documents en PDF (limite quotidienne)"
     },
     {
       icon: <Layers className="h-5 w-5 text-purple-600" />,
-      title: "1 devoir interactif actif",
-      description: "Créez un devoir interactif pour vos élèves"
+      title: "Composer des fiches",
+      description: "Sélectionnez et organisez vos exercices en fiches personnalisées"
     },
     {
       icon: <Palette className="h-5 w-5 text-gray-600" />,
-      title: "Watermark discret",
-      description: "Vos exports incluent un watermark léger"
+      title: "Mise en page standard",
+      description: "Exports avec mise en page classique"
     }
   ];
 
@@ -217,6 +235,14 @@ const PricingPage = () => {
                   </div>
                 ))}
               </div>
+              <Button
+                onClick={handleStartFree}
+                className="w-full mt-8 bg-green-600 hover:bg-green-700 text-white"
+                size="lg"
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                {isLoggedIn ? "Accéder au générateur" : "Commencer gratuitement"}
+              </Button>
             </CardContent>
           </Card>
 

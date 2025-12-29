@@ -42,6 +42,7 @@ import GlobalLoginModal from "./components/GlobalLoginModal";
 import SheetComposerPage from "./components/SheetComposerPage";
 import ProFeaturePage from "./components/ProFeaturePage";
 import { useAuth } from "./hooks/useAuth";
+import { useExportPdfGate } from "./lib/exportPdfUtils";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -559,8 +560,19 @@ function MainApp() {
     }
   };
 
+  // PR7.1: Utiliser le hook de gating pour les exports PDF
+  const { canExport, checkBeforeExport, handleExportError } = useExportPdfGate();
+
   const exportPDF = async (exportType) => {
     if (!currentDocument) return;
+
+    // PR7.1: Vérifier si l'utilisateur peut exporter (compte requis)
+    // Note: App.js utilise des états locaux (sessionToken, userEmail) mais useExportPdfGate
+    // utilise useAuth() qui lit depuis localStorage, donc c'est cohérent
+    if (!checkBeforeExport(() => exportPDF(exportType))) {
+      // Modal "Créer un compte" ouverte, ne pas appeler l'API
+      return;
+    }
 
     console.log('📄 Export PDF requested:', {
       exportType,
@@ -580,23 +592,16 @@ function MainApp() {
         template_style: selectedExportStyle
       };
       
-      // Pro users don't need guest_id, regular users do
-      if (!isPro) {
-        requestData.guest_id = guestId;
-      }
-      
       const requestConfig = {
         responseType: 'blob'
       };
       
-      // Send session token if available (let backend determine Pro status)
+      // PR7.1: Send session token (required for export)
       if (sessionToken) {
         requestConfig.headers = {
           'X-Session-Token': sessionToken
         };
         console.log('🔐 Sending session token with export request:', sessionToken.substring(0, 20) + '...');
-      } else {
-        console.log('⚠️ No session token available for export request');
       }
 
       console.log('📤 Making export request with config:', {
@@ -637,6 +642,25 @@ function MainApp() {
     } catch (error) {
       console.error("Erreur lors de l'export:", error);
       
+      // PR7.1 + PR8: Gérer les erreurs d'authentification et premium
+      // Note: App.js n'a pas de modal premium spécifique, donc on passe null
+      if (handleExportError(error, null, { type: 'export_pdf' })) {
+        // Erreur gérée (modal ouverte), ne pas afficher d'autre message
+        setLoading(false);
+        return;
+      }
+      
+      // PR8: Gérer erreur 403 PREMIUM_REQUIRED_ECO (rediriger vers pricing)
+      if (error.response?.status === 403) {
+        const errorDetail = error.response?.data?.detail;
+        const errorCode = typeof errorDetail === 'object' ? errorDetail.code || errorDetail.error : null;
+        if (errorCode === 'PREMIUM_REQUIRED_ECO' || errorDetail?.error === 'premium_required') {
+          window.location.href = '/pricing?upgrade=eco';
+          setLoading(false);
+          return;
+        }
+      }
+      
       // Handle session expiry/invalidity (someone else logged in)
       if (error.response?.status === 401 || error.response?.status === 402) {
         if (sessionToken && isPro) {
@@ -653,6 +677,7 @@ function MainApp() {
           
           alert('Votre session a expiré ou a été fermée depuis un autre appareil. Veuillez vous reconnecter.');
           openLogin();
+          setLoading(false);
           return;
         } else if (error.response?.status === 402) {
           const errorData = error.response.data;

@@ -73,3 +73,5 @@ class StaticExerciseRepository:
         
         return exercises
 
+
+

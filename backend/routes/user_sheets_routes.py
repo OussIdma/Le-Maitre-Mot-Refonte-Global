@@ -74,20 +74,22 @@ class SheetResponse(BaseModel):
 # ============================================================================
 
 async def get_user_email(request: Request) -> str:
-    """Récupère l'email de l'utilisateur depuis la session"""
-    session_token = request.headers.get("X-Session-Token")
-    if not session_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentification requise"
-        )
+    """
+    Récupère l'email de l'utilisateur depuis la session.
     
-    user_email = await validate_session_token(session_token)
-    if not user_email:
-        raise HTTPException(
-            status_code=401,
-            detail="Session invalide ou expirée"
-        )
+    PR7.1: Pour les endpoints d'export PDF, utilise assert_can_export_pdf
+    pour retourner le bon format d'erreur (AUTH_REQUIRED_EXPORT).
+    """
+    from backend.services.access_control import assert_can_export_pdf
+    
+    session_token = request.headers.get("X-Session-Token")
+    user_email = None
+    
+    if session_token:
+        user_email = await validate_session_token(session_token)
+    
+    # PR7.1: Valider qu'un compte est requis (retourne 401 avec code AUTH_REQUIRED_EXPORT)
+    assert_can_export_pdf(user_email)
     
     return user_email
 
@@ -413,10 +415,16 @@ async def export_sheet_pdf(
         logger.info(f"[EXPORT_PDF] Using include_corrections alias: {include_corrections}")
 
     sheet = await verify_sheet_ownership(sheet_uid, user_email)
+    
+    # PR8: Vérifier que l'utilisateur peut utiliser le layout demandé (eco = Premium uniquement)
+    from backend.services.access_control import assert_can_use_layout
+    from backend.server import check_user_pro_status
+    is_pro, _ = await check_user_pro_status(user_email)
+    assert_can_use_layout(user_email, is_pro, layout)
 
     logger.info(
         f"[EXPORT_PDF] sheet_uid={sheet_uid}, user={user_email}, "
-        f"include_solutions={include_solutions}"
+        f"include_solutions={include_solutions}, layout={layout}"
     )
     
     # Charger les exercices complets

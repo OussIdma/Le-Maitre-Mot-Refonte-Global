@@ -23,6 +23,8 @@ import { useToast } from "../hooks/use-toast";
 import { useAuth } from "../hooks/useAuth";
 import { useLogin } from "../contexts/LoginContext";
 import { useSelection } from "../contexts/SelectionContext";
+import { useExportPdfGate } from "../lib/exportPdfUtils";
+import PremiumEcoModal from "./PremiumEcoModal";
 import {
   FileText,
   Download,
@@ -131,6 +133,9 @@ const SheetComposerPage = () => {
   // État de l'export
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState(null);
+  
+  // PR8: Modal premium pour layout Éco
+  const [showPremiumEcoModal, setShowPremiumEcoModal] = useState(false);
 
   // Déplacer un exercice vers le haut
   const moveUp = (index) => {
@@ -206,18 +211,23 @@ const SheetComposerPage = () => {
     } catch (err) {
       console.error("Erreur export PDF:", err);
 
-      if (err.response?.status === 401) {
-        toast({
-          title: "Session expirée",
-          description: "Veuillez vous reconnecter",
-          variant: "destructive"
-        });
-        openLogin({
-          returnTo: '/fiches/nouvelle',
-          pendingAction: { type: 'export_pdf' },
-          mode: 'login'
-        });
-      } else if (err.response?.status === 429) {
+      // PR7.1 + PR8: Gérer les erreurs d'authentification et premium
+      if (handleExportError(err, () => setShowPremiumEcoModal(true), { type: 'export_pdf' })) {
+        // Erreur gérée (modal ouverte), ne pas afficher d'autre message
+        return;
+      }
+      
+      // PR8: Gérer erreur 403 PREMIUM_REQUIRED_ECO
+      if (err.response?.status === 403) {
+        const errorDetail = err.response?.data?.detail;
+        const errorCode = typeof errorDetail === 'object' ? errorDetail.code || errorDetail.error : null;
+        if (errorCode === 'PREMIUM_REQUIRED_ECO' || errorDetail?.error === 'premium_required') {
+          setShowPremiumEcoModal(true);
+          return;
+        }
+      }
+
+      if (err.response?.status === 429) {
         toast({
           title: "Quota dépassé",
           description: "Vous avez atteint votre limite d'exports du jour. Passez en Pro pour des exports illimités.",
@@ -256,6 +266,9 @@ const SheetComposerPage = () => {
     };
   }, [doExport]);
 
+  // PR7.1: Utiliser le hook de gating pour les exports PDF
+  const { canExport, checkBeforeExport, handleExportError } = useExportPdfGate();
+
   // Export PDF - point d'entrée principal
   const handleExportPDF = async () => {
     // Vérifier qu'il y a des exercices
@@ -268,19 +281,9 @@ const SheetComposerPage = () => {
       return;
     }
 
-    // Vérifier la session
-    if (!sessionToken) {
-      toast({
-        title: "Connexion requise",
-        description: "Créez un compte gratuit pour exporter votre fiche en PDF",
-        variant: "default"
-      });
-      // Ouvrir en mode register avec pendingAction
-      openLogin({
-        returnTo: '/fiches/nouvelle',
-        pendingAction: { type: 'export_pdf' },
-        mode: 'register'
-      });
+    // PR7.1: Vérifier si l'utilisateur peut exporter (compte requis)
+    if (!checkBeforeExport(() => doExport(sessionToken))) {
+      // Modal "Créer un compte" ouverte, ne pas appeler l'API
       return;
     }
 
@@ -358,16 +361,38 @@ const SheetComposerPage = () => {
                     />
                   </div>
 
-                  {/* Layout */}
+                  {/* Layout - PR8: Éco = Premium uniquement */}
                   <div>
                     <Label htmlFor="layout">Mise en page</Label>
-                    <Select value={layout} onValueChange={setLayout}>
+                    <Select 
+                      value={layout} 
+                      onValueChange={(value) => {
+                        if (value === "eco" && !isPro) {
+                          setShowPremiumEcoModal(true);
+                          return; // Ne pas changer le layout
+                        }
+                        setLayout(value);
+                      }}
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="standard">Standard</SelectItem>
-                        <SelectItem value="eco">Économique</SelectItem>
+                        <SelectItem 
+                          value="eco"
+                          disabled={!isPro}
+                          className={!isPro ? "opacity-50" : ""}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>Économique</span>
+                            {!isPro && (
+                              <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">
+                                Premium
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
                         <SelectItem value="large">Grand format</SelectItem>
                       </SelectContent>
                     </Select>
@@ -552,6 +577,13 @@ const SheetComposerPage = () => {
           </>
         )}
       </div>
+      
+      {/* PR8: Modal Premium pour layout Éco */}
+      <PremiumEcoModal
+        isOpen={showPremiumEcoModal}
+        onClose={() => setShowPremiumEcoModal(false)}
+        onStayClassic={() => setLayout("standard")}
+      />
     </div>
   );
 };

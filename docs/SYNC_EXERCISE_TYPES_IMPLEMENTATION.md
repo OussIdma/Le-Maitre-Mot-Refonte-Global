@@ -166,3 +166,5 @@ La synchronisation est idempotente:
 - La migration est optionnelle (backfill)
 - L'auto-sync fonctionne pour les nouveaux exercices même sans migration
 
+
+
