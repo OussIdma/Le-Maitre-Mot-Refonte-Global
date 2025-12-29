@@ -221,3 +221,51 @@ class TestGoldSchemaCompliance:
             assert "variables" in result or "generation_meta" in result
         except Exception as e:
             pytest.fail(f"{gold_generator_key}: crash avec defaults: {e}")
+
+
+class TestGoldContract:
+    """Tests contractuels pour générateurs Gold (PR3)."""
+    
+    def test_gold_exercise_contract(self, gold_generator_key: str):
+        """
+        Vérifie que chaque exercice Gold respecte le contrat complet.
+        
+        PR3: Ajout de validations contractuelles (placeholders, sujet≠corrigé, etc.)
+        
+        Args:
+            gold_generator_key: Clé du générateur Gold
+        """
+        from backend.generators.factory import GeneratorFactory
+        from backend.tests.contracts.exercise_contract import assert_exercise_contract
+        
+        gen_class = GeneratorFactory.get(gold_generator_key)
+        if gen_class is None:
+            pytest.skip(f"Générateur {gold_generator_key} non trouvé")
+        
+        # Générer 3 exercices pour tester
+        for seed in [1, 2, 3]:
+            result = GeneratorFactory.generate(
+                key=gold_generator_key,
+                overrides={},
+                seed=seed
+            )
+            
+            # Construire un dict d'exercice depuis les variables
+            variables = result.get("variables", {})
+            results = result.get("results", {})
+            
+            # Construire enonce_html et solution_html depuis les variables
+            # Réutiliser la logique du test contractuel pour cohérence
+            from backend.tests.test_generators_contract import TestGeneratorsContract
+            from backend.services.template_renderer import render_template
+            
+            test_instance = TestGeneratorsContract()
+            exercise = test_instance._generate_exercise_dict(gold_generator_key, seed, None)
+            
+            # Valider le contrat
+            try:
+                assert_exercise_contract(exercise, gold_generator_key)
+            except AssertionError as e:
+                pytest.fail(
+                    f"{gold_generator_key} seed={seed}: violation du contrat:\n{e}"
+                )

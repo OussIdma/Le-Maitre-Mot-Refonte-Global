@@ -61,7 +61,10 @@ class ExerciseImportPayload(BaseModel):
 
 async def get_db():
     """Dépendance pour obtenir la base de données"""
-    from server import db
+    from server import app, db
+    # Si app.state.db est défini (pour les tests), l'utiliser
+    if hasattr(app.state, 'db') and app.state.db is not None:
+        return app.state.db
     return db
 
 
@@ -276,30 +279,60 @@ async def create_exercise(
 
 @router.get(
     "/chapters/{chapter_code}/exercises-export",
-    summary="Exporter les exercices d'un chapitre",
-    description="Export JSON des exercices d'un chapitre. Paramètre pipeline optionnel (TEMPLATE pour dyn uniquement, SPEC pour statiques)."
+    summary="Exporter les exercices d'un chapitre (format versionné v1.0)",
+    description="Export JSON versionné des exercices d'un chapitre. Format canonique v1.0 avec schema_version, exported_at, metadata."
 )
 async def export_exercises(
     chapter_code: str,
     pipeline: Optional[Literal["SPEC", "TEMPLATE"]] = None,
-    service=Depends(get_exercise_service)
+    service=Depends(get_exercise_service),
+    db=Depends(get_db)
 ):
+    """
+    Exporte les exercices d'un chapitre au format versionné v1.0.
+    
+    Format de sortie:
+    {
+        "schema_version": "1.0",
+        "exported_at": "ISO8601",
+        "chapter_code": "6E_GM07",
+        "exercises": [...],
+        "metadata": {
+            "total_exercises": 43
+        }
+    }
+    """
     try:
-        normalized_code = chapter_code.upper()
+        from datetime import datetime
+        from backend.constants.collections import EXERCISES_COLLECTION
+        
+        normalized_code = chapter_code.upper().replace("-", "_")
         chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
 
-        exercises = await service.get_exercises(chapter_code=normalized_code)
+        # Récupérer les exercices depuis la DB directement
+        collection = db[EXERCISES_COLLECTION]
+        query = {"chapter_code": normalized_code}
+        
+        exercises = await collection.find(query, {"_id": 0}).sort("id", 1).to_list(length=None)
+        
+        # Filtrer par pipeline si demandé
         if pipeline == "TEMPLATE":
             exercises = [ex for ex in exercises if ex.get("is_dynamic") is True]
         elif pipeline == "SPEC":
             exercises = [ex for ex in exercises if ex.get("is_dynamic") is not True]
 
+        # Format versionné v1.0
         return {
-            "code_officiel": normalized_code,
-            "pipeline": chapter.pipeline if chapter else None,
-            "domaine": chapter.domaine if chapter else None,
-            "libelle": chapter.libelle if chapter else normalized_code,
+            "schema_version": "1.0",
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "chapter_code": normalized_code,
             "exercises": exercises,
+            "metadata": {
+                "total_exercises": len(exercises),
+                "pipeline": chapter.pipeline if chapter else None,
+                "domaine": chapter.domaine if chapter else None,
+                "libelle": chapter.libelle if chapter else normalized_code,
+            }
         }
     except HTTPException:
         raise
@@ -310,74 +343,228 @@ async def export_exercises(
 
 @router.post(
     "/chapters/{chapter_code}/exercises/import",
-    summary="Importer des exercices dans un chapitre",
-    description="Importe une liste d'exercices (JSON) pour un chapitre existant. Valide pipeline/pipeline attendu et generator_key."
+    summary="Importer des exercices dans un chapitre (format versionné v1.0)",
+    description="Importe une liste d'exercices (JSON versionné v1.0) pour un chapitre existant. Import atomique avec rollback automatique en cas d'erreur."
 )
 async def import_exercises(
     chapter_code: str,
-    payload: ExerciseImportPayload,
+    payload: dict,  # Accepte dict pour format versionné flexible (v1.0 ou legacy)
     service=Depends(get_exercise_service),
-    sync_service=Depends(get_curriculum_sync_service_dep)
+    sync_service=Depends(get_curriculum_sync_service_dep),
+    db=Depends(get_db)
 ):
-    logger.info(f"Admin: Import exercices dans {chapter_code} (count={len(payload.exercises)})")
-    normalized_code = chapter_code.upper()
-    chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
-    if not chapter:
+    """
+    Importe des exercices au format versionné v1.0 avec rollback atomique.
+    
+    Format attendu:
+    {
+        "schema_version": "1.0",
+        "chapter_code": "6E_GM07",
+        "exercises": [...],
+        "metadata": {"total_exercises": N}
+    }
+    
+    Pipeline:
+    1. Validation stricte du payload
+    2. Génération batch_id unique
+    3. Insertion atomique (bulk)
+    4. Rollback automatique en cas d'erreur
+    """
+    from uuid import uuid4
+    from datetime import datetime
+    from backend.services.import_export_validator import validate_import_payload_v1
+    from backend.constants.collections import EXERCISES_COLLECTION
+    
+    logger.info(f"Admin: Import exercices versionné dans {chapter_code}")
+    
+    # Détecter le format du payload (v1.0 versionné ou legacy)
+    schema_version = payload.get("schema_version")
+    is_versioned = schema_version == "1.0"
+    
+    # Si schema_version est présent mais invalide, rejeter immédiatement
+    if schema_version is not None and schema_version != "1.0":
         raise HTTPException(
-            status_code=422,
+            status_code=400,
             detail={
-                "error_code": "INVALID_CHAPTER",
-                "error": "invalid_chapter",
-                "message": f"Le chapitre '{chapter_code}' n'existe pas dans le curriculum.",
-            },
+                "error_code": "INVALID_SCHEMA_VERSION",
+                "error": "invalid_schema_version",
+                "message": f"Version de schéma invalide: '{schema_version}'. Version attendue: '1.0'",
+                "provided_version": schema_version,
+                "expected_version": "1.0"
+            }
         )
-
-    # Validation pipeline (pré)
-    expected_pipeline = payload.pipeline or chapter.pipeline
-    dynamic_count = sum(1 for ex in payload.exercises if ex.get("is_dynamic"))
-    static_count = sum(1 for ex in payload.exercises if not ex.get("is_dynamic"))
-    if expected_pipeline == "TEMPLATE" and dynamic_count == 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
-                "error": "template_pipeline_no_exercises",
-                "message": (
-                    f"Le pipeline TEMPLATE requiert au moins un exercice dynamique. Aucun exercice dynamique dans le payload pour '{chapter_code}'."
-                ),
-            },
-        )
-    if expected_pipeline == "SPEC" and static_count == 0 and not chapter.exercise_types:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error_code": "SPEC_PIPELINE_INVALID_EXERCISE_TYPES",
-                "error": "spec_pipeline_invalid",
-                "message": (
-                    f"Le pipeline SPEC requiert des exercise_types valides ou des exercices statiques. "
-                    f"Aucun statique dans le payload et pas d'exercise_types pour '{chapter_code}'."
-                ),
-            },
-        )
-
-    created = []
-    errors = []
-    for ex in payload.exercises:
+    
+    if is_versioned:
+        # Format versionné v1.0: validation stricte + import atomique
+        # 1. Validation stricte du payload v1.0
         try:
-            req = ExerciseCreateRequest(**ex)
-            created_ex = await service.create_exercise(normalized_code, req)
-            created.append(created_ex)
+            validate_import_payload_v1(payload)
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.warning(f"Import exercice KO ({chapter_code}): {e}")
-            errors.append(str(e))
+            logger.error(f"Erreur validation payload import: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "VALIDATION_ERROR",
+                    "error": "validation_error",
+                    "message": f"Erreur lors de la validation du payload: {str(e)}"
+                }
+            )
+        
+        # 2. Vérifier que le chapitre existe
+        normalized_code = payload["chapter_code"].upper().replace("-", "_")
+        chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
+        if not chapter:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "INVALID_CHAPTER",
+                    "error": "invalid_chapter",
+                    "message": f"Le chapitre '{chapter_code}' n'existe pas dans le curriculum.",
+                },
+            )
+        
+        # 3. Générer batch_id unique pour rollback
+        batch_id = str(uuid4())
+        imported_at = datetime.utcnow()
+        
+        # 4. Préparer les exercices pour insertion
+        exercises_to_insert = []
+        for exercise in payload["exercises"]:
+            # Normaliser chapter_code
+            exercise["chapter_code"] = normalized_code
+            
+            # Ajouter métadonnées d'import
+            exercise["batch_id"] = batch_id
+            exercise["imported_at"] = imported_at
+            
+            # Supprimer _id si présent (pour éviter conflit)
+            exercise.pop("_id", None)
+            
+            exercises_to_insert.append(exercise)
+        
+        # 5. Insertion atomique avec rollback
+        collection = db[EXERCISES_COLLECTION]
+        inserted_count = 0
+        
+        try:
+            # Insertion en bulk
+            if exercises_to_insert:
+                result = await collection.insert_many(exercises_to_insert)
+                inserted_count = len(result.inserted_ids)
+                logger.info(f"Import atomique réussi: {inserted_count} exercices insérés (batch_id={batch_id})")
+        except Exception as e:
+            # Rollback: supprimer tous les exercices avec ce batch_id
+            logger.error(f"Erreur lors de l'insertion bulk (batch_id={batch_id}): {e}", exc_info=True)
+            try:
+                delete_result = await collection.delete_many({"batch_id": batch_id})
+                logger.info(f"Rollback effectué: {delete_result.deleted_count} exercices supprimés (batch_id={batch_id})")
+            except Exception as rollback_error:
+                logger.critical(
+                    f"ERREUR CRITIQUE: Échec du rollback (batch_id={batch_id}): {rollback_error}. "
+                    f"Des exercices orphelins peuvent exister dans la DB."
+                )
+            
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "IMPORT_FAILED",
+                    "error": "import_failed",
+                    "message": f"Erreur lors de l'insertion des exercices: {str(e)}",
+                    "batch_id": batch_id,
+                    "rollback_performed": True
+                }
+            )
+        
+        # 6. Vérifier qu'au moins un exercice a été inséré
+        if inserted_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "IMPORT_FAILED",
+                    "error": "import_failed",
+                    "message": f"Aucun exercice inséré pour {chapter_code}",
+                    "batch_id": batch_id
+                }
+            )
+        
+        created_count = inserted_count
+        
+    else:
+        # Format legacy: comportement existant (pour compatibilité)
+        logger.info(f"Admin: Import exercices legacy dans {chapter_code} (count={len(payload.get('exercises', []))})")
+        normalized_code = chapter_code.upper()
+        chapter = get_chapter_by_official_code(normalized_code) or get_chapter_by_official_code(chapter_code)
+        if not chapter:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "INVALID_CHAPTER",
+                    "error": "invalid_chapter",
+                    "message": f"Le chapitre '{chapter_code}' n'existe pas dans le curriculum.",
+                },
+            )
 
-    # Sync curriculum (enrichissement exercise_types)
+        # Validation pipeline (pré)
+        expected_pipeline = payload.get("pipeline") or chapter.pipeline
+        exercises_list = payload.get("exercises", [])
+        dynamic_count = sum(1 for ex in exercises_list if ex.get("is_dynamic"))
+        static_count = sum(1 for ex in exercises_list if not ex.get("is_dynamic"))
+        if expected_pipeline == "TEMPLATE" and dynamic_count == 0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "TEMPLATE_PIPELINE_NO_DYNAMIC_EXERCISES",
+                    "error": "template_pipeline_no_exercises",
+                    "message": (
+                        f"Le pipeline TEMPLATE requiert au moins un exercice dynamique. Aucun exercice dynamique dans le payload pour '{chapter_code}'."
+                    ),
+                },
+            )
+        if expected_pipeline == "SPEC" and static_count == 0 and not chapter.exercise_types:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "SPEC_PIPELINE_INVALID_EXERCISE_TYPES",
+                    "error": "spec_pipeline_invalid",
+                    "message": (
+                        f"Le pipeline SPEC requiert des exercise_types valides ou des exercices statiques. "
+                        f"Aucun statique dans le payload et pas d'exercise_types pour '{chapter_code}'."
+                    ),
+                },
+            )
+
+        created = []
+        errors = []
+        for ex in exercises_list:
+            try:
+                req = ExerciseCreateRequest(**ex)
+                created_ex = await service.create_exercise(normalized_code, req)
+                created.append(created_ex)
+            except Exception as e:
+                logger.warning(f"Import exercice KO ({chapter_code}): {e}")
+                errors.append(str(e))
+        
+        created_count = len(created)
+        
+        if errors and not created:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error_code": "IMPORT_FAILED",
+                    "error": "import_failed",
+                    "message": f"Aucun exercice importé pour {chapter_code}",
+                    "errors": errors,
+                },
+            )
+
+    # 7. Sync curriculum et exercise_types (non-bloquant)
     try:
         await sync_service.sync_chapter_to_curriculum(normalized_code)
     except Exception as sync_error:
         logger.warning(f"[AUTO-SYNC] Échec sync curriculum après import {chapter_code}: {sync_error}")
     
-    # ✨ NOUVEAU: Sync exercise_types après import batch
     try:
         et_sync_result = await sync_service.sync_chapter_to_exercise_types(normalized_code)
         logger.info(
@@ -389,23 +576,22 @@ async def import_exercises(
             f"[AUTO-SYNC] Échec sync exercise_types après import pour {normalized_code}: {et_sync_error}"
         )
 
-    if errors and not created:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error_code": "IMPORT_FAILED",
-                "error": "import_failed",
-                "message": f"Aucun exercice importé pour {chapter_code}",
-                "errors": errors,
-            },
-        )
-
-    return {
+    # 8. Réponse
+    response = {
         "success": True,
-        "chapter_code": chapter_code.upper(),
-        "imported": len(created),
-        "errors": errors,
+        "chapter_code": normalized_code,
+        "imported": created_count,
     }
+    
+    if is_versioned:
+        response["batch_id"] = batch_id  # Pour traçabilité
+        response["imported_at"] = imported_at.isoformat() + "Z"
+    else:
+        # Format legacy: inclure errors si présents
+        if "errors" in locals() and errors:
+            response["errors"] = errors
+    
+    return response
 
 
 @router.put(

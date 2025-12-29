@@ -8,12 +8,13 @@ Modes de fonctionnement:
 2. Mode legacy: niveau + chapitre (comportement existant)
 3. Mode officiel: code_officiel (basé sur le référentiel 6e)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field
 from html import escape
 import time
 import re
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from backend.models.exercise_models import (
     ExerciseGenerateRequest,
@@ -26,9 +27,9 @@ from backend.services.math_generation_service import MathGenerationService
 from backend.services.geometry_render_service import GeometryRenderService
 from curriculum.loader import get_chapter_by_official_code, CurriculumChapter  # Legacy - à remplacer par MongoDB
 from backend.services.curriculum_persistence_service import CurriculumPersistenceService
-# P0 - SUPPRESSION IMPORTS LEGACY : GM07/GM08 gérés par pipeline normal
-# from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
-# from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
+# PR2: DB ONLY - GM07/GM08 utilisent maintenant MongoDB directement
+from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
+from backend.services.gm08_handler import is_gm08_request, generate_gm08_exercise, generate_gm08_batch
 from backend.services.tests_dyn_handler import is_tests_dyn_request, generate_tests_dyn_exercise, generate_tests_dyn_batch, get_available_generators
 from backend.generators.factory import GeneratorFactory  # P0.3 - Dispatch premium générique
 from backend.services.template_renderer import render_template  # P0.3 - Rendu HTML templates
@@ -683,8 +684,10 @@ async def generate_gm07_batch_endpoint(request: GM07BatchRequest):
     
     logger.info(f"🎯 GM07 Batch Request: offer={request.offer}, difficulty={request.difficulte}, count={request.nb_exercices}")
     
-    # Générer le batch
-    exercises, batch_meta = generate_gm07_batch(
+    # PR2: DB ONLY - Utiliser la fonction async avec DB
+    from server import db
+    exercises, batch_meta = await generate_gm07_batch(
+        db=db,
         offer=request.offer,
         difficulty=request.difficulte,
         count=request.nb_exercices,
@@ -749,8 +752,10 @@ async def generate_gm08_batch_endpoint(request: GM08BatchRequest):
     
     logger.info(f"🎯 GM08 Batch Request: offer={request.offer}, difficulty={request.difficulte}, count={request.nb_exercices}")
     
-    # Générer le batch
-    exercises, batch_meta = generate_gm08_batch(
+    # PR2: DB ONLY - Utiliser la fonction async avec DB
+    from server import db
+    exercises, batch_meta = await generate_gm08_batch(
+        db=db,
         offer=request.offer,
         difficulty=request.difficulte,
         count=request.nb_exercices,

@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Switch } from "./ui/switch";
 import Header from "./Header";
 import {
   FileText,
@@ -55,6 +56,7 @@ function SheetEditPageP31() {
   const [availableExercises, setAvailableExercises] = useState([]);
   const [loadingExercises, setLoadingExercises] = useState(false);
   const previewRef = useRef(null);
+  const [pdfLayout, setPdfLayout] = useState("eco"); // "eco" ou "classic" - PR6
 
   useEffect(() => {
     const token = localStorage.getItem('lemaitremot_session_token');
@@ -302,8 +304,9 @@ function SheetEditPageP31() {
       const token = localStorage.getItem('lemaitremot_session_token');
       
       // P3.1 HOTFIX: Export PDF avec withCredentials
+      // PR6: Ajouter le paramètre layout (eco par défaut)
       const response = await axios.post(
-        `${API}/user/sheets/${sheet_uid}/export-pdf?include_solutions=${includeSolutions}`,
+        `${API}/user/sheets/${sheet_uid}/export-pdf?include_solutions=${includeSolutions}&layout=${pdfLayout}`,
         {},
         {
           headers: { 'X-Session-Token': token },
@@ -378,21 +381,35 @@ function SheetEditPageP31() {
               className="text-2xl font-bold border-none shadow-none focus-visible:ring-0"
             />
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => handleExportPDF(false)}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              PDF Sujet
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleExportPDF(true)}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              PDF Corrigé
-            </Button>
+          <div className="flex items-center gap-4">
+            {/* Toggle Layout PDF - PR6 */}
+            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+              <Label htmlFor="pdf-layout-toggle-edit" className="text-sm font-medium cursor-pointer">
+                Éco (2 colonnes)
+              </Label>
+              <Switch
+                id="pdf-layout-toggle-edit"
+                checked={pdfLayout === "eco"}
+                onCheckedChange={(checked) => setPdfLayout(checked ? "eco" : "classic")}
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handleExportPDF(false)}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                PDF Sujet
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleExportPDF(true)}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                PDF Corrigé
+              </Button>
+            </div>
           </div>
         </div>
 

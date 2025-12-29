@@ -59,6 +59,7 @@ function SheetBuilderPage() {
   // États pour génération/export
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [pdfLayout, setPdfLayout] = useState("eco"); // "eco" ou "classic"
   const [sheetId, setSheetId] = useState(urlSheetId || null);
   
   // États pour le modal de preview
@@ -536,7 +537,7 @@ function SheetBuilderPage() {
       
       // Le backend retourne un JSON avec 2 PDFs en base64
       const response = await axios.post(
-        `${API}/mathalea/sheets/${currentSheetId}/export-standard`,
+        `${API}/mathalea/sheets/${currentSheetId}/export-standard?layout=${pdfLayout}`,
         {},
         config
       );
@@ -986,6 +987,18 @@ function SheetBuilderPage() {
                       </Button>
                       
                       <div className="space-y-2">
+                        {/* Toggle Layout PDF - PR6 */}
+                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                          <Label htmlFor="pdf-layout-toggle" className="text-sm font-medium cursor-pointer">
+                            Éco (2 colonnes)
+                          </Label>
+                          <Switch
+                            id="pdf-layout-toggle"
+                            checked={pdfLayout === "eco"}
+                            onCheckedChange={(checked) => setPdfLayout(checked ? "eco" : "classic")}
+                          />
+                        </div>
+                        
                         <Button
                           onClick={handleGeneratePDF}
                           disabled={isGeneratingPDF}

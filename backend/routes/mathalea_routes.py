@@ -1024,6 +1024,7 @@ async def generate_sheet_pdf(sheet_id: str):
 async def export_standard_pdf(
     sheet_id: str,
     request: Request,
+    layout: str = "eco",  # Query param: "eco" ou "classic"
     x_session_token: Optional[str] = Header(None, alias="X-Session-Token"),
     x_guest_id: Optional[str] = Header(None, alias="X-Guest-ID")
 ):
@@ -1057,6 +1058,12 @@ async def export_standard_pdf(
         build_sheet_correction_pdf
     )
     from backend.server import validate_session_token, check_user_pro_status, check_guest_quota
+    
+    # Utiliser app.state.db si disponible (pour les tests), sinon db global
+    db_to_use = getattr(request.app.state, 'db', db)
+    exercise_sheets_collection_local = db_to_use[EXERCISE_SHEETS_COLLECTION]
+    sheet_items_collection_local = db_to_use[SHEET_ITEMS_COLLECTION]
+    exercise_types_collection_local = db_to_use[EXERCISE_TYPES_COLLECTION]
     
     # P0: Vérification auth et quota
     is_pro_user = False
@@ -1127,12 +1134,12 @@ async def export_standard_pdf(
     
     try:
         # 1. Vérifier que la feuille existe
-        sheet = await exercise_sheets_collection.find_one({"id": sheet_id}, {"_id": 0})
+        sheet = await exercise_sheets_collection_local.find_one({"id": sheet_id}, {"_id": 0})
         if not sheet:
             raise HTTPException(status_code=404, detail="ExerciseSheet not found")
         
         # 2. Générer le preview
-        cursor = sheet_items_collection.find({"sheet_id": sheet_id}, {"_id": 0}).sort("order", 1)
+        cursor = sheet_items_collection_local.find({"sheet_id": sheet_id}, {"_id": 0}).sort("order", 1)
         items = await cursor.to_list(length=1000)
         
         if not items:
@@ -1147,7 +1154,7 @@ async def export_standard_pdf(
                 item = SheetItem(**item_dict)
                 
                 # Récupérer l'ExerciseType
-                exercise_type_dict = await exercise_types_collection.find_one(
+                exercise_type_dict = await exercise_types_collection_local.find_one(
                     {"id": item.exercise_type_id},
                     {"_id": 0}
                 )
@@ -1196,10 +1203,21 @@ async def export_standard_pdf(
             "items": preview_items
         }
         
+        # 3. Récupérer le layout (query param ou default "eco" pour gratuit)
+        layout = request.query_params.get("layout", "eco")
+        if layout not in ["eco", "classic"]:
+            layout = "eco"  # Fallback si valeur invalide
+        
+        # Si utilisateur Pro, peut choisir classic, sinon default eco
+        if not is_pro_user and layout == "classic":
+            # Gratuit: forcer eco
+            layout = "eco"
+            logger.info(f"[EXPORT] Utilisateur gratuit - layout forcé à 'eco'")
+        
         # 3. Générer les 2 PDFs uniquement
-        logger.info(f"📄 Génération export standard pour la feuille {sheet_id}")
-        student_pdf_bytes = build_sheet_student_pdf(preview)
-        correction_pdf_bytes = build_sheet_correction_pdf(preview)
+        logger.info(f"📄 Génération export standard pour la feuille {sheet_id} (layout={layout})")
+        student_pdf_bytes = build_sheet_student_pdf(preview, layout=layout)
+        correction_pdf_bytes = build_sheet_correction_pdf(preview, layout=layout)
         
         # 4. Créer le nom de fichier base
         filename_base = f"LeMaitreMot_{sheet['titre'].replace(' ', '_')}"

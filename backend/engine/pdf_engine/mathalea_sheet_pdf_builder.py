@@ -39,7 +39,7 @@ def build_sheet_subject_pdf(sheet_preview: dict) -> bytes:
     return pdf_bytes
 
 
-def build_sheet_student_pdf(sheet_preview: dict) -> bytes:
+def build_sheet_student_pdf(sheet_preview: dict, layout: str = "eco") -> bytes:
     """
     Génère le PDF "élève" (pour distribution aux élèves)
     
@@ -52,18 +52,19 @@ def build_sheet_student_pdf(sheet_preview: dict) -> bytes:
     
     Args:
         sheet_preview: Dict contenant le preview complet de la fiche
+        layout: "eco" (2 colonnes, compact) ou "classic" (1 colonne, standard)
         
     Returns:
         bytes: Contenu du PDF
     """
-    html_content = _build_html_student(sheet_preview)
+    html_content = _build_html_student(sheet_preview, layout=layout)
     pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()
     
-    logger.info(f"✅ PDF Élève généré: {len(pdf_bytes)} bytes")
+    logger.info(f"✅ PDF Élève généré (layout={layout}): {len(pdf_bytes)} bytes")
     return pdf_bytes
 
 
-def build_sheet_correction_pdf(sheet_preview: dict) -> bytes:
+def build_sheet_correction_pdf(sheet_preview: dict, layout: str = "eco") -> bytes:
     """
     Génère le PDF "corrigé" (avec toutes les solutions)
     
@@ -75,14 +76,15 @@ def build_sheet_correction_pdf(sheet_preview: dict) -> bytes:
     
     Args:
         sheet_preview: Dict contenant le preview complet de la fiche
+        layout: "eco" (2 colonnes, compact) ou "classic" (1 colonne, standard)
         
     Returns:
         bytes: Contenu du PDF
     """
-    html_content = _build_html_correction(sheet_preview)
+    html_content = _build_html_correction(sheet_preview, layout=layout)
     pdf_bytes = weasyprint.HTML(string=html_content).write_pdf()
     
-    logger.info(f"✅ PDF Corrigé généré: {len(pdf_bytes)} bytes")
+    logger.info(f"✅ PDF Corrigé généré (layout={layout}): {len(pdf_bytes)} bytes")
     return pdf_bytes
 
 
@@ -125,7 +127,7 @@ def _build_html_subject(sheet_preview: dict) -> str:
     
     # Exercises
     for ex_idx, item in enumerate(items, 1):
-        html += _render_exercise(item, ex_idx, include_solutions=False, is_student=False)
+        html += _render_exercise(item, ex_idx, include_solutions=False, is_student=False, layout="classic")
     
     html += """
         </div>
@@ -136,12 +138,15 @@ def _build_html_subject(sheet_preview: dict) -> str:
     return html
 
 
-def _build_html_student(sheet_preview: dict) -> str:
+def _build_html_student(sheet_preview: dict, layout: str = "eco") -> str:
     """Génère le HTML pour le PDF élève"""
     
     titre = sheet_preview.get("titre", "Feuille d'exercices")
     niveau = sheet_preview.get("niveau", "")
     items = sheet_preview.get("items", [])
+    
+    # Choisir le CSS selon le layout
+    css = _get_eco_css() if layout == "eco" else _get_base_css()
     
     # Header
     html = f"""
@@ -150,7 +155,7 @@ def _build_html_student(sheet_preview: dict) -> str:
     <head>
         <meta charset="UTF-8">
         <style>
-            {_get_base_css()}
+            {css}
         </style>
     </head>
     <body>
@@ -168,9 +173,19 @@ def _build_html_student(sheet_preview: dict) -> str:
         <div class="content">
     """
     
+    # PR6.3: Si layout=eco, créer eco-columns au niveau du contenu
+    # (les blocs fullwidth seront gérés dans _render_exercise)
+    if layout == "eco":
+        html += '<div class="eco-columns">'
+    
     # Exercises
     for ex_idx, item in enumerate(items, 1):
-        html += _render_exercise(item, ex_idx, include_solutions=False, is_student=True)
+        exercise_html = _render_exercise(item, ex_idx, include_solutions=False, is_student=True, layout=layout)
+        html += exercise_html
+    
+    # PR6.3: Fermer eco-columns si ouvert
+    if layout == "eco":
+        html += '</div>'
     
     html += """
         </div>
@@ -181,12 +196,22 @@ def _build_html_student(sheet_preview: dict) -> str:
     return html
 
 
-def _build_html_correction(sheet_preview: dict) -> str:
-    """Génère le HTML pour le PDF corrigé"""
+def _build_html_correction(sheet_preview: dict, layout: str = "eco") -> str:
+    """Génère le HTML pour le PDF corrigé
+    
+    PR6.1: Le corrigé est TOUJOURS en 1 colonne (classic) pour éviter les trous/espaces.
+    Le paramètre layout=eco est ignoré pour le corrigé.
+    """
     
     titre = sheet_preview.get("titre", "Feuille d'exercices")
     niveau = sheet_preview.get("niveau", "")
     items = sheet_preview.get("items", [])
+    
+    # PR6.1: Corrigé toujours en classic (1 colonne) pour éviter les trous
+    # Ignorer layout=eco pour le corrigé
+    css = _get_base_css()
+    if layout == "eco":
+        logger.info("[PDF_CORRECTION] layout=eco ignoré pour corrigé, utilisation de classic (1 colonne)")
     
     # Header
     html = f"""
@@ -195,7 +220,7 @@ def _build_html_correction(sheet_preview: dict) -> str:
     <head>
         <meta charset="UTF-8">
         <style>
-            {_get_base_css()}
+            {css}
             .solution {{
                 background-color: #f0f8ff;
                 border-left: 4px solid #4CAF50;
@@ -206,8 +231,8 @@ def _build_html_correction(sheet_preview: dict) -> str:
     </head>
     <body>
         <div class="header">
-            <h1>{titre}</h1>
-            <div class="metadata">
+            <h1 class="sheet-title">{titre}</h1>
+            <div class="sheet-meta">
                 <span class="niveau">Niveau: {niveau}</span>
                 <span class="date">Date: {datetime.now().strftime("%d/%m/%Y")}</span>
                 <span class="type">Corrigé</span>
@@ -219,7 +244,7 @@ def _build_html_correction(sheet_preview: dict) -> str:
     
     # Exercises
     for ex_idx, item in enumerate(items, 1):
-        html += _render_exercise(item, ex_idx, include_solutions=True, is_student=False)
+        html += _render_exercise(item, ex_idx, include_solutions=True, is_student=False, layout="classic")
     
     html += """
         </div>
@@ -230,7 +255,7 @@ def _build_html_correction(sheet_preview: dict) -> str:
     return html
 
 
-def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_student: bool) -> str:
+def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_student: bool, layout: str = "eco") -> str:
     """
     Rendu HTML d'un exercice complet
     
@@ -239,6 +264,7 @@ def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_stu
         ex_number: Numéro de l'exercice
         include_solutions: Inclure les solutions
         is_student: Version élève (avec espace de réponse)
+        layout: "eco" ou "classic" - PR6.2: pour wrapper les tableaux/figures en .fullwidth
     """
     exercise_type_summary = item.get("exercise_type_summary", {})
     generated = item.get("generated", {})
@@ -247,38 +273,76 @@ def _render_exercise(item: dict, ex_number: int, include_solutions: bool, is_stu
     titre = exercise_type_summary.get("titre", f"Exercice {ex_number}")
     domaine = exercise_type_summary.get("domaine", "")
     
+    # PR6.3: Rendre les questions et collecter les blocs fullwidth
+    question_html_parts = []
+    all_fullwidth_blocks = []
+    
+    for q_idx, question in enumerate(questions, 1):
+        q_html, q_fullwidth_blocks = _render_question(question, q_idx, include_solutions, is_student, layout=layout)
+        question_html_parts.append((q_html, q_fullwidth_blocks))
+        all_fullwidth_blocks.extend(q_fullwidth_blocks)
+    
+    # PR6.3: Structure HTML selon layout
+    # NOTE: eco-columns est créé au niveau parent (_build_html_student)
+    # Ici on gère juste les blocs fullwidth qui doivent sortir
     html = f"""
     <div class="exercise">
         <div class="exercise-header">
-            <h2>Exercice {ex_number}</h2>
-            <p class="exercise-title">{titre}</p>
+            <h2><span class="exercise-number">{ex_number}</span>{titre}</h2>
             {f'<p class="exercise-domain">{domaine}</p>' if domaine else ''}
         </div>
         
         <div class="questions">
     """
     
-    # Questions
-    for q_idx, question in enumerate(questions, 1):
-        html += _render_question(question, q_idx, include_solutions, is_student)
+    # PR6.3: Si layout=eco et qu'il y a des blocs fullwidth, les sortir
+    # NOTE: eco-columns est déjà ouvert au niveau parent (_build_html_student)
+    if layout == "eco" and all_fullwidth_blocks:
+        placeholder_idx = 0
+        for q_html, q_fullwidth_blocks in question_html_parts:
+            # Remplacer les placeholders par rien (on sortira les blocs après)
+            for _ in q_fullwidth_blocks:
+                q_html = q_html.replace(f'<!--FULLWIDTH_{placeholder_idx}-->', '')
+                placeholder_idx += 1
+            
+            html += q_html
+            
+            # Si cette question a des blocs fullwidth, sortir de colonnes et insérer
+            if q_fullwidth_blocks:
+                html += '</div></div>'  # Fermer questions + exercise
+                html += '</div>'  # Fermer eco-columns (parent dans _build_html_student)
+                for block in q_fullwidth_blocks:
+                    html += f'<div class="fullwidth-block">{block}</div>'
+                html += '<div class="eco-columns">'  # Rouvrir eco-columns
+                html += f'<div class="exercise"><div class="exercise-header"><h2><span class="exercise-number">{ex_number}</span>{titre}</h2></div><div class="questions">'  # Rouvrir exercise + questions (sans domaine car déjà affiché)
     
-    html += """
-        </div>
-    </div>
-    """
+    else:
+        # Layout classic ou pas de fullwidth: rendu normal
+        for q_html, _ in question_html_parts:
+            # Nettoyer les placeholders s'il y en a
+            import re
+            q_html = re.sub(r'<!--FULLWIDTH_\d+-->', '', q_html)
+            html += q_html
+        html += '</div></div>'  # Fermer questions + exercise
     
     return html
 
 
-def _render_question(question: dict, q_number: int, include_solution: bool, is_student: bool) -> str:
+def _render_question(question: dict, q_number: int, include_solution: bool, is_student: bool, layout: str = "eco") -> tuple[str, list[str]]:
     """
-    Rendu HTML d'une question
+    PR6.3: Rendu HTML d'une question avec extraction des blocs fullwidth.
     
     Args:
         question: Question du preview
         q_number: Numéro de la question
         include_solution: Inclure la solution
         is_student: Version élève (avec espace de réponse)
+        layout: "eco" ou "classic"
+    
+    Returns:
+        tuple: (html_text_with_placeholders, fullwidth_blocks)
+        - html_text_with_placeholders: HTML avec placeholders pour les blocs fullwidth
+        - fullwidth_blocks: Liste des blocs extraits (tableaux, figures)
     """
     enonce = question.get("enonce_brut", "")
     solution = question.get("solution_brut", "")
@@ -290,20 +354,36 @@ def _render_question(question: dict, q_number: int, include_solution: bool, is_s
     # Récupérer la figure HTML si présente
     figure_html = question.get("figure_html", "")
     
+    # PR6.3: Extraire les blocs fullwidth (tableaux, figures) du HTML
+    fullwidth_blocks = []
+    if layout == "eco":
+        # Extraire les tableaux/figures de l'énoncé
+        enonce_html, blocks_from_enonce = extract_fullwidth_blocks(enonce_html)
+        fullwidth_blocks.extend(blocks_from_enonce)
+        
+        # Extraire la figure si présente
+        if figure_html:
+            _, blocks_from_figure = extract_fullwidth_blocks(figure_html)
+            if blocks_from_figure:
+                fullwidth_blocks.extend(blocks_from_figure)
+            else:
+                # Si pas de bloc extrait, c'est peut-être déjà du HTML simple
+                fullwidth_blocks.append(f'<div class="figure">{figure_html}</div>')
+    
     html = f"""
     <div class="question">
         <div class="question-header">
-            <strong>Question {q_number}:</strong>
+            <strong class="instruction">Question {q_number}:</strong>
         </div>
         <div class="question-enonce">
             {enonce_html}
         </div>
     """
     
-    # Ajouter la figure géométrique si présente
-    if figure_html:
+    # PR6.3: Si layout != eco, on garde l'ancien comportement (figure inline)
+    if figure_html and layout != "eco":
         html += f"""
-        <div class="exercise-figure">
+        <div class="figure exercise-figure">
             {figure_html}
         </div>
         """
@@ -313,17 +393,24 @@ def _render_question(question: dict, q_number: int, include_solution: bool, is_s
         html += """
         <div class="answer-space">
             <p><em>Réponse:</em></p>
-            <div style="height: 80px; border: 1px dashed #ccc; margin: 10px 0;"></div>
+            <div></div>
         </div>
         """
     
-    # Solution (uniquement pour corrigé)
+    # Solution (uniquement pour corrigé) - PR6.1: Design "manuel scolaire"
     if include_solution:
         solution_html = _format_text(solution)
+        # PR6.3: Extraire aussi les blocs fullwidth de la solution si eco
+        if layout == "eco":
+            solution_html, blocks_from_solution = extract_fullwidth_blocks(solution_html)
+            fullwidth_blocks.extend(blocks_from_solution)
+        
         html += f"""
-        <div class="solution">
-            <strong>Solution:</strong><br>
-            {solution_html}
+        <div class="solution correction-box">
+            <div class="correction-title">Solution</div>
+            <div class="correction">
+                {solution_html}
+            </div>
         </div>
         """
     
@@ -331,7 +418,7 @@ def _render_question(question: dict, q_number: int, include_solution: bool, is_s
     </div>
     """
     
-    return html
+    return html, fullwidth_blocks
 
 
 def _format_text(text: str) -> str:
@@ -351,26 +438,147 @@ def _format_text(text: str) -> str:
     return text
 
 
+def extract_fullwidth_blocks(html: str) -> tuple[str, list[str]]:
+    """
+    PR6.3: Extrait les blocs "wide" (tableaux, figures) du HTML pour les sortir des colonnes.
+    
+    Détecte:
+    - <table>...</table> (tableaux)
+    - <svg>...</svg> (figures SVG)
+    - <div class="figure">...</div> (figures wrappées)
+    
+    Args:
+        html: HTML contenant potentiellement des tableaux/figures
+    
+    Returns:
+        tuple: (html_with_placeholders, list_of_fullwidth_blocks)
+        - html_with_placeholders: HTML avec placeholders <!--FULLWIDTH_0-->, <!--FULLWIDTH_1-->, etc.
+        - list_of_fullwidth_blocks: Liste des blocs extraits (dans l'ordre)
+    """
+    import re
+    
+    fullwidth_blocks = []
+    placeholder_counter = 0
+    
+    # Pattern pour capturer un tableau complet (non-gourmand)
+    table_pattern = r'<table[^>]*>.*?</table>'
+    
+    def extract_table(match):
+        nonlocal placeholder_counter
+        table_html = match.group(0)
+        # Vérifier si déjà dans un wrapper fullwidth
+        if 'class="fullwidth' in table_html or 'class="fullwidth-block' in table_html:
+            return match.group(0)
+        placeholder = f'<!--FULLWIDTH_{placeholder_counter}-->'
+        fullwidth_blocks.append(f'<div class="table-wrapper">{table_html}</div>')
+        placeholder_counter += 1
+        return placeholder
+    
+    html = re.sub(table_pattern, extract_table, html, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Pattern pour capturer les figures SVG (non-gourmand)
+    svg_pattern = r'<svg[^>]*>.*?</svg>'
+    
+    def extract_svg(match):
+        nonlocal placeholder_counter
+        svg_html = match.group(0)
+        # Vérifier si déjà dans un wrapper
+        if 'class="figure' in html[max(0, match.start()-100):match.start()] or \
+           'class="fullwidth' in html[max(0, match.start()-100):match.start()]:
+            return match.group(0)
+        placeholder = f'<!--FULLWIDTH_{placeholder_counter}-->'
+        fullwidth_blocks.append(f'<div class="figure">{svg_html}</div>')
+        placeholder_counter += 1
+        return placeholder
+    
+    html = re.sub(svg_pattern, extract_svg, html, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Pattern pour capturer les div.figure (déjà wrappées)
+    figure_div_pattern = r'<div[^>]*class=["\']figure[^"\']*["\'][^>]*>.*?</div>'
+    
+    def extract_figure_div(match):
+        nonlocal placeholder_counter
+        figure_html = match.group(0)
+        # Vérifier si déjà dans fullwidth-block
+        if 'class="fullwidth-block' in figure_html:
+            return match.group(0)
+        placeholder = f'<!--FULLWIDTH_{placeholder_counter}-->'
+        fullwidth_blocks.append(figure_html)
+        placeholder_counter += 1
+        return placeholder
+    
+    html = re.sub(figure_div_pattern, extract_figure_div, html, flags=re.DOTALL | re.IGNORECASE)
+    
+    return html, fullwidth_blocks
+
+
 def _get_base_css() -> str:
-    """CSS de base pour tous les PDFs"""
+    """CSS de base pour tous les PDFs (layout classic - 1 colonne) - PR6.1: Anti-débordement + Design manuel scolaire"""
     return """
+        /* --- Variables design "manuel scolaire" --- */
+        :root {
+            --font: "Inter", "Helvetica", Arial, sans-serif;
+            --text: #111;
+            --muted: #555;
+            --rule: #ddd;
+            --accent: #0b57d0;
+        }
+        
         @page {
             size: A4;
             margin: 2cm 1.5cm;
         }
         
-        body {
-            font-family: 'Arial', sans-serif;
-            font-size: 11pt;
-            line-height: 1.5;
-            color: #333;
+        * {
+            box-sizing: border-box;  /* PR6.1: Anti-débordement */
         }
         
+        body {
+            font-family: var(--font);
+            font-size: 11pt;
+            line-height: 1.5;
+            color: var(--text);
+        }
+        
+        p {
+            margin: 0 0 6px 0;
+        }
+        
+        h1, h2, h3 {
+            margin: 0 0 8px 0;
+            line-height: 1.15;
+        }
+        
+        hr {
+            border: 0;
+            border-top: 1px solid var(--rule);
+            margin: 10px 0;
+        }
+        
+        /* --- Header "manuel scolaire" --- */
         .header {
             text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #2c3e50;
-            padding-bottom: 15px;
+            border-bottom: 2px solid var(--rule);
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+        }
+        
+        .sheet-title {
+            font-size: 18pt;
+            font-weight: 800;
+            letter-spacing: -0.2px;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        
+        .sheet-meta {
+            font-size: 10pt;
+            color: var(--muted);
+            margin-top: 2px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         
         .header h1 {
@@ -395,9 +603,49 @@ def _get_base_css() -> str:
             text-align: left;
         }
         
+        .content {
+            /* Pas de colonnes pour classic */
+        }
+        
+        /* PR6.1: Anti-débordement même en classic */
+        .content img,
+        .content svg,
+        .content canvas {
+            max-width: 100% !important;
+            height: auto !important;
+            display: block;
+        }
+        
+        .content table {
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: fixed;
+            border-collapse: collapse;
+            margin: 6px 0;
+        }
+        
+        .content th,
+        .content td {
+            border: 1px solid var(--rule);
+            padding: 4px 6px;
+            vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        
+        .content pre,
+        .content code {
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-width: 100%;
+        }
+        
+        /* --- Exercice "manuel scolaire" --- */
+        /* PR6.2: Supprimer page-break-inside: avoid pour éviter "1 exo = 1 page" */
         .exercise {
-            margin-bottom: 30px;
-            page-break-inside: avoid;
+            margin-bottom: 15px;  /* PR6.2: Réduire marge (était 30px) */
+            page-break-inside: auto;  /* PR6.2: auto au lieu de avoid */
+            break-inside: auto;
         }
         
         .exercise-header {
@@ -407,6 +655,18 @@ def _get_base_css() -> str:
             margin-bottom: 15px;
         }
         
+        .exercise-number {
+            display: inline-block;
+            min-width: 24px;
+            text-align: center;
+            font-weight: 800;
+            font-size: 11pt;
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 2px 8px;
+            margin-right: 8px;
+        }
+        
         .exercise-header h2 {
             color: #2c3e50;
             font-size: 14pt;
@@ -414,7 +674,7 @@ def _get_base_css() -> str:
         }
         
         .exercise-title {
-            font-weight: bold;
+            font-weight: 750;
             color: #34495e;
             margin: 5px 0;
         }
@@ -431,13 +691,18 @@ def _get_base_css() -> str:
         }
         
         .question {
-            margin-bottom: 20px;
-            page-break-inside: avoid;
+            margin-bottom: 12px;  /* PR6.2: Réduire marge (était 20px) */
+            page-break-inside: auto;  /* PR6.2: auto au lieu de avoid */
+            break-inside: auto;
         }
         
         .question-header {
             color: #2c3e50;
             margin-bottom: 5px;
+        }
+        
+        .instruction {
+            font-weight: 700;
         }
         
         .question-enonce {
@@ -449,6 +714,12 @@ def _get_base_css() -> str:
             margin: 15px 0 15px 20px;
         }
         
+        .answer-space div {
+            height: 80px;
+            border: 1px dashed #ccc;
+        }
+        
+        /* --- Solution "manuel scolaire" --- */
         .solution {
             margin: 15px 0 15px 20px;
             padding: 10px;
@@ -460,16 +731,350 @@ def _get_base_css() -> str:
             color: #27ae60;
         }
         
-        /* Styles pour les figures géométriques */
-        .exercise-figure {
-            margin: 14px 0;
+        .correction-title {
+            font-size: 14pt;
+            font-weight: 850;
+            margin-bottom: 8px;
+        }
+        
+        .correction ol {
+            margin: 6px 0 0 18px;
+        }
+        
+        .correction li {
+            margin: 0 0 6px 0;
+        }
+        
+        .conclusion {
+            margin-top: 6px;
+            padding: 6px 8px;
+            border-left: 3px solid var(--accent);
+            background: #f5f8ff;
+        }
+        
+        /* --- Figures et tableaux (anti-débordement) --- */
+        /* PR6.2: Garder avoid uniquement pour les figures/tableaux (pas pour les exercices) */
+        .figure,
+        .table-wrapper,
+        .exercise-figure,
+        .fullwidth {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            max-width: 100%;
+            margin: 10px 0;  /* PR6.2: Réduire marge (était 14px) */
             text-align: center;
+        }
+        
+        .figure svg,
+        .exercise-figure svg {
+            display: block;
+            max-width: 100% !important;
+            height: auto !important;
+        }
+    """
+
+
+def _get_eco_css() -> str:
+    """CSS pour le layout eco (2 colonnes + compact) - PR6.1: Anti-débordement + Design manuel scolaire"""
+    return """
+        /* --- Variables design "manuel scolaire" --- */
+        :root {
+            --font: "Inter", "Helvetica", Arial, sans-serif;
+            --text: #111;
+            --muted: #555;
+            --rule: #ddd;
+            --accent: #0b57d0;
+        }
+        
+        @page {
+            size: A4;
+            margin: 14mm 12mm;  /* Marges réduites mais raisonnables */
+        }
+        
+        * {
+            box-sizing: border-box;  /* PR6.1: Anti-débordement */
+        }
+        
+        body {
+            font-family: var(--font);
+            font-size: 10pt;
+            line-height: 1.35;
+            color: var(--text);
+        }
+        
+        p {
+            margin: 0 0 6px 0;
+        }
+        
+        h1, h2, h3 {
+            margin: 0 0 8px 0;
+            line-height: 1.15;
+        }
+        
+        hr {
+            border: 0;
+            border-top: 1px solid var(--rule);
+            margin: 10px 0;
+        }
+        
+        /* --- Header "manuel scolaire" --- */
+        .header {
+            text-align: center;
+            border-bottom: 2px solid var(--rule);
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            /* PR6.3: Pas de column-span ici car header est avant eco-columns */
+        }
+        
+        .sheet-title {
+            font-size: 16pt;
+            font-weight: 800;
+            letter-spacing: -0.2px;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        
+        .sheet-meta {
+            font-size: 9.5pt;
+            color: var(--muted);
+            margin-top: 2px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .metadata {
+            font-size: 9pt;
+            color: var(--muted);
+            margin-top: 8px;
+        }
+        
+        .metadata span {
+            margin: 0 10px;
+        }
+        
+        .student-info {
+            margin-top: 10px;
+            font-size: 9pt;
+            text-align: left;
+            /* PR6.3: Pas de column-span ici car student-info est avant eco-columns */
+        }
+        
+        /* PR6.3: Layout 2 colonnes - structure refactorée pour éviter overlay */
+        .content {
+            /* Pas de column-count ici - on utilise .eco-columns pour les blocs texte */
+        }
+        
+        /* PR6.3: Zone colonnes pour le texte (hors fullwidth) */
+        .eco-columns {
+            column-count: 2 !important;  /* PR6.3: Forcer 2 colonnes */
+            column-gap: 10mm;
+            column-fill: auto;
             width: 100%;
         }
         
-        .exercise-figure svg {
+        /* PR6.3: Bloc fullwidth HORS colonnes (évite overlay) */
+        .fullwidth-block {
+            width: 100%;
+            margin: 8px 0 12px 0;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+        
+        /* PR6.3: Tableaux lisibles dans fullwidth-block */
+        .fullwidth-block table {
+            width: 100% !important;
+            border-collapse: collapse;
+            table-layout: auto;  /* Pas fixed pour lisibilité */
+            font-size: 11pt;     /* PR6.3: Taille lisible (>= 11pt) */
+            margin: 0;
+        }
+        
+        .fullwidth-block td,
+        .fullwidth-block th {
+            border: 1px solid #ddd;
+            padding: 6px 8px;  /* PR6.3: Padding généreux */
+            text-align: center;
+            vertical-align: middle;
+            white-space: nowrap;  /* PR6.3: Chiffres propres */
+        }
+        
+        /* PR6.3: Figures dans fullwidth-block */
+        .fullwidth-block .figure {
+            width: 100%;
+            text-align: center;
+            margin: 0;
+        }
+        
+        .fullwidth-block svg {
+            max-width: 100% !important;
+            height: auto !important;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        /* PR6.1: Anti-débordement général (safe) */
+        .content img,
+        .content svg,
+        .content canvas,
+        .eco-columns img,
+        .eco-columns svg,
+        .eco-columns canvas {
+            max-width: 100% !important;
+            height: auto !important;
+            display: block;
+        }
+        
+        /* PR6.3: Tableaux dans colonnes (petits tableaux qui restent) */
+        .eco-columns table {
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: auto;
+            border-collapse: collapse;
+            margin: 6px 0;
+            font-size: 10pt;
+        }
+        
+        .eco-columns th,
+        .eco-columns td {
+            border: 1px solid var(--rule);
+            padding: 3px 5px;
+            vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        
+        .content pre,
+        .content code,
+        .eco-columns pre,
+        .eco-columns code {
+            white-space: pre-wrap;
+            word-break: break-word;
             max-width: 100%;
-            height: auto;
+        }
+        
+        /* --- Exercice "manuel scolaire" --- */
+        .exercise {
+            margin-bottom: 10px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .exercise-header {
+            background-color: #f5f5f5;
+            padding: 8px;
+            border-left: 3px solid #3498db;
+            margin-bottom: 12px;
+        }
+        
+        .exercise-number {
+            display: inline-block;
+            min-width: 22px;
+            text-align: center;
+            font-weight: 800;
+            font-size: 10pt;
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 2px 6px;
+            margin-right: 6px;
+        }
+        
+        .exercise-header h2 {
+            color: #2c3e50;
+            font-size: 12pt;
+            margin: 0 0 4px 0;
+        }
+        
+        .exercise-title {
+            font-weight: 750;
+            color: #34495e;
+            margin: 4px 0;
+            font-size: 10pt;
+        }
+        
+        .exercise-domain {
+            font-size: 8pt;
+            color: #7f8c8d;
+            font-style: italic;
+            margin: 0;
+        }
+        
+        .questions {
+            padding-left: 8px;
+        }
+        
+        .question {
+            margin-bottom: 15px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        
+        .question-header {
+            color: #2c3e50;
+            margin-bottom: 4px;
+            font-size: 10pt;
+        }
+        
+        .instruction {
+            font-weight: 700;
+        }
+        
+        .question-enonce {
+            margin-left: 15px;
+            line-height: 1.5;
+            font-size: 10pt;
+        }
+        
+        .answer-space {
+            margin: 10px 0 10px 15px;
+        }
+        
+        .answer-space div {
+            height: 60px;
+            border: 1px dashed #ccc;
+        }
+        
+        /* --- Figures et tableaux (anti-débordement) --- */
+        .figure,
+        .table-wrapper,
+        .exercise-figure {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            max-width: 100%;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .figure svg,
+        .exercise-figure svg {
+            display: block;
+            max-width: 100% !important;
+            height: auto !important;
+        }
+        
+        /* --- Solution (éviter les trous - break-inside auto) --- */
+        .solution,
+        .correction-box {
+            break-inside: auto !important;  /* PR6.2: Forcer auto pour éviter "1 exo = 1 page" */
+            page-break-inside: auto !important;
+            margin: 8px 0 8px 15px;  /* PR6.2: Réduire marge */
+            padding: 8px;
+            background-color: #f0f8ff;
+            border-left: 3px solid #4CAF50;
+            font-size: 10pt;  /* PR6.2: Taille minimale lisible (était 9pt) */
+        }
+        
+        .solution strong {
+            color: #27ae60;
+        }
+        
+        /* --- Optimisations typographiques --- */
+        .question-enonce {
+            orphans: 3;
+            widows: 3;
         }
     """
 

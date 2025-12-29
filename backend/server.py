@@ -6483,6 +6483,10 @@ from backend.services.auth_password_service import (
     validate_password_strength
 )
 
+# Middleware request_id pour traçabilité
+from backend.middleware.request_id import RequestIDMiddleware
+app.add_middleware(RequestIDMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

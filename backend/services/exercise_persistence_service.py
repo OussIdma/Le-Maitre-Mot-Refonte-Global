@@ -33,6 +33,10 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# P0-STABILITY: Flag d'environnement pour l'export Python (DEV ONLY)
+# En production, ce flag doit être "false" pour éviter l'écriture de fichiers en runtime
+ENABLE_PY_EXPORT = os.getenv("ENABLE_PY_EXPORT", "false").lower() == "true"
+
 # Chemin vers le dossier data
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
@@ -288,7 +292,20 @@ class ExercisePersistenceService:
         """
         Synchronise les exercices MongoDB vers le fichier Python.
         Génère le code Python compatible avec les handlers existants.
+        
+        P0-STABILITY: Export Python = DEV ONLY
+        En production, cette fonction ne fait rien si ENABLE_PY_EXPORT != "true".
+        DB est la source de vérité unique en production.
         """
+        # P0-STABILITY: Guard - pas d'écriture fichier en prod
+        if not ENABLE_PY_EXPORT:
+            logger.debug(
+                f"[P0-STABILITY] _sync_to_python_file() ignoré pour {chapter_code}: "
+                f"ENABLE_PY_EXPORT={os.getenv('ENABLE_PY_EXPORT', 'false')} "
+                f"(export Python = DEV ONLY, DB = source de vérité)"
+            )
+            return
+        
         exercises = await self.get_exercises(chapter_code)
         
         # Déterminer le nom du fichier et de la variable
@@ -723,9 +740,10 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             logger.warning(f"[DEPRECATED] Champ family utilisé lors de la création (chapter={chapter_upper}, family={request.family.upper()}). Migrer vers exercise_type.")
         
         # Synchroniser avec le fichier Python (seulement pour GM07/GM08)
+        # P0-STABILITY: _reload_handler() est synchrone, pas d'await
         if chapter_upper in ["6E_GM07", "6E_GM08"]:
             await self._sync_to_python_file(chapter_upper)
-            await self._reload_handler(chapter_upper)
+            self._reload_handler(chapter_upper)
         
         # Invalidate stats cache
         self._invalidate_stats_cache(chapter_upper)
@@ -888,10 +906,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         )
         
         # Synchroniser avec le fichier Python
+        # P0-STABILITY: _reload_handler() est synchrone, pas d'await
         await self._sync_to_python_file(chapter_upper)
-        
-        # Recharger le handler
-        await self._reload_handler(chapter_upper)
+        self._reload_handler(chapter_upper)
         
         # Invalidate stats cache
         self._invalidate_stats_cache(chapter_upper)
@@ -934,10 +951,9 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         if result.deleted_count > 0:
             # Synchroniser avec le fichier Python
+            # P0-STABILITY: _reload_handler() est synchrone, pas d'await
             await self._sync_to_python_file(chapter_upper)
-            
-            # Recharger le handler
-            await self._reload_handler(chapter_upper)
+            self._reload_handler(chapter_upper)
             
             # Invalidate stats cache
             self._invalidate_stats_cache(chapter_upper)
@@ -1261,8 +1277,25 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
                 }
             )
     
-    async def _reload_handler(self, chapter_code: str) -> None:
-        """Recharge le handler en mémoire après modification"""
+    def _reload_handler(self, chapter_code: str) -> None:
+        """
+        Recharge le handler en mémoire après modification.
+        
+        P0-STABILITY: Export Python = DEV ONLY
+        En production, cette fonction ne fait rien si ENABLE_PY_EXPORT != "true".
+        
+        NOTE: Fonction synchrone car importlib.reload() est synchrone.
+        Ne pas utiliser 'await' sur cette fonction.
+        """
+        # P0-STABILITY: Guard - pas de reload en prod
+        if not ENABLE_PY_EXPORT:
+            logger.debug(
+                f"[P0-STABILITY] _reload_handler() ignoré pour {chapter_code}: "
+                f"ENABLE_PY_EXPORT={os.getenv('ENABLE_PY_EXPORT', 'false')} "
+                f"(export Python = DEV ONLY)"
+            )
+            return
+        
         try:
             import importlib
             

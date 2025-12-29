@@ -3,26 +3,28 @@ GM07 Handler - Gestionnaire dédié pour le chapitre pilote
 =========================================================
 
 Ce handler intercepte les requêtes pour code_officiel="6e_GM07"
-et retourne des exercices depuis la source figée (gm07_exercises.py).
+et retourne des exercices depuis MongoDB (admin_exercises).
+
+PR2: DB ONLY - Plus de dépendance aux fichiers Python (data/gm07_exercises.py).
+DB = source de vérité unique.
 
 Logique métier:
-- FREE: ne voit que les exercices offer="free" (ids 1-10)
-- PRO: voit tous les exercices (ids 1-20)
+- FREE: ne voit que les exercices offer="free"
+- PRO: voit tous les exercices (free + pro)
 - La difficulté filtre réellement les exercices disponibles
 - Génération de lots SANS DOUBLONS (tant que possible)
+- Déterminisme: seed fixe => même exercice (random.Random(seed))
 """
 
 import random
 import time
+import logging
 from typing import Dict, Any, Optional, List
-from data.gm07_exercises import (
-    get_random_gm07_exercise, 
-    get_gm07_exercises, 
-    get_gm07_stats,
-    get_gm07_batch,
-    get_exercise_by_seed_index
-)
-from services.svg_render_service import generate_exercise_svgs
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from backend.services.static_exercise_repository import StaticExerciseRepository
+from backend.services.svg_render_service import generate_exercise_svgs
+
+logger = logging.getLogger(__name__)
 
 
 def is_gm07_request(code_officiel: Optional[str]) -> bool:
@@ -43,14 +45,15 @@ def _format_exercise_response(exercise: Dict[str, Any], timestamp: int) -> Dict[
     Formate un exercice brut en réponse API.
     
     Args:
-        exercise: Exercice brut depuis gm07_exercises.py
+        exercise: Exercice brut depuis MongoDB (admin_exercises)
         timestamp: Timestamp pour l'ID unique
     
     Returns:
         Exercice formaté pour l'API
     """
-    is_premium = exercise["offer"] == "pro"
-    exercise_id = f"ex_6e_gm07_{exercise['id']}_{timestamp}"
+    is_premium = exercise.get("offer") == "pro"
+    exercise_id_db = exercise.get("id")
+    exercise_id = f"ex_6e_gm07_{exercise_id_db}_{timestamp}"
     
     # Générer les SVG selon le type d'exercice
     svg_result = generate_exercise_svgs(exercise)
@@ -59,8 +62,8 @@ def _format_exercise_response(exercise: Dict[str, Any], timestamp: int) -> Dict[
         "id_exercice": exercise_id,
         "niveau": "6e",
         "chapitre": "Durées et lecture de l'heure",
-        "enonce_html": exercise["enonce_html"],
-        "solution_html": exercise["solution_html"],
+        "enonce_html": exercise.get("enonce_html", ""),
+        "solution_html": exercise.get("solution_html", ""),
         "figure_svg": svg_result["figure_svg"],  # Compatibilité
         "figure_svg_enonce": svg_result["figure_svg_enonce"],
         "figure_svg_solution": svg_result["figure_svg_solution"],
@@ -68,16 +71,16 @@ def _format_exercise_response(exercise: Dict[str, Any], timestamp: int) -> Dict[
         "pdf_token": exercise_id,
         "metadata": {
             "code_officiel": "6e_GM07",
-            "difficulte": exercise["difficulty"],
-            "difficulty": exercise["difficulty"],
+            "difficulte": exercise.get("difficulty", "moyen"),
+            "difficulty": exercise.get("difficulty", "moyen"),
             "is_premium": is_premium,
-            "offer": "pro" if is_premium else "free",
-            "generator_code": f"6e_GM07_{exercise['family']}",
-            "family": exercise["family"],
+            "offer": exercise.get("offer", "free"),
+            "generator_code": f"6e_GM07_{exercise.get('family', 'NONE')}",
+            "family": exercise.get("family"),
             "exercise_type": exercise.get("exercise_type"),
-            "exercise_id": exercise["id"],
+            "exercise_id": exercise_id_db,
             "is_fallback": False,
-            "source": "gm07_fixed_exercises",
+            "source": "gm07_db_exercises",
             "needs_svg": exercise.get("needs_svg", False),
             "variables": exercise.get("variables"),
             "variables_used": svg_result.get("variables_used")
@@ -85,21 +88,24 @@ def _format_exercise_response(exercise: Dict[str, Any], timestamp: int) -> Dict[
     }
 
 
-def generate_gm07_exercise(
+async def generate_gm07_exercise(
+    db: AsyncIOMotorDatabase,
     offer: Optional[str] = None,
     difficulty: Optional[str] = None,
     seed: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Génère UN exercice GM07 depuis la source figée.
+    Génère UN exercice GM07 depuis MongoDB.
     
-    Utilise le seed pour sélectionner un index déterministe,
-    garantissant que des seeds différents retournent des exercices différents.
+    PR2: DB ONLY - Plus de dépendance aux fichiers Python.
+    
+    Utilise le seed pour sélectionner un exercice de manière déterministe.
     
     Args:
+        db: Instance de la base de données MongoDB
         offer: "free" ou "pro" (défaut: "free")
         difficulty: "facile", "moyen", "difficile" (défaut: tous)
-        seed: Graine pour la sélection (utilisée comme index déterministe)
+        seed: Graine pour la sélection déterministe
     
     Returns:
         Exercice formaté pour l'API ou None si aucun exercice disponible
@@ -109,21 +115,31 @@ def generate_gm07_exercise(
     if difficulty:
         difficulty = difficulty.lower()
     
-    # Sélectionner un exercice basé sur le seed (sélection déterministe)
-    exercise = get_exercise_by_seed_index(
-        offer=offer,
-        difficulty=difficulty,
-        seed=seed
-    )
+    # Récupérer le pool d'exercices depuis DB
+    repo = StaticExerciseRepository(db)
+    pool = await repo.list_by_chapter("6E_GM07", offer=offer, difficulty=difficulty)
     
-    if not exercise:
+    if not pool:
+        logger.warning(f"[GM07] Aucun exercice disponible pour offer={offer}, difficulty={difficulty}")
         return None
+    
+    # Sélection déterministe avec seed
+    if seed is not None:
+        rng = random.Random(seed)
+    else:
+        rng = random.Random()
+    
+    # Mélanger le pool et prendre le premier
+    pool_copy = pool.copy()
+    rng.shuffle(pool_copy)
+    exercise = pool_copy[0]
     
     timestamp = int(time.time() * 1000)
     return _format_exercise_response(exercise, timestamp)
 
 
-def generate_gm07_batch(
+async def generate_gm07_batch(
+    db: AsyncIOMotorDatabase,
     offer: Optional[str] = None,
     difficulty: Optional[str] = None,
     count: int = 1,
@@ -132,16 +148,19 @@ def generate_gm07_batch(
     """
     Génère un LOT d'exercices GM07 SANS DOUBLONS - VERSION PRODUCTION.
     
+    PR2: DB ONLY - Plus de dépendance aux fichiers Python.
+    
     Comportement produit:
     - Si pool_size >= count: retourne exactement count exercices UNIQUES
     - Si pool_size < count: retourne pool_size exercices avec metadata.warning
     - JAMAIS de doublons
     
     Args:
+        db: Instance de la base de données MongoDB
         offer: "free" ou "pro" (défaut: "free")
         difficulty: "facile", "moyen", "difficile" (défaut: tous)
         count: Nombre d'exercices demandés
-        seed: Graine pour le mélange aléatoire
+        seed: Graine pour le mélange aléatoire (déterminisme)
     
     Returns:
         Tuple (exercices: List[Dict], batch_metadata: Dict)
@@ -153,28 +172,58 @@ def generate_gm07_batch(
     if difficulty:
         difficulty = difficulty.lower()
     
-    # Obtenir le lot sans doublons
-    exercises, batch_meta = get_gm07_batch(
-        offer=offer,
-        difficulty=difficulty,
-        count=count,
-        seed=seed
-    )
+    # Récupérer le pool d'exercices depuis DB
+    repo = StaticExerciseRepository(db)
+    pool = await repo.list_by_chapter("6E_GM07", offer=offer, difficulty=difficulty)
     
-    if not exercises:
+    pool_size = len(pool)
+    
+    # Construire les métadonnées du batch
+    batch_meta = {
+        "requested": count,
+        "available": pool_size,
+        "returned": 0,
+        "filters": {
+            "offer": offer,
+            "difficulty": difficulty
+        }
+    }
+    
+    if pool_size == 0:
+        batch_meta["warning"] = f"Aucun exercice disponible pour les filtres sélectionnés (offer={offer}, difficulty={difficulty})."
+        logger.warning(f"[GM07] {batch_meta['warning']}")
         return [], batch_meta
+    
+    # Mélanger le pool avec seed pour reproductibilité
+    if seed is not None:
+        rng = random.Random(seed)
+    else:
+        rng = random.Random()
+    
+    pool_copy = pool.copy()
+    rng.shuffle(pool_copy)
+    
+    # Prendre au maximum ce qui est disponible (sans doublons)
+    actual_count = min(count, pool_size)
+    selected = pool_copy[:actual_count]
+    
+    batch_meta["returned"] = actual_count
+    
+    if actual_count < count:
+        batch_meta["warning"] = f"Seulement {pool_size} exercices disponibles pour les filtres sélectionnés ({count} demandés)."
+        logger.warning(f"[GM07] {batch_meta['warning']}")
     
     # Formater chaque exercice avec un timestamp unique
     base_timestamp = int(time.time() * 1000)
     result = []
     
-    for idx, exercise in enumerate(exercises):
+    for idx, exercise in enumerate(selected):
         formatted = _format_exercise_response(exercise, base_timestamp + idx)
         
         # Ajouter les métadonnées de batch à chaque exercice
         formatted["metadata"]["batch_info"] = {
             "position": idx + 1,
-            "total_in_batch": len(exercises),
+            "total_in_batch": len(selected),
             "requested": batch_meta["requested"],
             "available": batch_meta["available"]
         }
@@ -188,54 +237,33 @@ def generate_gm07_batch(
     return result, batch_meta
 
 
-def get_gm07_available_exercises(
+async def get_gm07_available_exercises(
+    db: AsyncIOMotorDatabase,
     offer: Optional[str] = None,
     difficulty: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Retourne les informations sur les exercices GM07 disponibles.
     Utile pour le debug et les tests.
+    
+    PR2: DB ONLY - Plus de dépendance aux fichiers Python.
     """
-    exercises = get_gm07_exercises(offer=offer, difficulty=difficulty)
+    repo = StaticExerciseRepository(db)
+    exercises = await repo.list_by_chapter("6E_GM07", offer=offer, difficulty=difficulty)
     
     return {
         "count": len(exercises),
         "exercises": [
             {
-                "id": ex["id"],
-                "family": ex["family"],
-                "difficulty": ex["difficulty"],
-                "offer": ex["offer"]
+                "id": ex.get("id"),
+                "family": ex.get("family"),
+                "difficulty": ex.get("difficulty"),
+                "offer": ex.get("offer")
             }
             for ex in exercises
         ],
         "filters_applied": {
             "offer": offer or "free",
             "difficulty": difficulty or "all"
-        }
-    }
-
-
-# =============================================================================
-# STATISTIQUES GM07 (pour debug)
-# =============================================================================
-
-def get_gm07_chapter_info() -> Dict[str, Any]:
-    """Retourne les informations complètes sur le chapitre GM07"""
-    stats = get_gm07_stats()
-    
-    return {
-        "code_officiel": "6e_GM07",
-        "titre": "Durées et lecture de l'heure",
-        "niveau": "6e",
-        "domaine": "Grandeurs et mesures",
-        "type": "chapitre_pilote",
-        "source": "exercices_figes",
-        "statistics": stats,
-        "rules": {
-            "free_range": "ids 1-10",
-            "pro_range": "ids 11-20",
-            "difficulty_levels": ["facile", "moyen", "difficile"],
-            "families": ["LECTURE_HORLOGE", "CONVERSION", "CALCUL_DUREE", "PROBLEME_DUREES"]
         }
     }

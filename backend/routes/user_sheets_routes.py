@@ -392,6 +392,7 @@ async def export_sheet_pdf(
     sheet_uid: str,
     include_solutions: bool = False,
     include_corrections: Optional[bool] = None,  # P0 Gold - Alias pour compatibilité
+    layout: str = "eco",  # PR6: "eco" (2 colonnes) ou "classic" (1 colonne)
     user_email: str = Depends(get_user_email)
 ):
     """
@@ -436,6 +437,25 @@ async def export_sheet_pdf(
     # Créer un mapping
     exercises_map = {ex["exercise_uid"]: ex for ex in exercises_docs}
     
+    # PR6.1: Importer les fonctions CSS selon le layout
+    from engine.pdf_engine.mathalea_sheet_pdf_builder import _get_eco_css, _get_base_css
+    
+    # Valider le layout
+    if layout not in ["eco", "classic"]:
+        layout = "eco"  # Fallback
+    
+    # PR6.1: Si corrigé (include_solutions=True), forcer classic (1 colonne) pour éviter les trous
+    # Le layout=eco est réservé au sujet uniquement
+    if include_solutions and layout == "eco":
+        logger.info(
+            f"[EXPORT_PDF] Corrigé détecté - layout=eco ignoré, utilisation de classic (1 colonne) "
+            f"pour éviter les trous/espaces"
+        )
+        layout = "classic"
+    
+    # Choisir le CSS selon le layout
+    css_content = _get_eco_css() if layout == "eco" else _get_base_css()
+    
     # Construire le HTML
     html_content = f"""
     <!DOCTYPE html>
@@ -444,37 +464,17 @@ async def export_sheet_pdf(
         <meta charset="UTF-8">
         <title>{sheet["title"]}</title>
         <style>
-            @page {{
-                size: A4;
-                margin: 2cm;
-            }}
-            body {{
-                font-family: 'Times New Roman', serif;
-                font-size: 12pt;
-                line-height: 1.6;
-            }}
+            {css_content}
+            /* Styles spécifiques pour user_sheets */
             h1 {{
                 font-size: 18pt;
                 margin-bottom: 1cm;
                 text-align: center;
             }}
-            .exercise {{
-                margin-bottom: 1.5cm;
-                page-break-inside: avoid;
-            }}
             .exercise-number {{
                 font-weight: bold;
                 font-size: 14pt;
                 margin-bottom: 0.5cm;
-            }}
-            .enonce {{
-                margin-bottom: 1cm;
-            }}
-            .solution {{
-                margin-top: 1cm;
-                padding: 0.5cm;
-                background-color: #f5f5f5;
-                border-left: 3px solid #2563eb;
             }}
             table {{
                 border-collapse: collapse;
@@ -491,7 +491,10 @@ async def export_sheet_pdf(
         </style>
     </head>
     <body>
-        <h1>{sheet["title"]}</h1>
+        <div class="header">
+            <h1>{sheet["title"]}</h1>
+        </div>
+        <div class="content">
     """
     
     # P0: Compter les exercices manquants
@@ -513,8 +516,10 @@ async def export_sheet_pdf(
             # Ajouter un bloc HTML explicite dans le PDF
             html_content += f"""
         <div class="exercise">
-            <div class="exercise-number">Exercice {idx}</div>
-            <div class="enonce" style="color: #dc2626; font-style: italic;">
+            <div class="exercise-header">
+                <h2><span class="exercise-number">{idx}</span>Exercice {idx}</h2>
+            </div>
+            <div class="question-enonce" style="color: #dc2626; font-style: italic;">
                 ⚠️ Exercice introuvable (supprimé ou non accessible). UID: {exercise_uid}
             </div>
         </div>
@@ -524,17 +529,21 @@ async def export_sheet_pdf(
         exercises_added += 1
         html_content += f"""
         <div class="exercise">
-            <div class="exercise-number">Exercice {idx}</div>
-            <div class="enonce">
+            <div class="exercise-header">
+                <h2><span class="exercise-number">{idx}</span>Exercice {idx}</h2>
+            </div>
+            <div class="question-enonce">
                 {exercise.get("enonce_html", "")}
             </div>
         """
         
         if include_solutions and exercise.get("solution_html"):
             html_content += f"""
-            <div class="solution">
-                <strong>Solution :</strong>
-                {exercise.get("solution_html", "")}
+            <div class="solution correction-box">
+                <div class="correction-title">Solution</div>
+                <div class="correction">
+                    {exercise.get("solution_html", "")}
+                </div>
             </div>
             """
         
