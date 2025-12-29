@@ -18,6 +18,7 @@ import { useToast } from "./hooks/use-toast";
 import TemplateSettings from "./components/TemplateSettings";
 import DocumentWizard from "./components/wizard/DocumentWizard";
 import SheetBuilderPage from "./components/SheetBuilderPage";
+import SheetBuilderPageV2 from "./components/SheetBuilderPageV2";
 import MySheetsPage from "./components/MySheetsPage";
 import MySheetsPageP31 from "./components/MySheetsPageP31";
 import SheetEditPageP31 from "./components/SheetEditPageP31";
@@ -36,7 +37,9 @@ import PricingPage from "./components/PricingPage";
 import UpgradeProModal, { trackPremiumEvent } from "./components/UpgradeProModal";
 import { Toaster } from "./components/ui/toaster";
 import { LoginProvider } from "./contexts/LoginContext";
+import { SelectionProvider } from "./contexts/SelectionContext";
 import GlobalLoginModal from "./components/GlobalLoginModal";
+import SheetComposerPage from "./components/SheetComposerPage";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1627,6 +1630,7 @@ function NotFoundPage() {
 function App() {
   return (
     <BrowserRouter>
+      <SelectionProvider>
       <LoginProvider>
         <Toaster />
         <GlobalUpgradeModal />
@@ -1670,6 +1674,12 @@ function App() {
         <Route path="/builder/:sheetId" element={
           <AppWithNav>
             <RedirectToNewSheets />
+          </AppWithNav>
+        } />
+        {/* PR7: Nouveau builder simplifié "3 clics" */}
+        <Route path="/builder-v2" element={
+          <AppWithNav>
+            <SheetBuilderPageV2 />
           </AppWithNav>
         } />
         {/* Legacy route - redirige vers nouveau */}
@@ -1724,10 +1734,18 @@ function App() {
           </AppWithNav>
         } />
         
+        {/* Route composer de fiche */}
+        <Route path="/fiches/nouvelle" element={
+          <AppWithNav>
+            <SheetComposerPage />
+          </AppWithNav>
+        } />
+
         {/* Catch-all: rediriger vers /generer */}
         <Route path="/*" element={<RedirectToGenerer />} />
       </Routes>
       </LoginProvider>
+      </SelectionProvider>
     </BrowserRouter>
   );
 }

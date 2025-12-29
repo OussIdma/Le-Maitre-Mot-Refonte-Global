@@ -733,6 +733,13 @@ class LoginPasswordRequest(BaseModel):
     email: EmailStr
     password: str
 
+# P0: Free user registration model
+class RegisterFreeRequest(BaseModel):
+    email: EmailStr
+    password: str
+    password_confirm: str
+    nom: Optional[str] = None
+
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
 
@@ -4431,49 +4438,57 @@ async def validate_session(request: Request):
 async def get_current_user(request: Request):
     """
     P0: Get current user info from session (cookie or header).
-    Replaces /auth/session/validate with better design.
+    Supports both Pro and Free users (is_pro=true/false).
+
+    Returns:
+        - 401 if no session or invalid session
+        - 200 with {email, is_pro, ...} for valid session (Pro or Free)
     """
     try:
         # Try cookie first (P0 secure), fallback to header (backward compat)
         session_token = request.cookies.get("session_token")
         if not session_token:
             session_token = request.headers.get("X-Session-Token")
-        
+
         if not session_token:
             raise HTTPException(
                 status_code=401,
                 detail="Non authentifié"
             )
-        
+
         email = await validate_session_token(session_token)
-        
+
         if not email:
             raise HTTPException(
                 status_code=401,
                 detail="Session invalide ou expirée"
             )
-        
-        # Check if user is still Pro
+
+        # Check Pro status (but don't reject non-Pro users)
         is_pro, user = await check_user_pro_status(email)
-        
-        if not is_pro:
-            # Clean up session if user is no longer Pro
-            await db.login_sessions.delete_one({"session_token": session_token})
-            raise HTTPException(
-                status_code=403,
-                detail="Abonnement Pro expiré"
-            )
-        
-        return {
-            "email": email,
-            "is_pro": True,
-            "subscription_type": user.get('subscription_type'),
-            "subscription_expires": user.get('subscription_expires'),
-            "nom": user.get('nom'),
-            "etablissement": user.get('etablissement'),
-            "last_login": user.get('last_login')
-        }
-        
+
+        # P0: Return user info for both Pro and Free users
+        if is_pro:
+            return {
+                "email": email,
+                "is_pro": True,
+                "subscription_type": user.get('subscription_type'),
+                "subscription_expires": user.get('subscription_expires'),
+                "nom": user.get('nom'),
+                "etablissement": user.get('etablissement'),
+                "last_login": user.get('last_login')
+            }
+        else:
+            # Free user - return basic info without Pro fields
+            # Check if user exists in free_users collection
+            free_user = await db.free_users.find_one({"email": email})
+            return {
+                "email": email,
+                "is_pro": False,
+                "nom": free_user.get('nom') if free_user else None,
+                "created_at": free_user.get('created_at') if free_user else None
+            }
+
     except HTTPException:
         raise
     except Exception as e:
@@ -4686,11 +4701,26 @@ async def set_password(request_body: SetPasswordRequest, request: Request):
                 detail="Abonnement Pro requis"
             )
         
-        # Validate password confirmation match
+        # P0: Validate password confirmation match
         if request_body.password != request_body.password_confirm:
             raise HTTPException(
                 status_code=400,
                 detail="Les mots de passe ne correspondent pas"
+            )
+        
+        # P0: Validate password is a string
+        if not isinstance(request_body.password, str):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_password_format", "message": "Le mot de passe doit être une chaîne de caractères"}
+            )
+        
+        # P0: Validate password length (bcrypt max 72 bytes)
+        password_bytes = request_body.password.encode("utf-8")
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "password_too_long", "message": "Le mot de passe ne peut pas dépasser 72 caractères"}
             )
         
         # Validate password strength
@@ -4701,8 +4731,9 @@ async def set_password(request_body: SetPasswordRequest, request: Request):
                 detail=error_msg
             )
         
-        # Hash password
-        password_hash = hash_password(request_body.password)
+        # P0: Hash password - ensure we hash ONLY the string password
+        password_str = str(request_body.password)  # Ensure it's a string
+        password_hash = hash_password(password_str)
         
         # Update user in database
         await db.pro_users.update_one(
@@ -4740,21 +4771,183 @@ async def set_password(request_body: SetPasswordRequest, request: Request):
             detail="Erreur lors de la définition du mot de passe"
         )
 
+
+# ============================================================================
+# P0: FREE USER REGISTRATION
+# ============================================================================
+
+@api_router.post("/auth/register-free")
+@limiter.limit("5/15minutes")  # Rate limit - 5 registrations per 15 minutes
+async def register_free_user(request_body: RegisterFreeRequest, response: Response, request: Request):
+    """
+    P0: Register a new Free user account.
+    Free users can:
+    - Preview exercises (unlimited)
+    - Export PDFs (10/day quota)
+
+    Returns session token on success.
+    """
+    auth_service = SecureAuthService(db)
+    ip_address = request.client.host if request.client else None
+
+    try:
+        # P0: Validate password confirmation
+        if request_body.password != request_body.password_confirm:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "password_mismatch", "message": "Les mots de passe ne correspondent pas"}
+            )
+
+        # P0: Validate password is a string (not an object)
+        if not isinstance(request_body.password, str):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_password_format", "message": "Le mot de passe doit être une chaîne de caractères"}
+            )
+
+        # P0: Validate password strength (minimum 8 chars)
+        if len(request_body.password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "password_too_short", "message": "Le mot de passe doit contenir au moins 8 caractères"}
+            )
+
+        # P0: Validate password length (bcrypt max 72 bytes)
+        password_bytes = request_body.password.encode("utf-8")
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "password_too_long", "message": "Le mot de passe ne peut pas dépasser 72 caractères"}
+            )
+
+        # Check if email already exists in pro_users or free_users
+        existing_pro = await db.pro_users.find_one({"email": request_body.email})
+        existing_free = await db.free_users.find_one({"email": request_body.email})
+
+        if existing_pro or existing_free:
+            # P2: Neutral response (anti-enumeration)
+            await auth_service.log_auth_attempt(
+                email=request_body.email,
+                action="register_free",
+                success=False,
+                ip_address=ip_address,
+                error_msg="Email already exists"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Un compte existe déjà avec cette adresse email"
+            )
+
+        # P0: Hash password - ensure we hash ONLY the string password, not the whole request
+        try:
+            password_str = str(request_body.password)  # Ensure it's a string
+            password_hash = hash_password(password_str)
+        except ValueError as e:
+            # Handle password validation errors from hash_password
+            error_msg = str(e)
+            if "cannot exceed 72 bytes" in error_msg.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "password_too_long", "message": "Le mot de passe ne peut pas dépasser 72 caractères"}
+                )
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_password", "message": error_msg}
+            )
+
+        # Create free user document
+        now = datetime.now(timezone.utc)
+        free_user_doc = {
+            "email": request_body.email,
+            "password_hash": password_hash,
+            "nom": request_body.nom,
+            "created_at": now,
+            "updated_at": now,
+            "exports_today": 0,
+            "last_export_date": None
+        }
+
+        # Insert into free_users collection
+        await db.free_users.insert_one(free_user_doc)
+
+        # Create login session
+        device_id = request.headers.get("X-Device-ID") or f"device-{uuid.uuid4()}"
+        device_info = extract_device_info(request)
+        session_token = await create_login_session(
+            request_body.email,
+            device_id,
+            device_info
+        )
+
+        if not session_token:
+            raise HTTPException(
+                status_code=500,
+                detail="Erreur lors de la création de la session"
+            )
+
+        # Set session cookie
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        is_secure = environment == 'production'
+
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=is_secure,
+            samesite="lax",
+            max_age=86400 * 7,  # 7 days for free users
+            path="/"
+        )
+
+        # Log successful registration
+        await auth_service.log_auth_attempt(
+            email=request_body.email,
+            action="register_free",
+            success=True,
+            ip_address=ip_address
+        )
+
+        logger.info(f"P0: Free user registered: {request_body.email}")
+
+        return {
+            "message": "Compte créé avec succès",
+            "email": request_body.email,
+            "session_token": session_token,
+            "is_pro": False,
+            "exports_per_day": 10
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error registering free user: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la création du compte"
+        )
+
+
 @api_router.post("/auth/login-password")
 @limiter.limit("10/15minutes")  # P2: Rate limit - 10 requests per 15 minutes
 async def login_password(request_body: LoginPasswordRequest, response: Response, request: Request):
     """
-    P2: Login with email + password (hybrid auth).
-    Requires password to be set first (via /auth/set-password).
-    Magic link remains the default auth method.
+    P0: Login with email + password (hybrid auth).
+    Supports both Pro users and Free users.
+    Requires password to be set first (via /auth/set-password or /auth/register-free).
     """
     auth_service = SecureAuthService(db)
     ip_address = request.client.host if request.client else None
-    
+    is_pro_user = False
+
     try:
-        # Find user in database
+        # P0: First try to find user in pro_users, then in free_users
         user = await db.pro_users.find_one({"email": request_body.email})
-        
+        if user:
+            is_pro_user = True
+        else:
+            # Try free_users collection
+            user = await db.free_users.find_one({"email": request_body.email})
+
         if not user:
             # P2: Neutral response (anti-enumeration)
             await auth_service.log_auth_attempt(
@@ -4768,7 +4961,7 @@ async def login_password(request_body: LoginPasswordRequest, response: Response,
                 status_code=401,
                 detail="Email ou mot de passe incorrect"
             )
-        
+
         # Check if password is set
         password_hash = user.get("password_hash")
         if not password_hash:
@@ -4783,7 +4976,7 @@ async def login_password(request_body: LoginPasswordRequest, response: Response,
                 status_code=400,
                 detail="Aucun mot de passe défini pour ce compte. Utilisez le lien magique pour vous connecter."
             )
-        
+
         # Verify password
         if not verify_password(request_body.password, password_hash):
             await auth_service.log_auth_attempt(
@@ -4797,14 +4990,14 @@ async def login_password(request_body: LoginPasswordRequest, response: Response,
                 status_code=401,
                 detail="Email ou mot de passe incorrect"
             )
-        
-        # Verify user is still Pro
-        is_pro, _ = await check_user_pro_status(request_body.email)
-        if not is_pro:
-            raise HTTPException(
-                status_code=403,
-                detail="Abonnement Pro expiré"
-            )
+
+        # P0: Only check Pro status if user is from pro_users (Free users can always login)
+        if is_pro_user:
+            is_pro, _ = await check_user_pro_status(request_body.email)
+            if not is_pro:
+                # Pro subscription expired - user can still login as Free
+                is_pro_user = False
+                logger.info(f"P0: Pro subscription expired for {request_body.email}, logging in as Free user")
         
         # Generate device ID (if not provided, create one)
         device_id = request.headers.get("X-Device-ID") or f"device-{uuid.uuid4()}"
@@ -4988,6 +5181,21 @@ async def reset_password_confirm(request_body: ResetPasswordConfirmRequest, requ
                 detail="Abonnement Pro expiré"
             )
         
+        # P0: Validate password is a string
+        if not isinstance(request_body.new_password, str):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_password_format", "message": "Le mot de passe doit être une chaîne de caractères"}
+            )
+        
+        # P0: Validate password length (bcrypt max 72 bytes)
+        password_bytes = request_body.new_password.encode("utf-8")
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "password_too_long", "message": "Le mot de passe ne peut pas dépasser 72 caractères"}
+            )
+        
         # Validate password strength
         is_valid, error_msg = validate_password_strength(request_body.new_password)
         if not is_valid:
@@ -4996,8 +5204,9 @@ async def reset_password_confirm(request_body: ResetPasswordConfirmRequest, requ
                 detail=error_msg
             )
         
-        # Hash new password
-        password_hash = hash_password(request_body.new_password)
+        # P0: Hash new password - ensure we hash ONLY the string password
+        password_str = str(request_body.new_password)  # Ensure it's a string
+        password_hash = hash_password(password_str)
         
         # Mark token as used (prevents replay attacks)
         token_hash = auth_service.hash_token(request_body.token)
@@ -6420,6 +6629,205 @@ async def vary_exercise(document_id: str, exercise_index: int):
     except Exception as e:
         logger.error(f"Error varying exercise: {e}")
         raise HTTPException(status_code=500, detail="Erreur lors de la génération de la variation")
+
+# ============================================================================
+# P0: Export PDF from selection (for /fiches/nouvelle)
+# ============================================================================
+
+class ExportSelectionRequest(BaseModel):
+    title: str
+    layout: str = "eco"  # "eco" or "classic"
+    include_correction: bool = True
+    exercises: List[Dict[str, Any]]
+
+@api_router.post("/v1/sheets/export-selection")
+@limiter.limit("10/15minutes")  # Rate limit
+async def export_selection_pdf(
+    request_body: ExportSelectionRequest,
+    request: Request,
+    response: Response
+):
+    """
+    P0: Export PDF from a selection of exercises (for /fiches/nouvelle).
+    
+    Requires authentication (X-Session-Token).
+    Free users: quota limited (10/day).
+    Pro users: unlimited.
+    
+    Returns PDF binary (Content-Type: application/pdf).
+    """
+    logger = get_logger()
+    
+    try:
+        # P0: Validate session token
+        session_token = request.headers.get("X-Session-Token")
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentification requise. Veuillez vous connecter."
+            )
+        
+        user_email = await validate_session_token(session_token)
+        if not user_email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+        
+        # P0: Check if user is Pro
+        is_pro, _ = await check_user_pro_status(user_email)
+        
+        # P0: Check quota for Free users
+        if not is_pro:
+            # Check Free user quota (10 exports/day)
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            export_count = await db.exports.count_documents({
+                "user_email": user_email,
+                "created_at": {"$gte": today}
+            })
+            
+            if export_count >= 10:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Quota d'exports quotidien atteint (10/jour). Passez en Pro pour des exports illimités."
+                )
+        
+        # Validate exercises
+        if not request_body.exercises or len(request_body.exercises) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Aucun exercice fourni"
+            )
+        
+        # P0: Map layout "standard" -> "classic"
+        layout = request_body.layout
+        if layout == "standard":
+            layout = "classic"
+        elif layout not in ["eco", "classic"]:
+            layout = "eco"  # Default fallback
+        
+        # Build sheet preview structure compatible with PDF builder
+        # Extract niveau from first exercise metadata if available
+        niveau = ""
+        if request_body.exercises and len(request_body.exercises) > 0:
+            first_ex_metadata = request_body.exercises[0].get("metadata", {})
+            niveau = first_ex_metadata.get("niveau", "") or ""
+        
+        sheet_preview = {
+            "titre": request_body.title,
+            "niveau": niveau,
+            "items": []
+        }
+        
+        # P0: Transform exercises to sheet items format (compatible with PDF builder)
+        # The PDF builder expects: generated.questions[] with enonce_brut and solution_brut
+        for idx, ex in enumerate(request_body.exercises, 1):
+            enonce_html = ex.get("enonce_html", "")
+            solution_html = ex.get("solution_html", "")
+            figure_svg_enonce = ex.get("figure_svg_enonce") or ex.get("figure_svg", "")
+            figure_svg_solution = ex.get("figure_svg_solution", "")
+            
+            # Build figure_html from SVG if present
+            figure_html = ""
+            if figure_svg_enonce:
+                figure_html = figure_svg_enonce
+            elif figure_svg_solution and not figure_html:
+                figure_html = figure_svg_solution
+            
+            # P0: Convert HTML to "brut" format
+            # The PDF builder's _render_question() now detects HTML and uses it directly
+            # We pass the HTML as-is in enonce_brut/solution_brut
+            enonce_brut = enonce_html if enonce_html else ""
+            solution_brut = solution_html if solution_html else ""
+            
+            # P0: Debug logging for first exercise
+            if idx == 1:
+                logger.info(
+                    f"[EXPORT_SELECTION] Exercise 1 mapping - "
+                    f"enonce_html len={len(enonce_html)}, solution_html len={len(solution_html)}, "
+                    f"figure_html len={len(figure_html)}, layout={layout}"
+                )
+                # Log a preview of the content (first 200 chars)
+                if enonce_html:
+                    preview = enonce_html[:200].replace('\n', ' ').replace('\r', ' ')
+                    logger.info(f"[EXPORT_SELECTION] Exercise 1 enonce preview: {preview}...")
+                else:
+                    logger.warning(f"[EXPORT_SELECTION] ⚠️ Exercise 1 has EMPTY enonce_html!")
+                if solution_html:
+                    solution_preview = solution_html[:200].replace('\n', ' ').replace('\r', ' ')
+                    logger.info(f"[EXPORT_SELECTION] Exercise 1 solution preview: {solution_preview}...")
+                else:
+                    logger.warning(f"[EXPORT_SELECTION] ⚠️ Exercise 1 has EMPTY solution_html!")
+            
+            # The PDF builder expects: generated.questions[] where each question has:
+            # - enonce_brut: string (raw text or HTML)
+            # - solution_brut: string (raw text or HTML)
+            # - figure_html: string (optional SVG/HTML)
+            # - data: dict (optional)
+            question = {
+                "id": f"q_{idx}",
+                "enonce_brut": enonce_brut,
+                "solution_brut": solution_brut,
+                "figure_html": figure_html,
+                "data": {}
+            }
+            
+            item = {
+                "item_id": f"item_{idx}",
+                "order": ex.get("order", idx),
+                "generated": {
+                    "questions": [question]  # PDF builder expects questions array
+                },
+                "exercise_type_summary": ex.get("metadata", {})
+            }
+            sheet_preview["items"].append(item)
+        
+        # Import PDF builder functions
+        from backend.engine.pdf_engine.mathalea_sheet_pdf_builder import (
+            build_sheet_student_pdf,
+            build_sheet_correction_pdf
+        )
+        
+        # Generate PDF based on include_correction
+        if request_body.include_correction:
+            # Generate correction PDF (with solutions)
+            pdf_bytes = build_sheet_correction_pdf(sheet_preview, layout=layout)
+        else:
+            # Generate student PDF (without solutions)
+            pdf_bytes = build_sheet_student_pdf(sheet_preview, layout=layout)
+        
+        # Track export for quota (Free users only)
+        if not is_pro:
+            export_record = {
+                "id": str(uuid.uuid4()),
+                "document_id": f"selection_{uuid.uuid4()}",
+                "export_type": "selection_pdf",
+                "user_email": user_email,
+                "is_pro": False,
+                "created_at": datetime.now(timezone.utc)
+            }
+            await db.exports.insert_one(export_record)
+        
+        logger.info(
+            f"✅ PDF export-selection généré pour {user_email} "
+            f"(is_pro={is_pro}, layout={layout}, include_correction={request_body.include_correction})"
+        )
+        
+        # Return PDF as binary response
+        filename = f"{request_body.title.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        
+        return Response(content=pdf_bytes, media_type="application/pdf")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de l'export PDF selection: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la génération du PDF"
+        )
 
 # Include the router in the main app
 app.include_router(api_router)

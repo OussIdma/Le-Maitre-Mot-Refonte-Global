@@ -70,6 +70,7 @@ openai==1.99.9
 packaging==25.0
 pandas==2.3.2
 passlib[bcrypt]==1.7.4
+bcrypt<4.0.0  # P0: Fix compatibility with passlib 1.7.4 (bcrypt 4.0+ breaks passlib)
 pathspec==0.12.1
 pillow==11.3.0
 platformdirs==4.4.0

@@ -19,11 +19,24 @@ def hash_password(password: str) -> str:
     Hash a password using bcrypt.
     
     Args:
-        password: Plain text password
+        password: Plain text password (must be a string, max 72 bytes)
         
     Returns:
         Hashed password string (bcrypt)
+    
+    Raises:
+        ValueError: If password is not a string or exceeds 72 bytes
     """
+    # P0: Ensure password is a string (not an object)
+    if not isinstance(password, str):
+        raise ValueError("Password must be a string")
+    
+    # P0: Validate password length (bcrypt max 72 bytes)
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
+        raise ValueError("Password cannot exceed 72 bytes (bcrypt limitation)")
+    
+    # Hash only the string password
     return pwd_context.hash(password)
 
 

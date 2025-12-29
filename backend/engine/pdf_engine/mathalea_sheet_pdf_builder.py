@@ -348,8 +348,14 @@ def _render_question(question: dict, q_number: int, include_solution: bool, is_s
     solution = question.get("solution_brut", "")
     data = question.get("data", {})
     
-    # Nettoyer et formater l'énoncé
-    enonce_html = _format_text(enonce)
+    # P0: Detect if enonce is already HTML (contains HTML tags)
+    # If so, use it directly; otherwise format it with _format_text
+    if enonce and ("<" in enonce and ">" in enonce):
+        # Already HTML, use directly
+        enonce_html = enonce
+    else:
+        # Raw text, format it
+        enonce_html = _format_text(enonce)
     
     # Récupérer la figure HTML si présente
     figure_html = question.get("figure_html", "")
@@ -399,7 +405,14 @@ def _render_question(question: dict, q_number: int, include_solution: bool, is_s
     
     # Solution (uniquement pour corrigé) - PR6.1: Design "manuel scolaire"
     if include_solution:
-        solution_html = _format_text(solution)
+        # P0: Detect if solution is already HTML (contains HTML tags)
+        # If so, use it directly; otherwise format it with _format_text
+        if solution and ("<" in solution and ">" in solution):
+            # Already HTML, use directly
+            solution_html = solution
+        else:
+            # Raw text, format it
+            solution_html = _format_text(solution)
         # PR6.3: Extraire aussi les blocs fullwidth de la solution si eco
         if layout == "eco":
             solution_html, blocks_from_solution = extract_fullwidth_blocks(solution_html)

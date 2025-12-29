@@ -39,10 +39,11 @@ import MathRenderer from "./MathRenderer";
 import { useToast } from "../hooks/use-toast";
 import { useAuth } from "../hooks/useAuth";
 import { useLogin } from "../contexts/LoginContext";
+import { useSelection } from "../contexts/SelectionContext";
 import { useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
-import { Trash2, RefreshCw, Save, Check, Lock } from "lucide-react";
+import { Trash2, RefreshCw, Save, Check, Lock, Plus, ShoppingCart, CheckCircle2 } from "lucide-react";
 import PremiumUpsellModal from "./PremiumUpsellModal";
 import UpgradeProModal, { trackPremiumEvent } from "./UpgradeProModal";
 
@@ -130,6 +131,7 @@ const MathHtmlRenderer = ({ html, className = "" }) => {
 const ExerciseGeneratorPage = () => {
   const { toast } = useToast();
   const { openLogin } = useLogin();
+  const { addExercise, removeExercise, isSelected, selectionCount } = useSelection();
   const navigate = useNavigate();
   
   // État du catalogue
@@ -1397,42 +1399,81 @@ const ExerciseGeneratorPage = () => {
                       )}
                     </div>
                     
-                    {/* P0: Bouton Sauvegarder - Visible pour tous (avec lock si Guest) */}
-                    <Button
-                      onClick={() => handleSaveExercise(exercise)}
-                      disabled={savingExerciseId === exercise.id_exercice || savedExercises.has(exercise.id_exercice)}
-                      variant={savedExercises.has(exercise.id_exercice) ? "outline" : isPro ? "default" : "outline"}
-                      size="sm"
-                      className={
-                        savedExercises.has(exercise.id_exercice) 
-                          ? "border-green-300 text-green-700" 
-                          : !isPro 
-                            ? "border-gray-300 text-gray-600 hover:bg-gray-50" 
-                            : ""
-                      }
-                    >
-                      {savingExerciseId === exercise.id_exercice ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Sauvegarde...
-                        </>
-                      ) : savedExercises.has(exercise.id_exercice) ? (
-                        <>
-                          <Check className="mr-2 h-4 w-4" />
-                          Sauvegardé ✅
-                        </>
-                      ) : isPro ? (
-                        <>
-                          <Save className="mr-2 h-4 w-4" />
-                          Sauvegarder
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="mr-2 h-4 w-4" />
-                          Sauvegarder (Pro)
-                        </>
-                      )}
-                    </Button>
+                    {/* Boutons d'action */}
+                    <div className="flex items-center gap-2">
+                      {/* Bouton Ajouter/Retirer de la sélection */}
+                      <Button
+                        onClick={() => {
+                          const uniqueId = exercise.id_exercice || `gen-${Date.now()}-${index}`;
+                          const exerciseWithId = { ...exercise, uniqueId };
+                          if (isSelected(uniqueId)) {
+                            removeExercise(uniqueId);
+                            toast({
+                              title: "Retiré de la sélection",
+                              description: "L'exercice a été retiré de votre sélection",
+                            });
+                          } else {
+                            addExercise(exerciseWithId);
+                            toast({
+                              title: "Ajouté à la sélection",
+                              description: `${selectionCount + 1} exercice(s) dans votre sélection`,
+                            });
+                          }
+                        }}
+                        variant={isSelected(exercise.id_exercice) ? "default" : "outline"}
+                        size="sm"
+                        className={isSelected(exercise.id_exercice) ? "bg-green-600 hover:bg-green-700" : ""}
+                      >
+                        {isSelected(exercise.id_exercice) ? (
+                          <>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Dans la sélection
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Ajouter
+                          </>
+                        )}
+                      </Button>
+
+                      {/* P0: Bouton Sauvegarder - Visible pour tous (avec lock si Guest) */}
+                      <Button
+                        onClick={() => handleSaveExercise(exercise)}
+                        disabled={savingExerciseId === exercise.id_exercice || savedExercises.has(exercise.id_exercice)}
+                        variant={savedExercises.has(exercise.id_exercice) ? "outline" : isPro ? "default" : "outline"}
+                        size="sm"
+                        className={
+                          savedExercises.has(exercise.id_exercice)
+                            ? "border-green-300 text-green-700"
+                            : !isPro
+                              ? "border-gray-300 text-gray-600 hover:bg-gray-50"
+                              : ""
+                        }
+                      >
+                        {savingExerciseId === exercise.id_exercice ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sauvegarde...
+                          </>
+                        ) : savedExercises.has(exercise.id_exercice) ? (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            Sauvegardé ✅
+                          </>
+                        ) : isPro ? (
+                          <>
+                            <Save className="mr-2 h-4 w-4" />
+                            Sauvegarder
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="mr-2 h-4 w-4" />
+                            Sauvegarder (Pro)
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Figure SVG Énoncé (nouvelle API ou compatibilité) */}
@@ -1575,6 +1616,20 @@ const ExerciseGeneratorPage = () => {
           onClose={() => setShowUpgradeModal(false)}
           context={upgradeContext}
         />
+
+        {/* Bouton flottant "Composer ma fiche" - visible uniquement si sélection > 0 */}
+        {selectionCount > 0 && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <Button
+              onClick={() => navigate('/fiches/nouvelle')}
+              size="lg"
+              className="bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2 px-6 py-3 rounded-full"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              <span className="font-semibold">Composer ma fiche ({selectionCount})</span>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
