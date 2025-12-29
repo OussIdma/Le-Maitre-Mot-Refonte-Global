@@ -40,6 +40,8 @@ import { LoginProvider } from "./contexts/LoginContext";
 import { SelectionProvider } from "./contexts/SelectionContext";
 import GlobalLoginModal from "./components/GlobalLoginModal";
 import SheetComposerPage from "./components/SheetComposerPage";
+import ProFeaturePage from "./components/ProFeaturePage";
+import { useAuth } from "./hooks/useAuth";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1567,6 +1569,29 @@ function AppWithNav({ children, showNav = true }) {
   );
 }
 
+// P0: Guard component pour protéger les routes Pro
+function ProFeatureGuard({ children }) {
+  const { isPro, isLoading } = useAuth();
+  const location = useLocation();
+  
+  // Si on charge encore, afficher un loader
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+  
+  // Si Free user, afficher la page upsell
+  if (!isPro) {
+    return <ProFeaturePage />;
+  }
+  
+  // Si Pro, afficher la page normale
+  return <>{children}</>;
+}
+
 // Redirect component pour normaliser les routes
 function RedirectToGenerer() {
   const navigate = useNavigate();
@@ -1688,22 +1713,29 @@ function App() {
             <RedirectToNewSheets />
           </AppWithNav>
         } />
-        {/* P3.1: Nouveau système "Mes fiches" */}
+        {/* P3.1: Nouveau système "Mes fiches" - P0: Protégé Pro */}
         <Route path="/mes-fiches" element={
           <AppWithNav>
-            <MySheetsPageP31 />
+            <ProFeatureGuard>
+              <MySheetsPageP31 />
+            </ProFeatureGuard>
           </AppWithNav>
         } />
         <Route path="/mes-fiches/:sheet_uid" element={
           <AppWithNav>
-            <SheetEditPageP31 />
+            <ProFeatureGuard>
+              <SheetEditPageP31 />
+            </ProFeatureGuard>
           </AppWithNav>
         } />
+        {/* P3.0: Bibliothèque d'exercices - P0: Protégé Pro */}
         <Route path="/mes-exercices" element={
           <AppWithNav>
-            <MyExercisesPage />
+            <ProFeatureGuard>
+              <MyExercisesPage />
+            </ProFeatureGuard>
           </AppWithNav>
-        } /> {/* P3.0: Bibliothèque d'exercices */}
+        } />
         <Route path="/pro/settings" element={
           <AppWithNav>
             <ProSettingsPage />

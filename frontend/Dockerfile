@@ -6,14 +6,14 @@ RUN apk add --no-cache yarn
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY frontend/package.json frontend/yarn.lock* frontend/package-lock.json* ./
+# Copy package files first (for better layer caching)
+COPY package.json yarn.lock* package-lock.json* ./
 
 # Install dependencies
 RUN yarn install --frozen-lockfile || npm install --legacy-peer-deps
 
-# Copy frontend code
-COPY frontend /app
+# Copy frontend source code (exclude node_modules via .dockerignore)
+COPY . .
 
 # Expose port
 EXPOSE 3000

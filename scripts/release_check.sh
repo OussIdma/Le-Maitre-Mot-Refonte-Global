@@ -83,6 +83,33 @@ if ! run_test "Smoke API P0" "pytest backend/tests/test_smoke_api_p0.py -v"; the
     EXIT_CODE=1
 fi
 
+# 5. Tests frontend - Auth et NavBar (P0 non-régression)
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "5️⃣  Tests frontend - Auth & NavBar (P0)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ -d "frontend" ]; then
+    cd frontend
+    # Vérifier si les dépendances de test sont installées
+    if [ ! -d "node_modules" ]; then
+        echo "📦 Installation des dépendances frontend..."
+        if command -v yarn &> /dev/null; then
+            yarn install --frozen-lockfile || npm install
+        else
+            npm install
+        fi
+    fi
+    
+    # Exécuter les tests auth/navbar uniquement (ciblés, rapides)
+    # --runInBand pour éviter les problèmes de concurrence
+    # --testPathPattern pour ne tester que les fichiers spécifiques
+    if ! run_test "Frontend Auth Tests" "npm test -- --runInBand --testPathPattern='NavBar.test|useAuth.test' --watchAll=false --passWithNoTests 2>&1"; then
+        EXIT_CODE=1
+    fi
+    cd ..
+else
+    echo -e "${YELLOW}⚠️  Frontend directory not found, skipping frontend tests${NC}"
+fi
+
 # Résumé
 echo "=========================================="
 echo "📊 RÉSUMÉ"

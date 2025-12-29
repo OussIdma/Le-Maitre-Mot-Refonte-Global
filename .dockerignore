@@ -1,0 +1,129 @@
+# .dockerignore - Exclure les fichiers inutiles du build context
+# Note: backend/ et scripts/ sont nécessaires pour le build backend, donc on ne les exclut pas
+
+# Node modules (seront installés dans le container)
+**/node_modules/
+node_modules/
+
+# Build artifacts
+**/dist/
+**/build/
+**/.next/
+**/out/
+**/.cache/
+**/coverage/
+**/logs/
+dist/
+build/
+.next/
+out/
+.cache/
+coverage/
+logs/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation et fichiers de développement
+docs/
+*.md
+!README.md
+*.txt
+*.py
+*.sh
+*.html
+*.json
+!package.json
+!package-lock.json
+!yarn.lock
+!tsconfig.json
+!tsconfig.*.json
+
+# Fichiers de test
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+**/test_*.py
+**/test_*.sh
+**/test-*.pdf
+**/test-*.svg
+**/test-*.html
+**/test-*.json
+**/test-*.md
+
+# Fichiers de backup et temporaires
+backups/
+*.bak
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# Fichiers OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Fichiers d'éditeurs
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+.cursor/
+
+# Fichiers Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Fichiers de configuration locaux
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# Fichiers de déploiement
+Makefile
+*.yml
+!docker-compose.yml
+
+# Autres fichiers volumineux
+repomix-output.xml
+*.pdf
+*.svg
+!frontend/public/**/*.svg
+!frontend/src/**/*.svg
+
+# Volumes Docker
+mongo_data/
+backend_uploads/
+
+# Fichiers de debug
+debug_*.py
+comparaison_*.html
+demo_*.html
+
+# Fichiers de validation
+*_VALIDATION.md
+*_RESUME_FR.md
+*_SUMMARY.md
+*_RAPPORT.md
+
+# Fichiers de test Python
+p0_p1_p2_tests.py
+test_*.py
+
+# Fichiers de configuration spécifiques
+audit_*.txt
+audit_*.md
+
+
