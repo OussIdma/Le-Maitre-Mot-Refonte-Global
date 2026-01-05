@@ -1,17 +1,10 @@
-FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    libpangoft2-1.0-0 \
-    libpango-1.0-0 \
-    libharfbuzz0b \
-    libcairo2 \
-    libgdk-pixbuf-2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
+# Set the working directory in the container
 WORKDIR /app
+
+# Install build-essential for C compiler and other necessary tools
+RUN apt-get update && \
+    apt-get install -y build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY backend/requirements.txt /app/requirements.txt
@@ -29,4 +22,3 @@ EXPOSE 8000
 
 # Default command (can be overridden in docker-compose)
 CMD ["uvicorn", "backend.server:app", "--host", "0.0.0.0", "--port", "8000"]
-
