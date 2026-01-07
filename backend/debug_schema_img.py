@@ -5,7 +5,7 @@ Debug script to test schema_img pipeline step by step
 
 import asyncio
 import json
-from server import generate_exercises_with_ai, process_schema_to_base64
+from backend.server import generate_exercises_with_ai, process_schema_to_base64
 
 async def test_schema_img_pipeline():
     """Test the complete schema_img pipeline"""

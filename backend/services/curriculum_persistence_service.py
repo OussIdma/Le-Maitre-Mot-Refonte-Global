@@ -86,6 +86,7 @@ class ChapterCreateRequest(BaseModel):
     """Modèle pour la création d'un chapitre"""
     code_officiel: str = Field(..., description="Code officiel unique (ex: 6e_N01)")
     libelle: str = Field(..., description="Intitulé du chapitre")
+    subject: str = Field(default="math", description="Matière (math, physics, chemistry, etc.)")
     domaine: str = Field(default="Nombres et calculs", description="Domaine mathématique")
     chapitre_backend: str = Field(default="", description="Nom du chapitre backend correspondant")
     exercise_types: List[str] = Field(default_factory=list, description="Types d'exercices associés")
@@ -114,6 +115,7 @@ class ChapterCreateRequest(BaseModel):
 class ChapterUpdateRequest(BaseModel):
     """Modèle pour la mise à jour d'un chapitre"""
     libelle: Optional[str] = None
+    subject: Optional[str] = Field(default=None, description="Matière (math, physics, chemistry, etc.)")
     domaine: Optional[str] = None
     chapitre_backend: Optional[str] = None
     exercise_types: Optional[List[str]] = None
@@ -165,6 +167,9 @@ class CurriculumPersistenceService:
         await self.collection.create_index("niveau")
         await self.collection.create_index("domaine")
         await self.collection.create_index("statut")
+        # P4.2: Index pour la recherche par matière et niveau
+        await self.collection.create_index([("subject", 1), ("niveau", 1), ("code_officiel", 1)])
+        await self.collection.create_index("subject")
         
         self._initialized = True
         logger.info(f"Curriculum persistence service initialisé avec {count} chapitres")
@@ -519,7 +524,7 @@ class CurriculumPersistenceService:
         Nécessaire après chaque modification pour que les changements soient pris en compte.
         """
         try:
-            from curriculum.loader import load_curriculum_6e, _curriculum_index
+            from backend.curriculum.loader import load_curriculum_6e, _curriculum_index
             import curriculum.loader as loader_module
             
             # Réinitialiser le singleton

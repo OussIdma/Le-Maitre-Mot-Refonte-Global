@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 # En production, ce flag doit être "false" pour éviter l'écriture de fichiers en runtime
 ENABLE_PY_EXPORT = os.getenv("ENABLE_PY_EXPORT", "false").lower() == "true"
 
+# READONLY_CODEBASE: Flag pour empêcher TOUTE écriture dans les fichiers Python
+# Quand true, toute tentative d'écriture dans backend/data/*.py lève une HTTPException 503
+READONLY_CODEBASE = os.getenv("READONLY_CODEBASE", "false").lower() == "true"
+
 # Chemin vers le dossier data
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
@@ -292,11 +296,28 @@ class ExercisePersistenceService:
         """
         Synchronise les exercices MongoDB vers le fichier Python.
         Génère le code Python compatible avec les handlers existants.
-        
+
         P0-STABILITY: Export Python = DEV ONLY
         En production, cette fonction ne fait rien si ENABLE_PY_EXPORT != "true".
         DB est la source de vérité unique en production.
         """
+        # READONLY_CODEBASE: Empêcher TOUTE écriture dans les fichiers Python
+        if READONLY_CODEBASE:
+            logger.error(
+                f"[READONLY_CODEBASE] _sync_to_python_file() bloqué pour {chapter_code}: "
+                f"READONLY_CODEBASE={os.getenv('READONLY_CODEBASE', 'false')} "
+                f"(mode lecture seule - aucune écriture dans les fichiers Python autorisée)"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error_code": "READONLY_MODE",
+                    "error": "readonly_mode",
+                    "message": "Le serveur est en mode lecture seule. Aucune écriture dans les fichiers Python n'est autorisée.",
+                    "hint": "Contactez l'administrateur ou désactivez READONLY_CODEBASE=false pour permettre les écritures."
+                }
+            )
+
         # P0-STABILITY: Guard - pas d'écriture fichier en prod
         if not ENABLE_PY_EXPORT:
             logger.debug(
@@ -305,7 +326,7 @@ class ExercisePersistenceService:
                 f"(export Python = DEV ONLY, DB = source de vérité)"
             )
             return
-        
+
         exercises = await self.get_exercises(chapter_code)
         
         # Déterminer le nom du fichier et de la variable
@@ -574,7 +595,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         difficulty: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Récupère les exercices d'un chapitre avec filtres optionnels"""
-        from logger import get_logger
+        from backend.logger import get_logger
         diag_logger = get_logger()
 
         chapter_upper = chapter_code.upper().replace("-", "_")
@@ -749,7 +770,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         self._invalidate_stats_cache(chapter_upper)
         # Invalidate catalog cache (6e)
         try:
-            from curriculum.loader import invalidate_catalog_cache
+            from backend.curriculum.loader import invalidate_catalog_cache
             invalidate_catalog_cache("6e")
         except Exception as e:
             logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
@@ -915,7 +936,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
         
         # Invalider le cache catalogue pour refléter l'ajout/modif
         try:
-            from curriculum.loader import invalidate_catalog_cache
+            from backend.curriculum.loader import invalidate_catalog_cache
             invalidate_catalog_cache("6e")
         except Exception as e:
             logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
@@ -960,7 +981,7 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
             
             # Invalider le cache catalogue (6e) pour refléter la suppression
             try:
-                from curriculum.loader import invalidate_catalog_cache
+                from backend.curriculum.loader import invalidate_catalog_cache
                 invalidate_catalog_cache("6e")
             except Exception as e:
                 logger.warning(f"[CATALOG] Impossible d'invalider le cache catalogue: {e}")
@@ -1280,13 +1301,22 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
     def _reload_handler(self, chapter_code: str) -> None:
         """
         Recharge le handler en mémoire après modification.
-        
+
         P0-STABILITY: Export Python = DEV ONLY
         En production, cette fonction ne fait rien si ENABLE_PY_EXPORT != "true".
-        
+
         NOTE: Fonction synchrone car importlib.reload() est synchrone.
         Ne pas utiliser 'await' sur cette fonction.
         """
+        # READONLY_CODEBASE: Empêcher le rechargement des modules en mode lecture seule
+        if READONLY_CODEBASE:
+            logger.debug(
+                f"[READONLY_CODEBASE] _reload_handler() ignoré pour {chapter_code}: "
+                f"READONLY_CODEBASE={os.getenv('READONLY_CODEBASE', 'false')} "
+                f"(mode lecture seule - rechargement des modules désactivé)"
+            )
+            return
+
         # P0-STABILITY: Guard - pas de reload en prod
         if not ENABLE_PY_EXPORT:
             logger.debug(
@@ -1295,17 +1325,17 @@ def get_{code.lower()}_stats() -> Dict[str, Any]:
                 f"(export Python = DEV ONLY)"
             )
             return
-        
+
         try:
             import importlib
-            
+
             if chapter_code == "6E_GM07":
                 import data.gm07_exercises as module
                 importlib.reload(module)
             elif chapter_code == "6E_GM08":
                 import data.gm08_exercises as module
                 importlib.reload(module)
-            
+
             logger.info(f"Handler {chapter_code} rechargé")
         except Exception as e:
             logger.error(f"Erreur rechargement handler {chapter_code}: {e}")

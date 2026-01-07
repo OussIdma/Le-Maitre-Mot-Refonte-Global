@@ -84,6 +84,55 @@ export function SelectionProvider({ children }) {
 
   const selectionCount = selectedExercises.length;
 
+  // P3.1: Importer la sélection vers la bibliothèque utilisateur
+  const importSelectionToAccount = async (sessionToken) => {
+    if (!selectedExercises || selectedExercises.length === 0) {
+      console.log("Aucun exercice à importer");
+      return { imported: 0, skipped: 0, total: 0, errors: [] };
+    }
+
+    try {
+      // Mapper les exercices sélectionnés au format attendu par le backend
+      const exercisesToImport = selectedExercises.map(exercise => ({
+        exercise_uid: exercise.uniqueId,
+        generator_key: exercise.generator_key || exercise.metadata?.generator_key || null,
+        code_officiel: exercise.code_officiel || exercise.metadata?.code_officiel || exercise.chapitre || "",
+        difficulty: exercise.difficulty || exercise.metadata?.difficulte || exercise.difficulty || "moyen",
+        seed: exercise.seed || exercise.metadata?.seed || null,
+        variables: exercise.variables || exercise.metadata?.variables || {},
+        enonce_html: exercise.enonce_html || "",
+        solution_html: exercise.solution_html || "",
+        metadata: {
+          niveau: exercise.niveau || exercise.metadata?.niveau || "",
+          chapitre: exercise.chapitre || exercise.metadata?.chapitre || "",
+          ...exercise.metadata
+        }
+      }));
+
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/user/exercises/import-batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': sessionToken,
+        },
+        body: JSON.stringify({ exercises: exercisesToImport })
+      });
+
+      const result = await response.json();
+
+      if (response.status === 207 || response.status === 200) {
+        // Import réussi (partiellement ou complètement)
+        console.log(`Import terminé: ${result.imported} importés, ${result.skipped} ignorés, ${result.errors?.length || 0} erreurs`);
+        return result;
+      } else {
+        throw new Error(`Erreur serveur: ${response.status} - ${result.detail || 'Erreur inconnue'}`);
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'import des exercices:", error);
+      throw error;
+    }
+  };
+
   return (
     <SelectionContext.Provider
       value={{
@@ -94,6 +143,7 @@ export function SelectionProvider({ children }) {
         clearSelection,
         reorderExercises,
         isSelected,
+        importSelectionToAccount, // Ajouter la nouvelle fonction
       }}
     >
       {children}

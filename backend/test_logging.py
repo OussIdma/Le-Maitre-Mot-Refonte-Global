@@ -5,7 +5,7 @@ Test script for the professional logging system
 
 import os
 import asyncio
-from logger import get_logger, log_execution_time, log_ai_generation, log_schema_processing, log_quota_check, log_user_context
+from backend.logger import get_logger, log_execution_time, log_ai_generation, log_schema_processing, log_quota_check, log_user_context
 
 # Test different environment configurations
 def test_logger_environments():

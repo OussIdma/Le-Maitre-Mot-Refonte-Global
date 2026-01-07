@@ -4,7 +4,7 @@ Utilise curriculum_complete.py comme source de vérité
 """
 from typing import List, Optional, Dict, Any
 from backend.curriculum_complete import CURRICULUM_DATA_COMPLETE
-from logger import get_logger
+from backend.logger import get_logger
 
 logger = get_logger()
 

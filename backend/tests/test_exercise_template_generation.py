@@ -12,7 +12,7 @@ from pathlib import Path
 # Ajouter le répertoire backend au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from server import app
+from backend.server import app
 from services.exercise_template_service import exercise_template_service
 
 

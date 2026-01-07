@@ -60,7 +60,7 @@ function SheetBuilderPageV2() {
   const [selectedChapter, setSelectedChapter] = useState(null);
 
   // Utiliser le hook curriculum
-  const { chapters, loading: chaptersLoading, error: chaptersError, search: searchChapters } = useCurriculumChapters(selectedLevel);
+  const { chapters, loading: chaptersLoading, error: chaptersError, search: searchChapters, source: chaptersSource, warning: chaptersWarning } = useCurriculumChapters(selectedLevel);
 
   // Filtrer les chapitres selon la recherche
   const filteredChapters = useMemo(() => {
@@ -438,6 +438,15 @@ function SheetBuilderPageV2() {
                           Code officiel: {selectedChapter.code_officiel}
                         </span>
                       )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {chaptersWarning && (
+                  <Alert className="bg-yellow-50 border-yellow-200">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-900">
+                      {chaptersWarning}
                     </AlertDescription>
                   </Alert>
                 )}

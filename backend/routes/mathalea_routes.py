@@ -1213,10 +1213,10 @@ async def export_standard_pdf(
     assert_can_use_layout(user_email, is_pro_user, layout)
 
     # ========================================================================
-    # P0: QUOTAS - 10 exports/jour pour Free, illimité pour Pro
+    # P0: QUOTAS - 3 exports/jour pour Free, illimité pour Pro
     # ========================================================================
     exports_today = 0
-    max_exports_per_day = 10
+    max_exports_per_day = 3
 
     if not is_pro_user:
         # Vérifier le quota journalier pour les utilisateurs Free
@@ -1237,8 +1237,8 @@ async def export_standard_pdf(
             raise HTTPException(
                 status_code=429,
                 detail={
-                    "error": "daily_quota_exceeded",
-                    "action": "upgrade_to_pro",
+                    "error": "FREE_DAILY_EXPORT_LIMIT",
+                    "code": "FREE_DAILY_EXPORT_LIMIT",
                     "message": f"Limite de {max_exports_per_day} exports/jour atteinte. Passez à Pro pour des exports illimités.",
                     "exports_today": exports_today,
                     "exports_remaining": 0,

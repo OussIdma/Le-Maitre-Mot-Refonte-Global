@@ -115,7 +115,7 @@ def sample_package(test_niveau, test_chapter_code):
 async def client(test_db):
     """Client HTTP async pour les tests"""
     from httpx import AsyncClient, ASGITransport
-    from server import app
+    from backend.server import app
     
     # Injecter la DB de test dans l'app
     app.state.db = test_db

@@ -136,14 +136,14 @@ function MyExercisesPage() {
   // P0: Plus besoin d'initialiser auth manuellement - useAuth() le fait
   // Charger les exercices quand sessionToken devient disponible
   useEffect(() => {
-    if (sessionToken && isPro) {
+    if (sessionToken) {
       loadExercises();
     } else if (!sessionToken) {
       // P0 UX: Stocker returnTo si non connecté
       sessionStorage.setItem('postLoginRedirect', '/mes-exercices');
       setLoading(false);
     }
-  }, [sessionToken, isPro]); // Se déclenche quand sessionToken change
+  }, [sessionToken]); // Se déclenche quand sessionToken change
 
   const loadExercises = async () => {
     try {
@@ -191,11 +191,11 @@ function MyExercisesPage() {
 
   // Recharger quand les filtres changent
   useEffect(() => {
-    if (sessionToken && isPro) {
+    if (sessionToken) {
       loadExercises();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterCodeOfficiel, filterDifficulty, sessionToken, isPro]);
+  }, [filterCodeOfficiel, filterDifficulty, sessionToken]);
 
   const handleDeleteExercise = async (exerciseUid) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cet exercice ?')) {

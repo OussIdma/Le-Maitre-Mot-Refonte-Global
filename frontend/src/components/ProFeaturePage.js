@@ -208,7 +208,7 @@ function ProFeaturePage() {
                   <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
                   <div>
                     <h4 className="font-semibold text-gray-900">Exports limités</h4>
-                    <p className="text-sm text-gray-600">10 exports PDF par jour</p>
+                    <p className="text-sm text-gray-600">3 exports PDF par jour</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">

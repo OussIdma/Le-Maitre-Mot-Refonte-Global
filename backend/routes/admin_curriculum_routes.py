@@ -28,7 +28,7 @@ obs_logger = get_logger()
 
 # Dépendance pour obtenir le service
 async def get_curriculum_service():
-    from server import db
+    from backend.server import db
     from backend.services.curriculum_persistence_service import CurriculumPersistenceService
     return CurriculumPersistenceService(db)
 

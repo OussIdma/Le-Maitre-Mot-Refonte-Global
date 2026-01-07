@@ -75,8 +75,8 @@ function NavBar() {
     isLoading
   };
   const isLoggedInState = !isLoading && isLoggedIn(authState);
-  const showMyExercises = isPro; // Bibliothèque = Pro uniquement
-  const showMySheets = isPro; // Historique = Pro uniquement
+  const showMyExercises = isLoggedInState; // Bibliothèque = connecté (Free + Pro)
+  const showMySheets = isLoggedInState; // Historique = connecté (Free + Pro)
   const showComposer = true; // Composer accessible à tous (Free + Pro)
 
   return (
@@ -84,7 +84,7 @@ function NavBar() {
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <div 
+          <div
             className="flex items-center cursor-pointer"
             onClick={() => navigate('/')}
           >
@@ -112,7 +112,7 @@ function NavBar() {
               {t('nav.generate')}
             </Button>
 
-            {/* P0: Mes exercices - Pro uniquement */}
+            {/* P1.2: Mes exercices - accessible aux Free users (authentification requise) */}
             {showMyExercises && (
               <Button
                 variant={isActive('/mes-exercices') ? 'default' : 'ghost'}
@@ -123,8 +123,8 @@ function NavBar() {
               </Button>
             )}
 
-            {/* P0: Mes fiches - Pro uniquement (ou Composer pour Free) */}
-            {showMySheets ? (
+            {/* P1.2: Mes fiches - accessible aux Free users (authentification requise) */}
+            {showMySheets && (
               <Button
                 variant={isActive('/mes-fiches') ? 'default' : 'ghost'}
                 size="sm"
@@ -132,21 +132,12 @@ function NavBar() {
               >
                 {t('nav.mySheets')}
               </Button>
-            ) : isLoggedInState ? (
-              // Free user: afficher "Composer" au lieu de "Mes fiches"
-              <Button
-                variant={isActive('/fiches/nouvelle') ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => navigate('/fiches/nouvelle')}
-              >
-                Composer
-              </Button>
-            ) : null}
+            )}
 
             {/* Bouton Composer avec badge panier - accessible à tous */}
             {showComposer && (
               <Button
-                variant={isActive('/fiches/nouvelle') && !showMySheets ? 'default' : 'outline'}
+                variant={isActive('/fiches/nouvelle') ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => navigate('/fiches/nouvelle')}
                 className="relative"

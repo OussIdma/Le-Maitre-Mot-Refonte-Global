@@ -40,7 +40,7 @@ logger = get_logger()
 
 def get_db():
     """Dépendance pour obtenir la DB"""
-    from server import db
+    from backend.server import db
     return db
 
 

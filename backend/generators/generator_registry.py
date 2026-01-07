@@ -143,6 +143,43 @@ GENERATOR_SCHEMAS: Dict[str, GeneratorSchema] = {
         template_example_enonce="""<p>Tracer le symétrique de la figure par rapport à l'axe {{axe_type}}.</p>""",
         template_example_solution="""<ol><li>Tracer la perpendiculaire à l'axe passant par chaque point.</li><li>Reporter la même distance de l'autre côté.</li><li>Relier les points symétriques.</li></ol>"""
     ),
+        "PROBLEME_1_ETAPE_V1": GeneratorSchema(
+        generator_key="PROBLEME_1_ETAPE_V1",
+        label="Problèmes (1 étape)",
+        description="Génère des problèmes courts (achat / distance-temps / partage) en 1 étape",
+        niveau="6e",
+        pedagogical_tips=(
+            "✅ 6e: privilégier une seule opération (× ou ÷) et une phrase de conclusion. "
+            "⚠️ Vérifier les unités (€, km, min) et la cohérence des données."
+        ),
+        variables=[
+            VariableSchema("titre", "string", "Titre affiché", "Problème (achat)"),
+            VariableSchema("consigne", "string", "Consigne générale", "Calcule et rédige une phrase de conclusion."),
+            VariableSchema("contexte", "string", "Contexte narratif", "Au magasin, Léa achète des cahiers."),
+            VariableSchema("donnees", "string", "Données (HTML possible)", "<ul><li>Prix: 2,50 €</li><li>Quantité: 4</li></ul>"),
+            VariableSchema("question", "string", "Question finale", "Combien paie-t-elle ?"),
+            VariableSchema("reponse_finale", "string", "Réponse finale (formatée)", "10,00 €"),
+            VariableSchema("steps", "string", "Étapes de correction (HTML possible)", "<ol><li>On identifie l'opération...</li></ol>"),
+            VariableSchema("problem_type", "string", "Type de problème", "achat"),
+            VariableSchema("difficulty", "string", "Difficulté", "moyen"),
+        ],
+        svg_modes=["AUTO"],
+        supports_double_svg=False,
+        difficulties=["facile", "moyen", "difficile"],
+        template_example_enonce=(
+            "<p><strong>{{titre}}</strong></p>"
+            "<p><strong>Consigne :</strong> {{consigne}}</p>"
+            "<p>{{contexte}}</p>"
+            "{{donnees}}"
+            "<p><em>Question :</em> {{question}}</p>"
+        ),
+        template_example_solution=(
+            "<h4>Correction</h4>"
+            "{{steps}}"
+            "<p><strong>Réponse :</strong> {{reponse_finale}}</p>"
+        ),
+    ),
+
 }
 
 

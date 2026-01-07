@@ -20,7 +20,7 @@ from pathlib import Path
 # Ajouter le répertoire backend au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from server import app
+from backend.server import app
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 

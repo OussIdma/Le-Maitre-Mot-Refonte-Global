@@ -13,7 +13,7 @@ from backend.server import db
 from backend.services.curriculum_persistence_service import CurriculumPersistenceService
 from backend.generators.factory import GeneratorFactory
 from backend.utils.difficulty_utils import normalize_difficulty, get_all_canonical_difficulties
-from curriculum.loader import get_chapter_by_official_code  # Legacy fallback
+from backend.curriculum.loader import get_chapter_by_official_code  # Legacy fallback
 
 logger = logging.getLogger(__name__)
 

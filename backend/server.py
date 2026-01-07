@@ -58,7 +58,7 @@ from backend.curriculum_complete import (
     log_feature_flag_access,
     process_math_content_for_pdf
 )
-from document_search import search_educational_document
+from backend.document_search import search_educational_document
 
 # ============================================================================
 # SYSTEM DEPENDENCIES INITIALIZATION
@@ -96,7 +96,39 @@ def ensure_system_dependencies():
         # On continue le démarrage même en cas d'erreur
 
 # Exécuter la vérification des dépendances au démarrage
-ensure_system_dependencies()
+# P3.1a: Ne pas exécuter en mode test, sur macOS ou dans Docker pour éviter les appels à dpkg/apt-get
+import platform
+
+# P0: Détecter l'environnement Docker et définir la variable d'environnement
+def is_running_in_docker():
+    """Détecte si l'application tourne dans un conteneur Docker."""
+    # Vérifier plusieurs indicateurs d'exécution dans Docker
+    docker_indicators = [
+        # Fichier spécifique à Docker
+        os.path.exists('/.dockerenv'),
+        # Cgroup spécifique à Docker
+        os.path.exists('/proc/self/cgroup') and 'docker' in open('/proc/self/cgroup').read(),
+        # Variable d'environnement souvent présente dans Docker
+        os.environ.get('container') == 'docker',  # Définie par Docker
+        # Hostname contenant ID Docker (souvent court et hexadécimal)
+        len(os.environ.get('HOSTNAME', '')) == 12 and all(c in '0123456789abcdef' for c in os.environ.get('HOSTNAME', '').lower())
+    ]
+    return any(docker_indicators)
+
+# Définir la variable d'environnement pour informer les scripts enfants
+if is_running_in_docker():
+    os.environ['DOCKER_ENV'] = '1'
+    print("🐳 Détecté exécution dans conteneur Docker - désactivation installation dépendances système")
+
+if not os.environ.get('PYTEST_CURRENT_TEST') and not os.environ.get('LM_TESTING') and platform.system().lower() == "linux" and not is_running_in_docker():
+    ensure_system_dependencies()
+else:
+    if os.environ.get('PYTEST_CURRENT_TEST') or os.environ.get('LM_TESTING'):
+        print("⚠️  [TEST MODE] Skipping system dependencies check")
+    elif is_running_in_docker():
+        print("🐳 [DOCKER MODE] Skipping system dependencies check (dependencies should be in image)")
+    else:
+        print(f"⚠️  [PLATFORM] Skipping system dependencies check on {platform.system()}")
 
 ROOT_DIR = Path(__file__).parent
 TEMPLATES_DIR = ROOT_DIR / 'templates'
@@ -413,7 +445,17 @@ def validate_env():
     return required_vars['MONGO_URL'], required_vars['DB_NAME']
 
 # Valider les variables d'environnement avant de créer le client MongoDB
-mongo_url, db_name = validate_env()
+# P3.1a: Ne pas valider en mode test pour permettre l'exécution de pytest
+import os
+if os.environ.get('PYTEST_CURRENT_TEST') or os.environ.get('LM_TESTING'):
+    # Mode test: utiliser des valeurs par défaut pour éviter le crash
+    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+    db_name = os.environ.get('DB_NAME', 'test_db')
+    print(f"[TEST MODE] Using default MongoDB: {mongo_url}/{db_name}")
+else:
+    # Mode normal: valider les variables d'environnement
+    mongo_url, db_name = validate_env()
+
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
@@ -4914,7 +4956,7 @@ async def register_free_user(request_body: RegisterFreeRequest, response: Respon
             "email": request_body.email,
             "session_token": session_token,
             "is_pro": False,
-            "exports_per_day": 10
+            "exports_per_day": 3
         }
 
     except HTTPException:
@@ -6263,6 +6305,10 @@ class UserExerciseSaveRequest(BaseModel):
     solution_html: str = Field(..., description="Solution HTML de l'exercice")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Métadonnées additionnelles")
 
+class ImportBatchRequest(BaseModel):
+    """Modèle pour importer un lot d'exercices dans la bibliothèque utilisateur"""
+    exercises: List[UserExerciseSaveRequest] = Field(..., description="Liste des exercices à importer")
+
 @api_router.post("/user/exercises")
 async def save_user_exercise(
     request_body: UserExerciseSaveRequest,
@@ -6388,6 +6434,157 @@ async def save_user_exercise(
         raise HTTPException(
             status_code=500,
             detail="Erreur lors de la sauvegarde de l'exercice"
+        )
+
+@api_router.post("/user/exercises/import-batch")
+async def import_batch_exercises(
+    request_body: ImportBatchRequest,
+    request: Request
+):
+    """
+    P3.1: Importer un lot d'exercices dans la bibliothèque utilisateur.
+    Requiert une session active.
+    P0: Sanitisation HTML pour prévenir XSS.
+    P0: Batch idempotent - ne pas planter si 1 exercice est invalide.
+    """
+    try:
+        # Valider la session
+        session_token = request.headers.get("X-Session-Token")
+        if not session_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentification requise pour importer des exercices"
+            )
+
+        user_email = await validate_session_token(session_token)
+        if not user_email:
+            raise HTTPException(
+                status_code=401,
+                detail="Session invalide ou expirée"
+            )
+
+        # P0: Sanitiser le HTML avant insertion
+        from backend.utils.html_sanitizer import sanitize_html
+
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+
+        for exercise in request_body.exercises:
+            try:
+                # Vérifier si l'exercice existe déjà (doublon)
+                existing = await db.user_exercises.find_one({
+                    "user_email": user_email,
+                    "exercise_uid": exercise.exercise_uid
+                })
+
+                if existing:
+                    skipped_count += 1
+                    continue
+
+                # Sanitiser l'énoncé
+                enonce_result = sanitize_html(exercise.enonce_html)
+                if enonce_result["rejected"]:
+                    status_code = 413 if enonce_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+                    errors.append({
+                        "exercise_uid": exercise.exercise_uid,
+                        "reason": f"Énoncé rejeté: {enonce_result['reject_reason']}"
+                    })
+                    continue
+
+                # Sanitiser la solution
+                solution_result = sanitize_html(exercise.solution_html)
+                if solution_result["rejected"]:
+                    status_code = 413 if solution_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+                    errors.append({
+                        "exercise_uid": exercise.exercise_uid,
+                        "reason": f"Solution rejetée: {solution_result['reject_reason']}"
+                    })
+                    continue
+
+                # Logger si sanitization a eu lieu
+                if enonce_result["changed"] or solution_result["changed"]:
+                    # Tronquer l'email pour les logs (garder seulement les 3 premiers caractères)
+                    email_hash = user_email[:3] + "***" if len(user_email) > 3 else "***"
+                    logger.warning(
+                        f"[XSS_SANITIZED_BATCH] HTML sanitized for user {email_hash} - exercise_uid={exercise.exercise_uid}, "
+                        f"enonce_changed={enonce_result['changed']}, solution_changed={solution_result['changed']}, "
+                        f"enonce_reasons={enonce_result['reasons']}, solution_reasons={solution_result['reasons']}"
+                    )
+
+                # Préparer les métadonnées avec info de sanitization
+                metadata = exercise.metadata or {}
+                if enonce_result["changed"]:
+                    metadata["sanitized"] = True
+                    if "sanitize_reasons" not in metadata:
+                        metadata["sanitize_reasons"] = []
+                    metadata["sanitize_reasons"].extend([f"enonce: {r}" for r in enonce_result["reasons"]])
+                if solution_result["changed"]:
+                    metadata["sanitized"] = True
+                    if "sanitize_reasons" not in metadata:
+                        metadata["sanitize_reasons"] = []
+                    metadata["sanitize_reasons"].extend([f"solution: {r}" for r in solution_result["reasons"]])
+
+                # Créer le document avec HTML sanitized
+                exercise_doc = {
+                    "user_email": user_email,
+                    "exercise_uid": exercise.exercise_uid,
+                    "generator_key": exercise.generator_key,
+                    "code_officiel": exercise.code_officiel,
+                    "difficulty": exercise.difficulty,
+                    "seed": exercise.seed,
+                    "variables": exercise.variables or {},
+                    "enonce_html": enonce_result["html"],  # Version sanitized
+                    "solution_html": solution_result["html"],  # Version sanitized
+                    "metadata": metadata,
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc)
+                }
+
+                await db.user_exercises.insert_one(exercise_doc)
+                imported_count += 1
+
+            except Exception as exercise_error:
+                # Si une erreur se produit pour un exercice spécifique, la capturer et continuer
+                errors.append({
+                    "exercise_uid": exercise.exercise_uid,
+                    "reason": f"Erreur lors de l'import: {str(exercise_error)}"
+                })
+                logger.error(f"Erreur lors de l'import de l'exercice {exercise.exercise_uid}: {exercise_error}")
+
+        logger.info(
+            f"P3.1: Batch import terminé pour {user_email} - imported={imported_count}, skipped={skipped_count}, errors={len(errors)}"
+        )
+
+        # Déterminer le code de réponse approprié
+        if errors:
+            # Si des erreurs se sont produites, on retourne 207 (Multi-Status)
+            # pour indiquer que certaines opérations ont échoué
+            return JSONResponse(
+                status_code=207,
+                content={
+                    "imported": imported_count,
+                    "skipped": skipped_count,
+                    "total": len(request_body.exercises),
+                    "errors": errors
+                }
+            )
+        else:
+            # Si tout s'est bien passé, on retourne 200
+            return {
+                "imported": imported_count,
+                "skipped": skipped_count,
+                "total": len(request_body.exercises),
+                "errors": []
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import batch des exercices: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de l'import batch des exercices"
         )
 
 @api_router.get("/user/exercises")
@@ -6664,27 +6861,42 @@ async def export_selection_pdf(
         
         # PR7.1: Valider qu'un compte est requis pour exporter (retourne 401 avec code AUTH_REQUIRED_EXPORT)
         assert_can_export_pdf(user_email)
-        
+
         # P0: Check if user is Pro
         is_pro, _ = await check_user_pro_status(user_email)
-        
+
+        # P0: Map layout "standard" -> "classic" - DOIT ÊTRE FAIT AVANT la vérification du layout
+        layout = request_body.layout
+        if layout == "standard":
+            layout = "classic"
+        elif layout not in ["eco", "classic"]:
+            layout = "eco"  # Default fallback
+
         # PR8: Vérifier que l'utilisateur peut utiliser le layout demandé (eco = Premium uniquement)
         from backend.services.access_control import assert_can_use_layout
         assert_can_use_layout(user_email, is_pro, layout)
         
         # P0: Check quota for Free users
         if not is_pro:
-            # Check Free user quota (10 exports/day)
+            # Check Free user quota (3 exports/day)
             today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             export_count = await db.exports.count_documents({
                 "user_email": user_email,
                 "created_at": {"$gte": today}
             })
-            
-            if export_count >= 10:
+
+            if export_count >= 3:
                 raise HTTPException(
                     status_code=429,
-                    detail="Quota d'exports quotidien atteint (10/jour). Passez en Pro pour des exports illimités."
+                    detail={
+                        "error": "FREE_DAILY_EXPORT_LIMIT",
+                        "code": "FREE_DAILY_EXPORT_LIMIT",
+                        "message": "Quota d'exports quotidien atteint (3/jour). Passez en Pro pour des exports illimités.",
+                        "exports_today": export_count,
+                        "exports_remaining": 0,
+                        "max_exports_per_day": 3,
+                        "resets_at": (today + timedelta(days=1)).isoformat()
+                    }
                 )
         
         # Validate exercises
@@ -6870,7 +7082,11 @@ app.include_router(admin_static_exercises_router, tags=["Admin Static Exercises"
 
 # P4.B - Admin Chapter Generators
 from backend.routes.admin_chapter_generators_routes import router as admin_chapter_generators_router
+from backend.routes.admin_diagnostics_routes import router as admin_diagnostics_router
 app.include_router(admin_chapter_generators_router, tags=["Admin - Chapter Generators"])
+
+# P2.1 - Admin Diagnostics routes
+app.include_router(admin_diagnostics_router, tags=["Admin Diagnostics"])
 
 # P4.D - Debug routes (DEV-only)
 from backend.routes.debug_routes import router as debug_router

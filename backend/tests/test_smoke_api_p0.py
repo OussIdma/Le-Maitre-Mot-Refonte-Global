@@ -30,7 +30,7 @@ async def test_db():
 @pytest_asyncio.fixture
 async def client(test_db):
     """Client HTTP async pour les tests"""
-    from server import app
+    from backend.server import app
     
     # Injecter la DB de test dans l'app
     app.state.db = test_db

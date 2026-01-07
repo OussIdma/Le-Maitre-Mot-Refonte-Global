@@ -23,6 +23,19 @@ Ce script appelle automatiquement :
 2. `POST /api/admin/exercises/preview-dynamic` (THALES_V1) – preview admin JSON-safe.
 3. `POST /api/v1/exercises/generate` (`code_officiel=6e_TESTS_DYN`) – génération élève sans placeholders.
 
+- Pour des tests smoke plus complets (génération, reproductibilité, placeholders, etc.) :
+
+```bash
+./scripts/smoke_tests_v1.sh
+```
+
+Ce script exécute une suite de tests étendus incluant :
+- Vérification des endpoints clés (OpenAPI, debug, curriculum, catalog)
+- Test des générateurs disponibles
+- Preview admin dynamique avec vérification des placeholders
+- Génération d'exercices et vérification de la reproductibilité des seeds
+- Validation de l'absence de placeholders non résolus dans les outputs
+
 ### Documentation (dossier `docs/`)
 
 Les documents d’architecture et d’investigation ont été déplacés dans `docs/` pour centraliser la connaissance. En particulier :

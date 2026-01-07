@@ -20,6 +20,7 @@ import { Button } from "./ui/button";
 import { Alert, AlertDescription } from "./ui/alert";
 import { useToast } from "../hooks/use-toast";
 import { useLogin } from "../contexts/LoginContext";
+import { useSelection } from "../contexts/SelectionContext";
 import { LogIn, Mail, KeyRound, Loader2, UserPlus, Crown, ArrowLeft, CheckCircle } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -36,6 +37,7 @@ function GlobalLoginModal() {
     setInitialMode,
     executePendingAction
   } = useLogin();
+  const { selectedExercises, importSelectionToAccount } = useSelection();
 
   // Mode principal: "login" ou "register"
   const [mode, setMode] = useState(initialMode);
@@ -91,6 +93,7 @@ function GlobalLoginModal() {
    * - Dispatch event auth-changed
    * - Ferme le modal
    * - Exécute pendingAction si présent
+   * - Importe la sélection vers la bibliothèque utilisateur si non vide
    */
   const onAuthSuccess = (sessionToken, email, isPro = false) => {
     // Store session token and user info
@@ -117,6 +120,54 @@ function GlobalLoginModal() {
       // L'action sera exécutée par le composant qui l'a définie
       // via un event custom ou un callback
       window.dispatchEvent(new CustomEvent('lmm:execute-pending-action', { detail: pending }));
+    }
+
+    // P3.1: Importer la sélection vers la bibliothèque utilisateur si non vide
+    // Éviter double import avec un flag basé sur le token
+    const tokenImportFlag = `selection_imported_for_token:${sessionToken}`;
+    const hasImported = sessionStorage.getItem(tokenImportFlag);
+
+    if (!hasImported && selectedExercises.length > 0) {
+      // Marquer que l'import va être effectué pour ce token
+      sessionStorage.setItem(tokenImportFlag, 'true');
+
+      // Importer la sélection en arrière-plan
+      importSelectionToAccount(sessionToken)
+        .then(result => {
+          if (result.imported > 0) {
+            console.log(`✅ ${result.imported} exercice(s) importé(s) dans la bibliothèque`);
+            toast({
+              title: "Sélection importée",
+              description: `${result.imported} exercice(s) ajouté(s) à votre bibliothèque`,
+              action: (
+                <Button
+                  onClick={() => navigate('/mes-exercices')}
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                >
+                  Voir mes exercices
+                </Button>
+              )
+            });
+          } else if (result.skipped > 0) {
+            console.log(`ℹ️ ${result.skipped} exercice(s) déjà présents dans la bibliothèque`);
+          }
+
+          if (result.errors && result.errors.length > 0) {
+            console.warn(`⚠️ ${result.errors.length} exercice(s) n'ont pas pu être importés`, result.errors);
+          }
+        })
+        .catch(error => {
+          console.error("Erreur lors de l'import de la sélection:", error);
+          // Réinitialiser le flag pour permettre un nouvel essai
+          sessionStorage.removeItem(tokenImportFlag);
+          toast({
+            title: "Erreur lors de l'import",
+            description: "Certains exercices n'ont pas pu être importés dans votre bibliothèque",
+            variant: "destructive"
+          });
+        });
     }
 
     // Rediriger vers returnTo si présent (et pas de pending action)
@@ -355,7 +406,7 @@ function GlobalLoginModal() {
 
       <div className="bg-green-50 p-3 rounded-lg text-xs text-green-700">
         <CheckCircle className="h-4 w-4 inline mr-1" />
-        <strong>Compte gratuit :</strong> 10 exports PDF/jour, preview illimitée
+        <strong>Compte gratuit :</strong> 3 exports PDF/jour, preview illimitée
       </div>
 
       <div className="text-center pt-2 border-t">

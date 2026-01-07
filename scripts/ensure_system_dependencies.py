@@ -9,6 +9,11 @@ import os
 def check_package_installed(package_name: str) -> bool:
     """Vérifie si un package système est installé."""
     try:
+        # P0: Ne pas exécuter dpkg-query dans un conteneur Docker
+        if os.environ.get('CONTAINER_ENV') or os.environ.get('DOCKER_ENV'):
+            print(f"🐳 Docker mode: skipping check for {package_name}")
+            return True  # Assume packages are installed in Docker image
+
         # Utilise dpkg-query qui est plus fiable pour vérifier l'installation
         result = subprocess.run(
             ["dpkg-query", "-W", "-f='${Status}'", package_name],
@@ -25,9 +30,14 @@ def check_package_installed(package_name: str) -> bool:
 
 def install_package(package_name: str) -> bool:
     """Installe un package système via apt-get."""
+    # P0: Ne jamais installer de packages dans un conteneur Docker
+    if os.environ.get('CONTAINER_ENV') or os.environ.get('DOCKER_ENV'):
+        print(f"🐳 Docker mode: skipping installation of {package_name} (should be in image)")
+        return True  # Return True to indicate "success" in Docker
+
     try:
         print(f"📦 Installation de {package_name}...")
-        
+
         # Update apt cache
         update_result = subprocess.run(
             ["sudo", "apt-get", "update", "-qq"],
@@ -35,10 +45,10 @@ def install_package(package_name: str) -> bool:
             text=True,
             check=False
         )
-        
+
         if update_result.returncode != 0:
             print(f"⚠️  Avertissement lors de apt-get update: {update_result.stderr}")
-        
+
         # Install package
         install_result = subprocess.run(
             ["sudo", "apt-get", "install", "-y", "-qq", package_name],
@@ -46,14 +56,14 @@ def install_package(package_name: str) -> bool:
             text=True,
             check=False
         )
-        
+
         if install_result.returncode == 0:
             print(f"✅ {package_name} installé avec succès")
             return True
         else:
             print(f"❌ Échec de l'installation de {package_name}: {install_result.stderr}")
             return False
-            
+
     except Exception as e:
         print(f"❌ Erreur lors de l'installation de {package_name}: {e}")
         return False

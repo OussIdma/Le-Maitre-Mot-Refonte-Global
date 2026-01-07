@@ -537,6 +537,12 @@ def _register_all_generators():
     except ImportError:
         pass
 
+    # P1-PHASE3: Problèmes (1 étape) - 6e_N10
+    try:
+        from backend.generators.probleme_1_etape_v1 import Probleme1EtapeV1Generator  # noqa:F401
+    except ImportError:
+        pass
+
 
 # Auto-register au chargement du module
 _register_all_generators()

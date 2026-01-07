@@ -7,8 +7,8 @@ Endpoint public pour alimenter /generate avec le référentiel officiel.
 from fastapi import APIRouter, Depends
 from typing import Optional
 
-from curriculum.loader import get_catalog, get_codes_for_macro_group
-from logger import get_logger
+from backend.curriculum.loader import get_catalog, get_codes_for_macro_group
+from backend.logger import get_logger
 
 logger = get_logger()
 
@@ -18,7 +18,7 @@ legacy_router = APIRouter(prefix="/api/v1", tags=["Curriculum Catalog"])
 
 async def get_db():
     """Dépendance pour obtenir la base de données"""
-    from server import db
+    from backend.server import db
     return db
 
 

@@ -1,7 +1,7 @@
 # CURRICULUM COMPLET - Système de Feature Flags
 # Toutes les matières du système éducatif français avec statuts d'activation
 
-from logger import get_logger
+from backend.logger import get_logger
 import latex2mathml.converter
 
 logger = get_logger()

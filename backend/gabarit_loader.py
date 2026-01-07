@@ -16,10 +16,14 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import sys
-sys.path.insert(0, '/app/backend')
-from models.math_models import MathExerciseSpec
-from style_manager import StyleFormulation
-from pedagogie_rules import ExerciseType
+import os
+# Add the project root directory to the path to allow relative imports
+project_root = os.path.dirname(os.path.dirname(__file__))  # This should be the project root
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from backend.models.math_models import MathExerciseSpec
+from backend.style_manager import StyleFormulation
+from backend.pedagogie_rules import ExerciseType
 from backend.observability import (
     get_logger as get_obs_logger,
     safe_random_choice,

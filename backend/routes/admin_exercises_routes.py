@@ -17,8 +17,8 @@ from backend.services.exercise_persistence_service import (
 )
 from backend.services.curriculum_sync_service import get_curriculum_sync_service
 from backend.services.collection_guard_rails import check_collection_typos
-from curriculum.loader import get_chapter_by_official_code
-from logger import get_logger
+from backend.curriculum.loader import get_chapter_by_official_code
+from backend.logger import get_logger
 from typing import Literal
 
 logger = get_logger()
@@ -61,7 +61,7 @@ class ExerciseImportPayload(BaseModel):
 
 async def get_db():
     """Dépendance pour obtenir la base de données"""
-    from server import app, db
+    from backend.server import app, db
     # Si app.state.db est défini (pour les tests), l'utiliser
     if hasattr(app.state, 'db') and app.state.db is not None:
         return app.state.db

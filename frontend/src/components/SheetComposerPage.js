@@ -228,11 +228,32 @@ const SheetComposerPage = () => {
       }
 
       if (err.response?.status === 429) {
-        toast({
-          title: "Quota dépassé",
-          description: "Vous avez atteint votre limite d'exports du jour. Passez en Pro pour des exports illimités.",
-          variant: "destructive"
-        });
+        const errorDetail = err.response?.data?.detail;
+        const errorCode = typeof errorDetail === 'object' ? errorDetail.code : null;
+
+        if (errorCode === 'FREE_DAILY_EXPORT_LIMIT') {
+          toast({
+            title: "Quota d'exports atteint",
+            description: "Vous avez atteint votre limite de 3 exports PDF par jour. Passez en Pro pour des exports illimités.",
+            variant: "destructive",
+            action: (
+              <Button
+                onClick={() => navigate('/upgrade')}
+                variant="outline"
+                size="sm"
+                className="h-8"
+              >
+                Passer en Pro
+              </Button>
+            )
+          });
+        } else {
+          toast({
+            title: "Quota dépassé",
+            description: "Vous avez atteint votre limite d'exports du jour. Passez en Pro pour des exports illimités.",
+            variant: "destructive"
+          });
+        }
       } else {
         setError("Erreur lors de l'export. Veuillez réessayer.");
         toast({
@@ -268,6 +289,94 @@ const SheetComposerPage = () => {
 
   // PR7.1: Utiliser le hook de gating pour les exports PDF
   const { canExport, checkBeforeExport, handleExportError } = useExportPdfGate();
+
+  // Sauvegarder la sélection dans Mes Fiches
+  const handleSaveToMySheets = async () => {
+    if (selectedExercises.length === 0) {
+      toast({
+        title: "Aucun exercice",
+        description: "Ajoutez des exercices pour sauvegarder une fiche",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!sessionToken) {
+      openLogin('/fiches/nouvelle');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      setError(null);
+
+      // Préparer les exercices avec ordre
+      const exercisesWithOrder = selectedExercises.map((exercise, index) => ({
+        exercise_uid: exercise.uniqueId,
+        order: index + 1,
+        generator_key: exercise.generator_key || exercise.metadata?.generator_key || null,
+        code_officiel: exercise.code_officiel || exercise.metadata?.code_officiel || exercise.chapitre || "",
+        difficulty: exercise.difficulty || exercise.metadata?.difficulte || exercise.difficulty || "moyen",
+        seed: exercise.seed || exercise.metadata?.seed || null,
+        variables: exercise.variables || exercise.metadata?.variables || {},
+        enonce_html: exercise.enonce_html || "",
+        solution_html: exercise.solution_html || "",
+        metadata: {
+          niveau: exercise.niveau || exercise.metadata?.niveau || "",
+          chapitre: exercise.chapitre || exercise.metadata?.chapitre || "",
+          ...exercise.metadata
+        }
+      }));
+
+      const response = await fetch(`${BACKEND_URL}/api/user/sheets/create-from-selection`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': sessionToken,
+        },
+        body: JSON.stringify({
+          title: sheetTitle || "Ma fiche d'exercices",
+          description: `Fiche composée avec ${selectedExercises.length} exercice(s)`,
+          exercises: exercisesWithOrder
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Fiche sauvegardée",
+          description: "Votre fiche a été ajoutée à Mes Fiches",
+          action: (
+            <Button
+              onClick={() => navigate(`/mes-fiches/${result.sheet_uid}`)}
+              variant="outline"
+              size="sm"
+              className="h-8"
+            >
+              Voir la fiche
+            </Button>
+          )
+        });
+
+        // Réinitialiser la sélection après sauvegarde
+        clearSelection();
+        setSheetTitle("");
+      } else {
+        throw new Error(result.detail || 'Erreur lors de la sauvegarde de la fiche');
+      }
+    } catch (error) {
+      console.error("Erreur sauvegarde fiche:", error);
+      setError("Erreur lors de la sauvegarde de la fiche");
+      toast({
+        title: "Erreur",
+        description: "Impossible de sauvegarder la fiche",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   // Export PDF - point d'entrée principal
   const handleExportPDF = async () => {
@@ -434,6 +543,19 @@ const SheetComposerPage = () => {
                     )}
                   </Button>
 
+                  {/* Bouton Sauvegarder dans Mes Fiches - visible si connecté */}
+                  {sessionToken && (
+                    <Button
+                      onClick={handleSaveToMySheets}
+                      disabled={isExporting || selectedExercises.length === 0}
+                      variant="secondary"
+                      size="lg"
+                    >
+                      <FileDown className="mr-2 h-4 w-4" />
+                      Sauvegarder dans Mes Fiches
+                    </Button>
+                  )}
+
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -471,7 +593,7 @@ const SheetComposerPage = () => {
                   <Alert className="mt-4 border-amber-200 bg-amber-50">
                     <AlertCircle className="h-4 w-4 text-amber-600" />
                     <AlertDescription className="text-amber-800">
-                      Compte gratuit : 10 exports PDF par jour.
+                      Compte gratuit : 3 exports PDF par jour.
                       <Button
                         variant="link"
                         className="text-amber-700 underline p-0 ml-1 h-auto"

@@ -18,7 +18,7 @@ from backend.models.math_models import MathExerciseType
 @pytest.fixture
 def client():
     """Client de test FastAPI"""
-    from server import app
+    from backend.server import app
     return TestClient(app)
 
 

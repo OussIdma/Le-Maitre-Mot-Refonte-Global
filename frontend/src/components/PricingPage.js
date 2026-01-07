@@ -116,7 +116,7 @@ const PricingPage = () => {
     },
     {
       icon: <FileDown className="h-5 w-5 text-green-600" />,
-      title: "10 exports PDF / jour",
+      title: "3 exports PDF / jour",
       description: "Exportez vos documents en PDF (limite quotidienne)"
     },
     {

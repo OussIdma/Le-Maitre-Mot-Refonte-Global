@@ -16,7 +16,7 @@ from backend.models.generator_template import (
     GeneratorTemplateValidateResponse
 )
 from backend.services.generator_template_service import get_template_service
-from logger import get_logger
+from backend.logger import get_logger
 
 logger = get_logger()
 
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1/admin/generator-templates", tags=["Admin - Te
 
 def get_db_dependency():
     """Dépendance pour récupérer la DB"""
-    from server import db
+    from backend.server import db
     return db
 
 

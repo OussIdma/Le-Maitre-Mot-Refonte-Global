@@ -900,6 +900,20 @@ const ChapterExercisesAdminPage = () => {
 </div>`
       };
     }
+      // ✅ Nouveau générateur : PROBLEME_1_ETAPE_V1
+    if (generatorKey === 'PROBLEME_1_ETAPE_V1') {
+      return {
+        enonce: `<p><strong>{{titre}}</strong></p>
+  <p><strong>Consigne :</strong> {{consigne}}</p>
+  <p>{{contexte}}</p>
+  {{donnees}}
+  <p><em>Question :</em> {{question}}</p>`,
+        solution: `<h4>Correction</h4>
+  {{steps}}
+  <p><strong>Réponse :</strong> {{reponse_finale}}</p>`
+      };
+    }
+
     return { enonce: '', solution: '' };
   };
   
@@ -2360,10 +2374,14 @@ const ChapterExercisesAdminPage = () => {
                     setFormData(p => ({
                       ...p, 
                       is_dynamic: checked,
-                      generator_key: checked ? 'THALES_V1' : '',
+                      generator_key: checked ? (p.generator_key || "THALES_V1") : "",
                       enonce_template_html: checked ? getDynamicTemplates('THALES_V1').enonce : '',
-                      solution_template_html: checked ? getDynamicTemplates('THALES_V1').solution : ''
+                      solution_template_html: checked ? getDynamicTemplates('THALES_V1').solution : '',
+                      variables: checked ? {} : null,
+                      template_variants: []
+
                     }));
+                    setActiveVariantIndex(0);
                   }}
                 />
               </div>
@@ -2421,55 +2439,58 @@ const ChapterExercisesAdminPage = () => {
                         console.log('📝 Templates chargés:', { enonce: templates.enonce?.substring(0, 50), solution: templates.solution?.substring(0, 50) });
 
                         setFormData(p => {
-                          // Pour les générateurs premium (SIMPLIFICATION_FRACTIONS_V2), initialiser les variants A/B/C si absents
-                          const isPremiumGen = v === 'SIMPLIFICATION_FRACTIONS_V2';
-                          const shouldInitVariants = isPremiumGen &&
-                            (!Array.isArray(p.template_variants) || p.template_variants.length === 0);
+                        const isPremiumGen = v === 'SIMPLIFICATION_FRACTIONS_V2';
 
-                          // Anti-empty protection: don't overwrite with empty strings if we have existing templates
-                          const newEnonce = templates.enonce || p.enonce_template_html || '';
-                          const newSolution = templates.solution || p.solution_template_html || '';
+                        // ✅ Toujours repartir propre quand on change de générateur
+                        const next = {
+                          ...p,
+                          is_dynamic: true,
+                          generator_key: v,
+                          enonce_template_html: templates.enonce || '',
+                          solution_template_html: templates.solution || '',
+                          variables: {},            // ✅ reset variables (évite traîner THALES)
+                          template_variants: []     // ✅ reset variants (évite traîner premium)
+                        };
 
-                          const baseUpdate = {
-                            ...p,
-                            generator_key: v,
-                            enonce_template_html: newEnonce,
-                            solution_template_html: newSolution
-                          };
+                        // ✅ Variants A/B/C uniquement pour SIMPLIFICATION_FRACTIONS_V2
+                        if (isPremiumGen) {
+                          const variantTemplates = getSimplificationFractionsV2Templates();
+                          next.template_variants = [
+                            {
+                              id: 'A',
+                              variant_id: 'A',
+                              label: 'Direct',
+                              weight: 1,
+                              enonce_template_html: variantTemplates.A.enonce,
+                              solution_template_html: variantTemplates.A.solution
+                            },
+                            {
+                              id: 'B',
+                              variant_id: 'B',
+                              label: 'Guidé',
+                              weight: 1,
+                              enonce_template_html: variantTemplates.B.enonce,
+                              solution_template_html: variantTemplates.B.solution
+                            },
+                            {
+                              id: 'C',
+                              variant_id: 'C',
+                              label: 'Diagnostic',
+                              weight: 1,
+                              enonce_template_html: variantTemplates.C.enonce,
+                              solution_template_html: variantTemplates.C.solution
+                            }
+                          ];
 
-                          // Initialiser les variants A/B/C pour les générateurs premium avec les bons templates
-                          if (shouldInitVariants) {
-                            const variantTemplates = getSimplificationFractionsV2Templates();
-                            baseUpdate.template_variants = [
-                              {
-                                id: 'A',
-                                variant_id: 'A',
-                                label: 'Direct',
-                                weight: 1,
-                                enonce_template_html: variantTemplates.A.enonce,
-                                solution_template_html: variantTemplates.A.solution
-                              },
-                              {
-                                id: 'B',
-                                variant_id: 'B',
-                                label: 'Guidé',
-                                weight: 1,
-                                enonce_template_html: variantTemplates.B.enonce,
-                                solution_template_html: variantTemplates.B.solution
-                              },
-                              {
-                                id: 'C',
-                                variant_id: 'C',
-                                label: 'Diagnostic',
-                                weight: 1,
-                                enonce_template_html: variantTemplates.C.enonce,
-                                solution_template_html: variantTemplates.C.solution
-                              }
-                            ];
-                          }
+                          // miroir legacy (souvent utilisé par preview)
+                          next.enonce_template_html = next.template_variants[0].enonce_template_html;
+                          next.solution_template_html = next.template_variants[0].solution_template_html;
+                        }
 
-                          return baseUpdate;
-                        });
+                        return next;
+                      });
+                      setActiveVariantIndex(0);
+
                       }}
                     >
                       <SelectTrigger>

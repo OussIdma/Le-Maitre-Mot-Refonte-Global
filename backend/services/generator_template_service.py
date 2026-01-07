@@ -26,7 +26,7 @@ from backend.utils.difficulty_utils import (
 )
 from backend.observability import get_request_context
 from backend.observability.logger import get_logger as get_obs_logger
-from logger import get_logger
+from backend.logger import get_logger
 
 logger = get_logger()
 

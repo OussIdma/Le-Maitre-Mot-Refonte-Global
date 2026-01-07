@@ -2,7 +2,7 @@
 # Structure: Matière -> Classe (Niveau) -> Chapitre Appli (Compétence)
 
 import latex2mathml.converter
-from logger import get_logger
+from backend.logger import get_logger
 
 logger = get_logger()
 

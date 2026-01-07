@@ -353,16 +353,16 @@ async def remove_exercise_from_sheet(
 ):
     """Retirer un exercice d'une fiche"""
     sheet = await verify_sheet_ownership(sheet_uid, user_email)
-    
+
     exercises = sheet.get("exercises", [])
-    
+
     # Retirer l'exercice
     exercises = [ex for ex in exercises if ex.get("exercise_uid") != exercise_uid]
-    
+
     # Réordonner (1, 2, 3, ...)
     for i, ex in enumerate(exercises, 1):
         ex["order"] = i
-    
+
     await db.user_sheets.update_one(
         {"sheet_uid": sheet_uid},
         {
@@ -372,12 +372,12 @@ async def remove_exercise_from_sheet(
             }
         }
     )
-    
+
     # Récupérer la fiche mise à jour
     updated_sheet = await db.user_sheets.find_one({"sheet_uid": sheet_uid})
-    
+
     logger.info(f"P3.1: Exercice retiré de la fiche - sheet_uid={sheet_uid}, exercise_uid={exercise_uid}")
-    
+
     return SheetResponse(
         sheet_uid=updated_sheet["sheet_uid"],
         user_email=updated_sheet["user_email"],
@@ -387,6 +387,164 @@ async def remove_exercise_from_sheet(
         created_at=updated_sheet["created_at"].isoformat() if isinstance(updated_sheet["created_at"], datetime) else updated_sheet["created_at"],
         updated_at=updated_sheet["updated_at"].isoformat() if isinstance(updated_sheet["updated_at"], datetime) else updated_sheet["updated_at"]
     )
+
+
+class CreateFromSelectionRequestExercise(BaseModel):
+    """Exercice dans une requête de création de fiche à partir de sélection"""
+    exercise_uid: str = Field(..., description="UID de l'exercice")
+    order: int = Field(..., description="Ordre dans la fiche (1, 2, 3, ...)")
+    generator_key: Optional[str] = Field(None, description="Clé du générateur utilisé")
+    code_officiel: str = Field(..., description="Code officiel du chapitre (ex: 6e_N08)")
+    difficulty: str = Field(..., description="Difficulté (facile, moyen, difficile)")
+    seed: Optional[int] = Field(None, description="Seed utilisé pour la génération")
+    variables: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Variables générées")
+    enonce_html: str = Field(..., description="Énoncé HTML de l'exercice")
+    solution_html: str = Field(..., description="Solution HTML de l'exercice")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Métadonnées additionnelles")
+
+
+class CreateFromSelectionRequest(BaseModel):
+    """Requête pour créer une fiche à partir d'une sélection d'exercices"""
+    title: str = Field(..., description="Titre de la fiche")
+    description: Optional[str] = Field(default="", description="Description optionnelle")
+    exercises: List[CreateFromSelectionRequestExercise] = Field(..., description="Liste des exercices à sauvegarder")
+
+
+@router.post("/create-from-selection", response_model=Dict[str, str], status_code=201)
+async def create_sheet_from_selection(
+    request_body: CreateFromSelectionRequest,
+    user_email: str = Depends(get_user_email)
+):
+    """
+    P3.1: Créer une fiche à partir d'une sélection d'exercices.
+
+    Processus:
+    1. Sauvegarder les exercices dans user_exercises (skip duplicates)
+    2. Créer la fiche dans user_sheets
+    3. Lier les exercise_uid à la fiche avec ordre préservé
+    """
+    try:
+        # 1. Sauvegarder les exercices dans user_exercises (batch import)
+        from backend.server import UserExerciseSaveRequest
+        from backend.utils.html_sanitizer import sanitize_html
+
+        imported_count = 0
+        skipped_count = 0
+
+        for exercise_data in request_body.exercises:
+            # Vérifier si l'exercice existe déjà (doublon)
+            existing = await db.user_exercises.find_one({
+                "user_email": user_email,
+                "exercise_uid": exercise_data.exercise_uid
+            })
+
+            if existing:
+                skipped_count += 1
+                continue
+
+            # Sanitiser l'énoncé
+            enonce_result = sanitize_html(exercise_data.enonce_html)
+            if enonce_result["rejected"]:
+                status_code = 413 if enonce_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+                raise HTTPException(
+                    status_code=status_code,
+                    detail={
+                        "error": "HTML rejeté pour l'énoncé",
+                        "reason": enonce_result["reject_reason"],
+                        "message": f"Le contenu HTML de l'énoncé a été rejeté: {enonce_result['reject_reason']}"
+                    }
+                )
+
+            # Sanitiser la solution
+            solution_result = sanitize_html(exercise_data.solution_html)
+            if solution_result["rejected"]:
+                status_code = 413 if solution_result["reject_reason"] == "HTML_TOO_LARGE" else 400
+                raise HTTPException(
+                    status_code=status_code,
+                    detail={
+                        "error": "HTML rejeté pour la solution",
+                        "reason": solution_result["reject_reason"],
+                        "message": f"Le contenu HTML de la solution a été rejeté: {solution_result['reject_reason']}"
+                    }
+                )
+
+            # Logger si sanitization a eu lieu
+            if enonce_result["changed"] or solution_result["changed"]:
+                # Tronquer l'email pour les logs (garder seulement les 3 premiers caractères)
+                email_hash = user_email[:3] + "***" if len(user_email) > 3 else "***"
+                logger.warning(
+                    f"[XSS_SANITIZED_CREATE_SHEET] HTML sanitized for user {email_hash} - exercise_uid={exercise_data.exercise_uid}, "
+                    f"enonce_changed={enonce_result['changed']}, solution_changed={solution_result['changed']}, "
+                    f"enonce_reasons={enonce_result['reasons']}, solution_reasons={solution_result['reasons']}"
+                )
+
+            # Préparer les métadonnées avec info de sanitization
+            metadata = exercise_data.metadata or {}
+            if enonce_result["changed"]:
+                metadata["sanitized"] = True
+                if "sanitize_reasons" not in metadata:
+                    metadata["sanitize_reasons"] = []
+                metadata["sanitize_reasons"].extend([f"enonce: {r}" for r in enonce_result["reasons"]])
+            if solution_result["changed"]:
+                metadata["sanitized"] = True
+                if "sanitize_reasons" not in metadata:
+                    metadata["sanitize_reasons"] = []
+                metadata["sanitize_reasons"].extend([f"solution: {r}" for r in solution_result["reasons"]])
+
+            # Créer le document avec HTML sanitized
+            exercise_doc = {
+                "user_email": user_email,
+                "exercise_uid": exercise_data.exercise_uid,
+                "generator_key": exercise_data.generator_key,
+                "code_officiel": exercise_data.code_officiel,
+                "difficulty": exercise_data.difficulty,
+                "seed": exercise_data.seed,
+                "variables": exercise_data.variables or {},
+                "enonce_html": enonce_result["html"],  # Version sanitized
+                "solution_html": solution_result["html"],  # Version sanitized
+                "metadata": metadata,
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
+            }
+
+            await db.user_exercises.insert_one(exercise_doc)
+            imported_count += 1
+
+        # 2. Créer la fiche dans user_sheets
+        sheet_uid = f"sheet_{uuid.uuid4().hex[:16]}"
+
+        # Convertir les exercices pour la fiche (seulement exercise_uid et order)
+        sheet_exercises = []
+        for exercise_data in request_body.exercises:
+            sheet_exercises.append({
+                "exercise_uid": exercise_data.exercise_uid,
+                "order": exercise_data.order
+            })
+
+        sheet_doc = {
+            "sheet_uid": sheet_uid,
+            "user_email": user_email,
+            "title": request_body.title,
+            "description": request_body.description or "",
+            "exercises": sheet_exercises,  # Liste avec ordre préservé
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc)
+        }
+
+        await db.user_sheets.insert_one(sheet_doc)
+
+        logger.info(f"P3.1: Fiche créée à partir de sélection pour {user_email} - sheet_uid={sheet_uid}, exercises_imported={imported_count}, exercises_skipped={skipped_count}")
+
+        return {"sheet_uid": sheet_uid}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la création de la fiche à partir de la sélection: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la création de la fiche à partir de la sélection"
+        )
 
 
 @router.post("/{sheet_uid}/export-pdf")

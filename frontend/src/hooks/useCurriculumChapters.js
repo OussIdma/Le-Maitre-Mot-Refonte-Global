@@ -24,19 +24,27 @@ export function useCurriculumChapters(niveau = null) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [chaptersByLevel, setChaptersByLevel] = useState({});
+  const [source, setSource] = useState(null); // "db" | "catalogue" | null
+  const [warning, setWarning] = useState(null); // string | null
 
   // Charger les chapitres pour un niveau donné
   const loadChapters = async (niveauToLoad) => {
     if (!niveauToLoad) {
       setChapters([]);
+      setSource(null);
+      setWarning(null);
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
+      setSource(null);
+      setWarning(null);
 
       let transformedChapters = [];
+      let currentSource = null;
+      let currentWarning = null;
 
       // Essayer d'abord l'API curriculum (source DB)
       try {
@@ -53,23 +61,41 @@ export function useCurriculumChapters(niveau = null) {
           tags: ch.tags || [],
           ordre: ch.ordre || 0
         }));
+        currentSource = "db";
       } catch (err) {
-        // Fallback sur l'API catalogue
-        const response = await axios.get(`${API}/catalogue/levels/${niveauToLoad}/chapters`);
-        const chaptersList = response.data || [];
-        transformedChapters = chaptersList.map(ch => ({
-          id: ch.id || ch.code_officiel,
-          code_officiel: ch.code || ch.code_officiel || ch.id,
-          titre: ch.titre,
-          domaine: ch.domaine,
-          niveau: ch.niveau || niveauToLoad,
-          nb_exercises: ch.nb_exercises || null,
-          tags: [],
-          ordre: ch.ordre || 0
-        }));
+        // L'API DB a échoué
+        const allowFallback = process.env.REACT_APP_ALLOW_CATALOG_FALLBACK === "true";
+        
+        if (allowFallback) {
+          // Fallback autorisé: charger depuis le catalogue avec warning
+          try {
+            const response = await axios.get(`${API}/catalogue/levels/${niveauToLoad}/chapters`);
+            const chaptersList = response.data || [];
+            transformedChapters = chaptersList.map(ch => ({
+              id: ch.id || ch.code_officiel,
+              code_officiel: ch.code || ch.code_officiel || ch.id,
+              titre: ch.titre,
+              domaine: ch.domaine,
+              niveau: ch.niveau || niveauToLoad,
+              nb_exercises: ch.nb_exercises || null,
+              tags: [],
+              ordre: ch.ordre || 0
+            }));
+            currentSource = "catalogue";
+            currentWarning = "Mode dégradé: catalogue statique, données potentiellement obsolètes / incohérentes";
+          } catch (catalogErr) {
+            // Le fallback a aussi échoué
+            throw catalogErr;
+          }
+        } else {
+          // Pas de fallback: échec complet
+          throw new Error("Curriculum indisponible côté DB");
+        }
       }
 
       setChapters(transformedChapters);
+      setSource(currentSource);
+      setWarning(currentWarning);
 
       // Mettre à jour l'index par niveau
       setChaptersByLevel(prev => ({
@@ -81,6 +107,8 @@ export function useCurriculumChapters(niveau = null) {
       console.error('❌ Erreur chargement chapitres:', err);
       setError(err.response?.data?.detail || err.message || 'Impossible de charger les chapitres');
       setChapters([]);
+      setSource(null);
+      setWarning(null);
     } finally {
       setLoading(false);
     }
@@ -92,6 +120,8 @@ export function useCurriculumChapters(niveau = null) {
       loadChapters(niveau);
     } else {
       setChapters([]);
+      setSource(null);
+      setWarning(null);
     }
   }, [niveau]);
 
@@ -147,7 +177,9 @@ export function useCurriculumChapters(niveau = null) {
     search,
     groupByLevel,
     loadChapters,
-    reload: () => niveau && loadChapters(niveau)
+    reload: () => niveau && loadChapters(niveau),
+    source, // "db" | "catalogue" | null
+    warning // string | null
   };
 }
 

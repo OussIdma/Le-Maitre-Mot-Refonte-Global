@@ -8,12 +8,13 @@ Modes de fonctionnement:
 2. Mode legacy: niveau + chapitre (comportement existant)
 3. Mode officiel: code_officiel (basé sur le référentiel 6e)
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel, Field
 from html import escape
 import time
 import re
+import os
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from backend.models.exercise_models import (
@@ -25,7 +26,7 @@ from backend.models.math_models import MathExerciseType
 from backend.services.curriculum_service import curriculum_service
 from backend.services.math_generation_service import MathGenerationService
 from backend.services.geometry_render_service import GeometryRenderService
-from curriculum.loader import get_chapter_by_official_code, CurriculumChapter  # Legacy - à remplacer par MongoDB
+from backend.curriculum.loader import get_chapter_by_official_code, CurriculumChapter  # Legacy - à remplacer par MongoDB
 from backend.services.curriculum_persistence_service import CurriculumPersistenceService
 # PR2: DB ONLY - GM07/GM08 utilisent maintenant MongoDB directement
 from backend.services.gm07_handler import is_gm07_request, generate_gm07_exercise, generate_gm07_batch
@@ -39,7 +40,7 @@ from backend.utils.difficulty_utils import (
     coerce_to_supported_difficulty,
     map_ui_difficulty_to_generator,  # P4.D HOTFIX
 )  # P4.B/P4.C - Normalisation et coercition difficultés
-from logger import get_logger
+from backend.logger import get_logger
 from backend.observability import (
     get_request_context,
     get_logger as get_obs_logger,
@@ -51,6 +52,71 @@ from backend.observability import (
 
 logger = get_logger()
 obs_logger = get_obs_logger('PIPELINE')
+
+# ============================================================================
+# HELPER - RESOLUTION DE PIPELINE
+# ============================================================================
+
+async def resolve_pipeline(code_officiel: str, offer: str = "free", difficulty: str = "moyen") -> tuple:
+    """
+    Détermine quel pipeline est utilisé pour un chapitre donné.
+
+    Args:
+        code_officiel: Code officiel du chapitre (ex: 6e_GM07, 6e_N01)
+        offer: Offre de l'utilisateur (free/pro)
+        difficulty: Difficulté demandée (facile/moyen/difficile)
+
+    Returns:
+        tuple: (pipeline_used, reason)
+    """
+    if not code_officiel:
+        return "UNKNOWN", "Code officiel manquant"
+
+    # Normaliser le code_officiel
+    normalized_code = code_officiel.upper().replace("-", "_")
+
+    # Vérifier si les pipelines basés sur fichiers sont désactivés
+    disable_file_pipelines = os.getenv("DISABLE_FILE_PIPELINES", "false").lower() == "true"
+
+    # Vérifier les pipelines spécifiques
+    is_gm07 = is_gm07_request(normalized_code)
+    is_gm08 = is_gm08_request(normalized_code)
+    is_tests_dyn = is_tests_dyn_request(normalized_code)
+
+    if is_gm07 and not disable_file_pipelines:
+        return "FILE_GM07", "Chapitre GM07 détecté, pipelines fichiers activés"
+    elif is_gm07 and disable_file_pipelines:
+        return "DB_DYNAMIC", "Chapitre GM07 mais pipelines fichiers désactivés (DB fallback)"
+    elif is_gm08 and not disable_file_pipelines:
+        return "FILE_GM08", "Chapitre GM08 détecté, pipelines fichiers activés"
+    elif is_gm08 and disable_file_pipelines:
+        return "DB_DYNAMIC", "Chapitre GM08 mais pipelines fichiers désactivés (DB fallback)"
+    elif is_tests_dyn and not disable_file_pipelines:
+        return "FILE_TESTS_DYN", "Chapitre TESTS_DYN détecté, pipelines fichiers activés"
+    elif is_tests_dyn and disable_file_pipelines:
+        return "DB_DYNAMIC", "Chapitre TESTS_DYN mais pipelines fichiers désactivés (DB fallback)"
+    else:
+        # Vérifier si le chapitre existe en DB
+        from backend.server import db
+        from backend.services.curriculum_persistence_service import get_curriculum_persistence_service
+        curriculum_service_db = get_curriculum_persistence_service(db)
+
+        try:
+            chapter_from_db = await curriculum_service_db.get_chapter_by_code(normalized_code)
+        except:
+            chapter_from_db = None
+
+        if chapter_from_db:
+            pipeline = chapter_from_db.get("pipeline", "DB_DYNAMIC")
+            return pipeline, f"Chapitre trouvé en DB avec pipeline={pipeline}"
+        else:
+            # Vérifier dans le fichier JSON legacy
+            chapter_legacy = get_chapter_by_official_code(code_officiel)
+            if chapter_legacy:
+                return "STATIC_JSON", "Chapitre trouvé dans JSON legacy (migration nécessaire)"
+            else:
+                return "NOT_FOUND", "Chapitre non trouvé dans DB ni dans JSON"
+
 
 router = APIRouter()
 
@@ -685,7 +751,7 @@ async def generate_gm07_batch_endpoint(request: GM07BatchRequest):
     logger.info(f"🎯 GM07 Batch Request: offer={request.offer}, difficulty={request.difficulte}, count={request.nb_exercices}")
     
     # PR2: DB ONLY - Utiliser la fonction async avec DB
-    from server import db
+    from backend.server import db
     exercises, batch_meta = await generate_gm07_batch(
         db=db,
         offer=request.offer,
@@ -753,7 +819,7 @@ async def generate_gm08_batch_endpoint(request: GM08BatchRequest):
     logger.info(f"🎯 GM08 Batch Request: offer={request.offer}, difficulty={request.difficulte}, count={request.nb_exercices}")
     
     # PR2: DB ONLY - Utiliser la fonction async avec DB
-    from server import db
+    from backend.server import db
     exercises, batch_meta = await generate_gm08_batch(
         db=db,
         offer=request.offer,
@@ -846,6 +912,10 @@ def build_enonce_html(enonce: str, svg: Optional[str] = None) -> str:
     NOTE: L'énoncé n'est PAS échappé car il peut contenir du HTML valide
     (tableaux de proportionnalité, etc.) généré par notre code interne.
     
+    Si l'énoncé contient déjà des éléments HTML block-level (table, div, ul, ol, p, h1-h6, 
+    pre, blockquote, svg, section, article, figure), il n'est pas enveloppé dans <p>.
+    Sinon, il est enveloppé dans <p> comme avant.
+    
     Args:
         enonce: Énoncé textuel (peut contenir du HTML de tableaux, etc.)
         svg: SVG optionnel (non échappé car généré par notre code interne)
@@ -857,7 +927,18 @@ def build_enonce_html(enonce: str, svg: Optional[str] = None) -> str:
     # (tableaux, formules, etc.) généré par notre propre code backend.
     # Ce HTML est de confiance car il provient de math_generation_service.py
     
-    html = f"<div class='exercise-enonce'><p>{enonce}</p>"
+    # Détecter si l'énoncé contient des éléments block-level HTML
+    # Éléments block-level: table, div, ul, ol, p, h1-h6, pre, blockquote, svg, section, article, figure
+    block_level_pattern = r'<(?:table|div|ul|ol|p|h[1-6]|pre|blockquote|svg|section|article|figure)(?:\s[^>]*)?>'
+    has_block_level = bool(re.search(block_level_pattern, enonce, re.IGNORECASE))
+    
+    html = "<div class='exercise-enonce'>"
+    if has_block_level:
+        # Ne pas envelopper dans <p> si l'énoncé contient déjà des éléments block-level
+        html += enonce
+    else:
+        # Envelopper dans <p> pour le texte simple
+        html += f"<p>{enonce}</p>"
     
     # Le SVG n'est PAS échappé car il est généré par notre code interne de confiance
     if svg:
@@ -1032,6 +1113,8 @@ def _build_fallback_enonce(spec, chapitre: str) -> str:
     return f"Exercice de {chapitre}. Répondre aux questions ci-dessous."
 
 
+from fastapi import Query
+
 @router.post(
     "/generate",
     response_model=ExerciseGenerateResponse,
@@ -1047,37 +1130,100 @@ def _build_fallback_enonce(spec, chapitre: str) -> str:
     summary="Générer un exercice mathématique",
     description="""
     Génère un exercice personnalisé avec énoncé, figure géométrique et solution.
-    
+
     **Deux modes de fonctionnement :**
-    
+
     1. **Mode legacy** : Utiliser `niveau` + `chapitre`
        ```json
        {"niveau": "6e", "chapitre": "Fractions", "difficulte": "moyen"}
        ```
-    
+
     2. **Mode officiel** : Utiliser `code_officiel` (référentiel 6e)
        ```json
        {"code_officiel": "6e_N08", "difficulte": "moyen"}
        ```
-    
+
     Si `code_officiel` est fourni, il a priorité sur `chapitre`.
     """
 )
-async def generate_exercise(request: ExerciseGenerateRequest):
+async def generate_exercise(
+    fastapi_request: Request  # Pour accéder au body et query params
+):
     """
-    Génère un exercice mathématique complet.
-    
+    Génère un exercice mathématique complet avec compatibilité ascendante.
+
     Args:
-        request: Requête avec niveau/chapitre (legacy) ou code_officiel (nouveau)
-    
+        code_officiel: Fallback query param si non fourni dans le body
+        niveau: Fallback query param si non fourni dans le body
+        chapitre: Fallback query param si non fourni dans le body
+        difficulte: Fallback query param si non fourni dans le body
+        offer: Fallback query param si non fourni dans le body
+        seed: Fallback query param si non fourni dans le body
+        fastapi_request: Requête FastAPI complète pour gérer à la fois body et query params
+
     Returns:
         Exercice généré avec énoncé HTML, SVG, solution et pdf_token
     """
+    import json
+    from backend.models.exercise_models import ExerciseGenerateRequest
+
+    # Récupérer le body JSON
+    try:
+        body_bytes = await fastapi_request.body()
+        if body_bytes:
+            body = json.loads(body_bytes.decode('utf-8'))
+        else:
+            body = {}
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_JSON",
+                "error_code": "INVALID_JSON_BODY",
+                "message": "Le corps de la requête n'est pas un JSON valide"
+            }
+        )
+
+    # Récupérer les query params
+    query_params = dict(fastapi_request.query_params)
+
+    # Fusionner les données : priorité au body, fallback aux query params
+    merged_data = {
+        'code_officiel': body.get('code_officiel') or query_params.get('code_officiel'),
+        'niveau': body.get('niveau') or query_params.get('niveau'),
+        'chapitre': body.get('chapitre') or query_params.get('chapitre'),
+        'difficulte': body.get('difficulte') or query_params.get('difficulte') or 'facile',
+        'offer': body.get('offer') or query_params.get('offer') or 'free',
+        'seed': body.get('seed') or (int(query_params['seed']) if query_params.get('seed') else None)
+    }
+
+    # Ajouter les autres champs du body
+    for key, value in body.items():
+        if key not in merged_data:
+            merged_data[key] = value
+
+    # Créer l'objet de requête à partir des données fusionnées
+    try:
+        request = ExerciseGenerateRequest(**merged_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "VALIDATION_ERROR",
+                "error_code": "REQUEST_VALIDATION_FAILED",
+                "message": f"Erreur de validation de la requête: {str(e)}",
+                "details": str(e)
+            }
+        )
     request_start = time.time()
-    
+
+    # Générer un ID de requête unique pour le traçage
+    request_id = ensure_request_id()
+
     # P0 - DIAG_FLOW : Log d'entrée pour traçabilité
     logger.info(
         f"[DIAG_FLOW] ENTRY /generate "
+        f"request_id={request_id} "
         f"code_officiel={getattr(request, 'code_officiel', None)} "
         f"niveau={getattr(request, 'niveau', None)} "
         f"chapitre={getattr(request, 'chapitre', None)} "
@@ -1085,7 +1231,510 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         f"difficulte={getattr(request, 'difficulte', None)} "
         f"seed={getattr(request, 'seed', None)}"
     )
-    ensure_request_id()
+
+    # Log structuré pour le début de la requête
+    obs_logger.info(
+        "event=request_started",
+        event="request_started",
+        outcome="in_progress",
+        request_id=request_id,
+        code_officiel=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        chapitre=getattr(request, 'chapitre', None),
+        offer=getattr(request, 'offer', None),
+        difficulty=getattr(request, 'difficulte', None),
+        seed=getattr(request, 'seed', None)
+    )
+
+    # P0 - Construire ui_params (paramètres UI bruts)
+    ui_params = request.ui_params or {}
+    if hasattr(request, 'difficulte') and request.difficulte:
+        ui_params['difficulty_ui'] = request.difficulte
+    if hasattr(request, 'exercise_type') and request.exercise_type:
+        ui_params['exercise_type_ui'] = request.exercise_type
+    if hasattr(request, 'grade') and request.grade:
+        ui_params['grade_ui'] = request.grade
+    if hasattr(request, 'seed') and request.seed:
+        ui_params['seed'] = request.seed
+
+    # P0 - Calculer grade avec priorité : payload.grade -> contexte grade -> extraction code_officiel -> fallback
+    effective_grade = None
+    if hasattr(request, 'grade') and request.grade:
+        effective_grade = request.grade
+    elif request.code_officiel:
+        # Extraire grade depuis code_officiel (format: "6e_N04")
+        parts = request.code_officiel.split('_', 1)
+        if len(parts) == 2 and parts[0] in ['6e', '5e', '4e', '3e']:
+            effective_grade = parts[0]
+    elif hasattr(request, 'niveau') and request.niveau:
+        effective_grade = request.niveau
+    else:
+        effective_grade = "6e"  # Fallback
+
+    # P4.B - Normaliser la difficulté (standard -> moyen)
+    normalized_difficulty = None
+    if hasattr(request, 'difficulte') and request.difficulte:
+        try:
+            normalized_difficulty = normalize_difficulty(request.difficulte)
+            # Mettre à jour la requête avec la difficulté normalisée
+            request.difficulte = normalized_difficulty
+        except ValueError as e:
+            logger.warning(f"Difficulté invalide '{request.difficulte}', utilisation de 'moyen' par défaut: {e}")
+            normalized_difficulty = "moyen"
+            request.difficulte = normalized_difficulty
+
+    set_request_context(
+        chapter_code=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        chapitre=getattr(request, 'chapitre', None),
+        difficulty=normalized_difficulty or getattr(request, 'difficulte', None),
+        offer=getattr(request, 'offer', None),
+        seed=getattr(request, 'seed', None),
+    )
+    obs_logger.info(
+        "event=request_in",
+        event="request_in",
+        outcome="in_progress",
+        chapter_code=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        difficulty=getattr(request, 'difficulte', None),
+        offer=getattr(request, 'offer', None),
+    )
+
+    # P0 Gold - Initialiser ctx avant utilisation dans generator_key block
+    ctx = get_request_context()
+
+    # ============================================================================
+    # P0 - APPEL À LA VRAIE LOGIQUE DE GÉNÉRATION
+    # ============================================================================
+    # La vraie logique est dans generate_exercise_wrapper.
+    # On appelle directement cette fonction avec les paramètres appropriés.
+    # Note: generate_exercise_wrapper va re-parser le body, mais c'est OK pour le moment.
+    # ============================================================================
+
+    import uuid
+
+    # Normaliser le code officiel pour le fallback
+    normalized_code = (request.code_officiel or "UNKNOWN").upper().replace("-", "_")
+
+    try:
+        # Passer les valeurs par défaut correctes pour éviter les bugs de fusion
+        return await generate_exercise_wrapper(
+            request=None,
+            code_officiel=None,
+            niveau=None,
+            chapitre=None,
+            difficulte="facile",  # Valeur par défaut pour éviter None
+            offer="free",         # Valeur par défaut pour éviter None
+            seed=None,
+            fastapi_request=fastapi_request
+        )
+    except HTTPException as e:
+        # P0 - FALLBACK: Si NO_EXERCISE_AVAILABLE, retourner un exercice basique
+        error_code = e.detail.get("error_code") if isinstance(e.detail, dict) else None
+
+        if error_code == "NO_EXERCISE_AVAILABLE":
+            logger.warning(f"[FALLBACK] No exercises found for {normalized_code}, returning basic fallback exercise")
+
+            return {
+                "id_exercice": f"fallback_{normalized_code}_{uuid.uuid4().hex[:8]}",
+                "niveau": effective_grade or "6e",
+                "chapitre": request.chapitre or normalized_code,
+                "enonce_html": f"<p><strong>Exercice - {normalized_code}</strong></p><p>Cet exercice est en cours de création. Veuillez sélectionner un autre chapitre ou réessayer plus tard.</p>",
+                "solution_html": "<p>La correction sera disponible prochainement.</p>",
+                "svg": None,
+                "figure_svg": None,
+                "pdf_token": f"token_{uuid.uuid4().hex[:8]}",
+                "metadata": {
+                    "is_fallback": True,
+                    "code_officiel": request.code_officiel,
+                    "reason": "no_exercises_available",
+                    "pipeline": "FALLBACK_V1"
+                }
+            }
+
+        # Si autre erreur, la propager
+        raise
+
+
+# ============================================================================
+# FONCTION HELPER: LOGIQUE DE GÉNÉRATION
+# ============================================================================
+# Cette fonction contient la vraie logique de génération d'exercices
+# Elle est appelée par generate_exercise après l'initialisation
+# ============================================================================
+
+async def _execute_generation_pipeline(request, request_start: float, request_id: str, ctx: dict):
+    """
+    Exécute le pipeline de génération d'exercices.
+
+    Args:
+        request: ExerciseGenerateRequest avec toutes les données
+        request_start: Timestamp de début pour mesurer la durée
+        request_id: ID unique de la requête pour le traçage
+        ctx: Contexte de la requête (pour logs structurés)
+
+    Returns:
+        ExerciseGenerateResponse ou dict avec l'exercice généré
+    """
+    import uuid
+    from backend.server import db
+
+    # ============================================================================
+    # P0 GOLD - MODE GENERATOR_KEY DIRECT
+    # ============================================================================
+    if request.generator_key:
+        logger.info(
+            f"[GENERATOR_DIRECT] generator_key={request.generator_key}, "
+            f"overrides={list((request.overrides or {}).keys())}, seed={request.seed}"
+        )
+
+        try:
+            from backend.generators.factory import GeneratorFactory
+
+            overrides = dict(request.overrides or {})
+            if request.seed is not None:
+                overrides["seed"] = request.seed
+
+            result = GeneratorFactory.generate(
+                key=request.generator_key,
+                exercise_params={},
+                overrides=overrides,
+                seed=request.seed
+            )
+
+            duration_ms = int((time.time() - request_start) * 1000)
+            gen_meta = result.get("generation_meta", {})
+            variables = result.get("variables", {})
+
+            niveau = (
+                overrides.get("grade") or
+                overrides.get("niveau") or
+                getattr(request, "niveau", None) or
+                "6e"
+            )
+
+            chapitre = (
+                overrides.get("chapitre") or overrides.get("chapter") or
+                getattr(request, "chapitre", None) or
+                gen_meta.get("exercise_type") or
+                request.generator_key
+            )
+
+            figure_svg_enonce = result.get("figure_svg_enonce")
+            enonce_html = variables.get("enonce_html") or variables.get("enonce")
+            if not enonce_html:
+                enonce_parts = []
+                if variables.get("consigne"):
+                    enonce_parts.append(f"<p>{variables['consigne']}</p>")
+                if variables.get("expression") or variables.get("calcul"):
+                    expr = variables.get("expression") or variables.get("calcul")
+                    enonce_parts.append(f"<p class='math-expression'>{expr}</p>")
+                if figure_svg_enonce:
+                    enonce_parts.append(f"<div class='exercise-figure'>{figure_svg_enonce}</div>")
+                enonce_html = f"<div class='exercise-enonce'>{''.join(enonce_parts) or '<p>Résoudre l exercice suivant.</p>'}</div>"
+
+            figure_svg_solution = result.get("figure_svg_solution")
+            solution_html = variables.get("solution_html") or variables.get("solution") or variables.get("correction")
+            if not solution_html:
+                solution_parts = []
+                if variables.get("resultat") or variables.get("reponse"):
+                    rep = variables.get("resultat") or variables.get("reponse")
+                    solution_parts.append(f"<p><strong>Réponse :</strong> {rep}</p>")
+                if variables.get("etapes"):
+                    solution_parts.append(f"<div class='solution-steps'>{variables['etapes']}</div>")
+                if figure_svg_solution:
+                    solution_parts.append(f"<div class='solution-figure'>{figure_svg_solution}</div>")
+                solution_html = f"<div class='exercise-solution'>{''.join(solution_parts) or '<p>Voir correction.</p>'}</div>"
+
+            effective_seed = gen_meta.get("seed") or request.seed or "random"
+            exercise_id = f"gen_{request.generator_key}_{effective_seed}_{uuid.uuid4().hex[:8]}"
+
+            return {
+                "id_exercice": exercise_id,
+                "niveau": niveau,
+                "chapitre": chapitre,
+                "enonce_html": enonce_html,
+                "solution_html": solution_html,
+                "svg": figure_svg_enonce,
+                "figure_svg": figure_svg_enonce,
+                "figure_svg_enonce": figure_svg_enonce,
+                "figure_svg_solution": figure_svg_solution,
+                "pdf_token": exercise_id,
+                "metadata": {
+                    "generator_key": request.generator_key,
+                    "is_dynamic": True,
+                    "is_fallback": False,
+                    "variables": variables,
+                    "duration_ms": duration_ms,
+                },
+                "generation_meta": gen_meta,
+            }
+        except ValueError as ve:
+            logger.error(f"[GENERATOR_DIRECT] ValueError: {ve}")
+            raise HTTPException(status_code=400, detail={
+                "error_code": "INVALID_PARAMS",
+                "error": "validation_failed",
+                "message": str(ve),
+                "generator_key": request.generator_key,
+            })
+        except Exception as e:
+            logger.error(f"[GENERATOR_DIRECT] Exception: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail={
+                "error_code": "GENERATION_FAILED",
+                "error": "generation_failed",
+                "message": str(e),
+                "generator_key": request.generator_key,
+            })
+
+    # ============================================================================
+    # MODE STANDARD: Pipeline normal avec exercices dynamiques/statiques
+    # ============================================================================
+
+    # Normaliser le code_officiel
+    normalized_code = (request.code_officiel or '').upper().replace("-", "_") if request.code_officiel else ""
+
+    # Vérifier si les pipelines fichiers sont désactivés
+    disable_file_pipelines = os.getenv("DISABLE_FILE_PIPELINES", "false").lower() == "true"
+
+    # Handler TESTS_DYN
+    if is_tests_dyn_request(request.code_officiel):
+        if not disable_file_pipelines:
+            nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
+            if nb == 1:
+                dyn_exercise = generate_tests_dyn_exercise(
+                    offer=request.offer,
+                    difficulty=request.difficulte,
+                    seed=request.seed
+                )
+                if dyn_exercise:
+                    return dyn_exercise
+
+    # Handler GM07
+    if is_gm07_request(normalized_code):
+        if not disable_file_pipelines:
+            nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
+            if nb == 1:
+                gm07_exercise = await generate_gm07_exercise(
+                    db=db,
+                    offer=request.offer,
+                    difficulty=request.difficulte,
+                    seed=request.seed
+                )
+                if gm07_exercise:
+                    return gm07_exercise
+
+    # Handler GM08
+    if is_gm08_request(normalized_code):
+        if not disable_file_pipelines:
+            nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
+            if nb == 1:
+                gm08_exercise = await generate_gm08_exercise(
+                    db=db,
+                    offer=request.offer,
+                    difficulty=request.difficulte,
+                    seed=request.seed
+                )
+                if gm08_exercise:
+                    return gm08_exercise
+
+    # ============================================================================
+    # PIPELINE DB: Récupérer exercices depuis MongoDB
+    # ============================================================================
+    from backend.services.curriculum_persistence_service import CurriculumPersistenceService
+    from backend.services.exercise_persistence_service import get_exercise_persistence_service
+
+    curriculum_service_db = CurriculumPersistenceService(db)
+    exercise_service = get_exercise_persistence_service(db)
+
+    # Récupérer le chapitre depuis DB
+    chapter_from_db = None
+    if normalized_code:
+        chapter_from_db = await curriculum_service_db.get_chapter_by_code(normalized_code)
+
+    if not chapter_from_db:
+        # Fallback: essayer de trouver depuis le loader legacy
+        chapter_legacy = get_chapter_by_official_code(request.code_officiel) if request.code_officiel else None
+        if chapter_legacy:
+            logger.info(f"Chapter found in legacy loader: {request.code_officiel}")
+        else:
+            raise HTTPException(status_code=422, detail={
+                "error_code": "CHAPTER_NOT_FOUND",
+                "error": "chapter_not_found",
+                "message": f"Chapitre '{request.code_officiel}' non trouvé",
+                "hint": "Vérifiez le code_officiel ou utilisez /api/v1/curriculum/6e/catalog"
+            })
+
+    # Récupérer les exercices du chapitre depuis DB
+    exercises = await exercise_service.get_exercises(chapter_code=normalized_code)
+
+    if not exercises or len(exercises) == 0:
+        # Générer un exercice de fallback simple
+        logger.warning(f"No exercises found in DB for {normalized_code}, using fallback")
+
+        return {
+            "id_exercice": f"fallback_{normalized_code}_{uuid.uuid4().hex[:8]}",
+            "niveau": getattr(request, "niveau", None) or "6e",
+            "chapitre": request.chapitre or normalized_code,
+            "enonce_html": f"<p>Exercice de mathématiques - {normalized_code}</p>",
+            "solution_html": "<p>Voir la correction avec votre enseignant.</p>",
+            "svg": None,
+            "pdf_token": f"token_{uuid.uuid4().hex[:8]}",
+            "metadata": {
+                "is_fallback": True,
+                "code_officiel": request.code_officiel,
+                "reason": "no_exercises_in_db"
+            }
+        }
+
+    # Sélectionner un exercice aléatoirement
+    import random
+    if request.seed:
+        random.seed(request.seed)
+    selected_exercise = random.choice(exercises)
+
+    # Construire la réponse
+    exercise_id = selected_exercise.get("exercise_id") or f"ex_{uuid.uuid4().hex[:8]}"
+
+    return {
+        "id_exercice": exercise_id,
+        "niveau": selected_exercise.get("niveau") or getattr(request, "niveau", None) or "6e",
+        "chapitre": selected_exercise.get("chapitre") or request.chapitre or normalized_code,
+        "enonce_html": selected_exercise.get("enonce_html") or selected_exercise.get("enonce") or "<p>Énoncé</p>",
+        "solution_html": selected_exercise.get("solution_html") or selected_exercise.get("solution") or "<p>Solution</p>",
+        "svg": selected_exercise.get("svg") or selected_exercise.get("figure_svg"),
+        "figure_svg": selected_exercise.get("figure_svg"),
+        "figure_svg_enonce": selected_exercise.get("figure_svg_enonce"),
+        "figure_svg_solution": selected_exercise.get("figure_svg_solution"),
+        "pdf_token": exercise_id,
+        "metadata": {
+            "is_dynamic": selected_exercise.get("is_dynamic", False),
+            "generator_key": selected_exercise.get("generator_key"),
+            "template_id": selected_exercise.get("template_id"),
+            "code_officiel": request.code_officiel,
+            "seed": request.seed,
+        },
+        "generation_meta": selected_exercise.get("generation_meta", {}),
+    }
+
+
+# Créer un modèle temporaire pour gérer la compatibilité
+class GenerateExerciseRequestWithQueryParams(BaseModel):
+    code_officiel: Optional[str] = Field(None, description="Code officiel du chapitre")
+    niveau: Optional[str] = Field(None, description="Niveau scolaire")
+    chapitre: Optional[str] = Field(None, description="Chapitre du curriculum")
+    type_exercice: str = Field(default="standard", description="Type d'exercice")
+    difficulte: str = Field(default="facile", description="Niveau de difficulté")
+    nb_exercices: int = Field(default=1, ge=1, le=10, description="Nombre d'exercices à générer")
+    offer: Optional[str] = Field(default="free", description="Type d'offre")
+    seed: Optional[int] = Field(None, description="Seed pour la génération aléatoire")
+    grade: Optional[str] = Field(None, description="Niveau scolaire explicite")
+    exercise_type: Optional[str] = Field(None, description="Type d'exercice pour générateurs premium")
+    ui_params: Optional[dict] = Field(None, description="Paramètres UI bruts")
+    generator_key: Optional[str] = Field(None, description="Clé du générateur à utiliser directement")
+    overrides: Optional[dict] = Field(None, description="Paramètres à passer au générateur")
+
+from fastapi import BackgroundTasks
+
+async def generate_exercise_wrapper(request: Request = None,
+                                  code_officiel: str = Query(None, description="Code officiel du chapitre (fallback query param)"),
+                                  niveau: str = Query(None, description="Niveau scolaire (fallback query param)"),
+                                  chapitre: str = Query(None, description="Chapitre du curriculum (fallback query param)"),
+                                  difficulte: str = Query("facile", description="Niveau de difficulté (fallback query param)"),
+                                  offer: str = Query("free", description="Type d'offre (fallback query param)"),
+                                  seed: int = Query(None, description="Seed pour la génération (fallback query param)"),
+                                  fastapi_request: Request = None):
+    """
+    Wrapper pour générer un exercice mathématique avec compatibilité ascendante.
+    Accepte à la fois le body JSON et les query params.
+    """
+    import json
+    from backend.models.exercise_models import ExerciseGenerateRequest
+    from backend.server import db  # P0 - Import db au début pour GM07/GM08
+
+    # Récupérer le body JSON
+    try:
+        body_bytes = await fastapi_request.body()
+        if body_bytes:
+            body = json.loads(body_bytes.decode('utf-8'))
+        else:
+            body = {}
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "INVALID_JSON",
+                "error_code": "INVALID_JSON_BODY",
+                "message": "Le corps de la requête n'est pas un JSON valide"
+            }
+        )
+
+    # Récupérer les query params
+    query_params = dict(fastapi_request.query_params)
+
+    # Fusionner les données : priorité au body, fallback aux query params
+    merged_data = query_params.copy()  # Commencer avec les query params
+    merged_data.update(body)  # Écraser avec le body
+
+    # Si un paramètre est manquant dans le body mais présent dans les query params, l'ajouter
+    if not merged_data.get('code_officiel') and code_officiel:
+        merged_data['code_officiel'] = code_officiel
+    if not merged_data.get('niveau') and niveau:
+        merged_data['niveau'] = niveau
+    if not merged_data.get('chapitre') and chapitre:
+        merged_data['chapitre'] = chapitre
+    if not merged_data.get('difficulte') or merged_data.get('difficulte') == 'facile':
+        if difficulte != 'facile':
+            merged_data['difficulte'] = difficulte
+    if not merged_data.get('offer') or merged_data.get('offer') == 'free':
+        if offer != 'free':
+            merged_data['offer'] = offer
+    if not merged_data.get('seed') and seed is not None:
+        merged_data['seed'] = seed
+
+    # Créer l'objet de requête à partir des données fusionnées
+    try:
+        request = ExerciseGenerateRequest(**merged_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "VALIDATION_ERROR",
+                "error_code": "REQUEST_VALIDATION_FAILED",
+                "message": f"Erreur de validation de la requête: {str(e)}",
+                "details": str(e)
+            }
+        )
+    request_start = time.time()
+
+    # Générer un ID de requête unique pour le traçage
+    request_id = ensure_request_id()
+
+    # P0 - DIAG_FLOW : Log d'entrée pour traçabilité
+    logger.info(
+        f"[DIAG_FLOW] ENTRY /generate "
+        f"request_id={request_id} "
+        f"code_officiel={getattr(request, 'code_officiel', None)} "
+        f"niveau={getattr(request, 'niveau', None)} "
+        f"chapitre={getattr(request, 'chapitre', None)} "
+        f"offer={getattr(request, 'offer', None)} "
+        f"difficulte={getattr(request, 'difficulte', None)} "
+        f"seed={getattr(request, 'seed', None)}"
+    )
+
+    # Log structuré pour le début de la requête
+    obs_logger.info(
+        "event=request_started",
+        event="request_started",
+        outcome="in_progress",
+        request_id=request_id,
+        code_officiel=getattr(request, 'code_officiel', None),
+        niveau=getattr(request, 'niveau', None),
+        chapitre=getattr(request, 'chapitre', None),
+        offer=getattr(request, 'offer', None),
+        difficulty=getattr(request, 'difficulte', None),
+        seed=getattr(request, 'seed', None)
+    )
     
     # P0 - Construire ui_params (paramètres UI bruts)
     ui_params = request.ui_params or {}
@@ -1308,60 +1957,186 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     # TESTS_DYN INTERCEPT: Chapitre de test pour exercices dynamiques
     # ============================================================================
 
+    # Vérifier si les pipelines basés sur fichiers sont désactivés
+    disable_file_pipelines = os.getenv("DISABLE_FILE_PIPELINES", "false").lower() == "true"
+
     if is_tests_dyn_request(request.code_officiel):
-        nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
-        logger.info(f"🎲 TESTS_DYN Request intercepted: offer={request.offer}, difficulty={request.difficulte}, count={nb}")
-        
-        # Si on demande 1 seul exercice
-        if nb == 1:
-            dyn_exercise = generate_tests_dyn_exercise(
+        # Si DISABLE_FILE_PIPELINES est activé, ignorer ce pipeline et continuer vers le pipeline DB
+        if disable_file_pipelines:
+            logger.info(f"⏭️ SKIP TESTS_DYN pipeline (DISABLE_FILE_PIPELINES=true): code={request.code_officiel}")
+            obs_logger.info(
+                "event=tests_dyn_skipped",
+                event="tests_dyn_skipped",
+                outcome="continue_to_db",
+                reason="disable_file_pipelines_enabled",
+                chapter_code=request.code_officiel,
+                **ctx
+            )
+        else:
+            nb = request.nb_exercices if hasattr(request, 'nb_exercices') else 1
+            logger.info(f"🎲 TESTS_DYN Request intercepted: offer={request.offer}, difficulty={request.difficulte}, count={nb}")
+
+            # Si on demande 1 seul exercice
+            if nb == 1:
+                dyn_exercise = generate_tests_dyn_exercise(
+                    offer=request.offer,
+                    difficulty=request.difficulte,
+                    seed=request.seed
+                )
+
+                if not dyn_exercise:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error_code": "NO_EXERCISE_AVAILABLE",
+                            "error": "no_tests_dyn_exercise_found",
+                            "message": f"Aucun exercice disponible pour offer='{request.offer}' et difficulty='{request.difficulte}'. Le fallback vers 'free' a été tenté mais aucun exercice n'a été trouvé.",
+                            "hint": "Vérifiez les filtres (difficulty) ou utilisez /generate/batch/tests_dyn pour les lots"
+                        }
+                    )
+
+                logger.info(f"✅ TESTS_DYN Exercise generated: id={dyn_exercise['id_exercice']}, "
+                           f"generator={dyn_exercise['metadata'].get('generator_key')}")
+
+                return dyn_exercise
+
+            # Si on demande plusieurs exercices via cet endpoint
+            exercises, batch_meta = generate_tests_dyn_batch(
+                offer=request.offer,
+                difficulty=request.difficulte,
+                count=nb,
+                seed=request.seed
+            )
+
+            if not exercises:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "no_tests_dyn_exercise_found",
+                        "message": "Aucun exercice dynamique trouvé",
+                        "hint": "Utilisez /generate/batch/tests_dyn pour les lots"
+                    }
+                )
+
+            logger.info(f"✅ TESTS_DYN Batch via /generate: {len(exercises)} exercises")
+
+            return exercises[0]
+
+    # ============================================================================
+    # GM07/GM08 INTERCEPTS: Chapitres pilotes (legacy files)
+    # ============================================================================
+
+    # Vérifier si c'est un chapitre GM07 ou GM08
+    is_gm07 = is_gm07_request(request.code_officiel)
+    is_gm08 = is_gm08_request(request.code_officiel)
+
+    if is_gm07:
+        # Si DISABLE_FILE_PIPELINES est activé, ignorer ce pipeline et continuer vers le pipeline DB
+        if disable_file_pipelines:
+            logger.info(f"⏭️ SKIP GM07 pipeline (DISABLE_FILE_PIPELINES=true): code={request.code_officiel}")
+            obs_logger.info(
+                "event=gm07_skipped",
+                event="gm07_skipped",
+                outcome="continue_to_db",
+                reason="disable_file_pipelines_enabled",
+                chapter_code=request.code_officiel,
+                **ctx
+            )
+        else:
+            logger.info(f"🎯 GM07 Request intercepted: code={request.code_officiel}, offer={request.offer}, difficulty={request.difficulte}")
+
+            # Générer un exercice GM07
+            gm07_exercise = await generate_gm07_exercise(
+                db=db,
                 offer=request.offer,
                 difficulty=request.difficulte,
                 seed=request.seed
             )
-            
-            if not dyn_exercise:
+
+            if not gm07_exercise:
                 raise HTTPException(
                     status_code=422,
                     detail={
-                        "error_code": "NO_EXERCISE_AVAILABLE",
-                        "error": "no_tests_dyn_exercise_found",
-                        "message": f"Aucun exercice disponible pour offer='{request.offer}' et difficulty='{request.difficulte}'. Le fallback vers 'free' a été tenté mais aucun exercice n'a été trouvé.",
-                        "hint": "Vérifiez les filtres (difficulty) ou utilisez /generate/batch/tests_dyn pour les lots"
+                        "error_code": "NO_GM07_EXERCISE_AVAILABLE",
+                        "error": "no_gm07_exercise_found",
+                        "message": f"Aucun exercice GM07 disponible pour les critères demandés.",
+                        "hint": "Vérifiez les filtres (difficulty, offer) ou contactez l'administrateur."
                     }
                 )
-            
-            logger.info(f"✅ TESTS_DYN Exercise generated: id={dyn_exercise['id_exercice']}, "
-                       f"generator={dyn_exercise['metadata'].get('generator_key')}")
-            
-            return dyn_exercise
-        
-        # Si on demande plusieurs exercices via cet endpoint
-        exercises, batch_meta = generate_tests_dyn_batch(
-            offer=request.offer,
-            difficulty=request.difficulte,
-            count=nb,
-            seed=request.seed
-        )
-        
-        if not exercises:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "no_tests_dyn_exercise_found",
-                    "message": "Aucun exercice dynamique trouvé",
-                    "hint": "Utilisez /generate/batch/tests_dyn pour les lots"
-                }
+
+            logger.info(f"✅ GM07 Exercise generated: id={gm07_exercise['id_exercice']}")
+            return gm07_exercise
+
+    if is_gm08:
+        # Si DISABLE_FILE_PIPELINES est activé, ignorer ce pipeline et continuer vers le pipeline DB
+        if disable_file_pipelines:
+            logger.info(f"⏭️ SKIP GM08 pipeline (DISABLE_FILE_PIPELINES=true): code={request.code_officiel}")
+            obs_logger.info(
+                "event=gm08_skipped",
+                event="gm08_skipped",
+                outcome="continue_to_db",
+                reason="disable_file_pipelines_enabled",
+                chapter_code=request.code_officiel,
+                **ctx
             )
-        
-        logger.info(f"✅ TESTS_DYN Batch via /generate: {len(exercises)} exercises")
-        
-        return exercises[0]
+        else:
+            logger.info(f"🎯 GM08 Request intercepted: code={request.code_officiel}, offer={request.offer}, difficulty={request.difficulte}")
+
+            # Générer un exercice GM08
+            gm08_exercise = await generate_gm08_exercise(
+                db=db,
+                offer=request.offer,
+                difficulty=request.difficulte,
+                seed=request.seed
+            )
+
+            if not gm08_exercise:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_code": "NO_GM08_EXERCISE_AVAILABLE",
+                        "error": "no_gm08_exercise_found",
+                        "message": f"Aucun exercice GM08 disponible pour les critères demandés.",
+                        "hint": "Vérifiez les filtres (difficulty, offer) ou contactez l'administrateur."
+                    }
+                )
+
+            logger.info(f"✅ GM08 Exercise generated: id={gm08_exercise['id_exercice']}")
+            return gm08_exercise
     
     # ============================================================================
     # 0. RÉSOLUTION DU MODE (code_officiel vs legacy) - Pour autres chapitres
     # ============================================================================
-    
+
+    # P2.1: Résolution du pipeline et logging structuré
+    if request.code_officiel:
+        pipeline_used, pipeline_reason = await resolve_pipeline(
+            code_officiel=request.code_officiel,
+            offer=request.offer,
+            difficulty=request.difficulte
+        )
+
+        logger.info(
+            f"[PIPELINE_DIAG] Pipeline résolu: "
+            f"code={request.code_officiel} "
+            f"pipeline={pipeline_used} "
+            f"reason='{pipeline_reason}' "
+            f"request_id={request_id}"
+        )
+
+        # Log structuré pour le pipeline utilisé
+        obs_logger.info(
+            "event=pipeline_resolved",
+            event="pipeline_resolved",
+            outcome="success",
+            request_id=request_id,
+            code_officiel=request.code_officiel,
+            pipeline_used=pipeline_used,
+            pipeline_reason=pipeline_reason,
+            offer=getattr(request, 'offer', None),
+            difficulty=getattr(request, 'difficulte', None)
+        )
+
     curriculum_chapter: Optional[CurriculumChapter] = None
     exercise_types_override: Optional[List[MathExerciseType]] = None
     filtered_premium_generators: List[str] = []  # P2.1 - Track des générateurs premium exclus
@@ -1372,7 +2147,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     
     if request.code_officiel:
         # Mode code_officiel : chercher dans MongoDB
-        from server import db
+        from backend.server import db
         curriculum_service_db = CurriculumPersistenceService(db)
         await curriculum_service_db.initialize()
         
@@ -1427,7 +2202,13 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             )
         
         # Vérifier si c'est un chapitre de test (interdit en mode public)
-        from curriculum.loader import is_test_chapter, should_show_test_chapters
+        # Robust import: fallback si module non disponible
+        try:
+            from backend.curriculum.loader import is_test_chapter, should_show_test_chapters
+        except ImportError:
+            def is_test_chapter(_: str) -> bool: return False
+            def should_show_test_chapters() -> bool: return False
+
         if is_test_chapter(request.code_officiel) and not should_show_test_chapters():
             context = build_diagnostic_context(
                 request=request,
@@ -1490,7 +2271,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
         if pipeline_mode:
             logger.info(f"[PIPELINE] Chapitre {request.code_officiel} → pipeline={pipeline_mode} (explicite)")
             
-            from server import db
+            from backend.server import db
             from backend.services.curriculum_sync_service import get_curriculum_sync_service
             from backend.services.exercise_persistence_service import get_exercise_persistence_service
             from backend.services.tests_dyn_handler import format_dynamic_exercise
@@ -2174,7 +2955,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
                 f"Utilisation du pipeline AUTO (DYNAMIC → STATIC fallback)."
             )
             
-            from server import db
+            from backend.server import db
             from backend.services.curriculum_sync_service import get_curriculum_sync_service
             from backend.services.exercise_persistence_service import get_exercise_persistence_service
             
@@ -2615,7 +3396,7 @@ async def generate_exercise(request: ExerciseGenerateRequest):
             
             # Tenter de récupérer un template DB
             try:
-                from server import db
+                from backend.server import db
                 template_service = get_template_service(db)
                 
                 db_template = await template_service.get_best_template(
@@ -3005,6 +3786,486 @@ async def generate_exercise(request: ExerciseGenerateRequest):
     return response
 
 
+# Diagnostic endpoint pour comprendre "qui sert quoi"
+@router.get(
+    "/api/admin/diagnostics/chapter/{code_officiel}",
+    summary="Diagnostic du pipeline pour un chapitre",
+    tags=["Admin", "Diagnostics"]
+)
+async def get_chapter_diagnostics(code_officiel: str):
+    """
+    Diagnostic du pipeline utilisé pour un chapitre spécifique.
+
+    Returns:
+        - code_officiel: Le code du chapitre demandé
+        - pipeline_used: Pipeline actuellement utilisé (GM07, GM08, TESTS_DYN, fallback legacy, etc.)
+        - reason: Raison du choix du pipeline
+        - db_exercises_count: Nombre d'exercices disponibles en DB pour ce chapitre
+        - fallback_used: Indique si un fallback vers le système legacy est utilisé
+    """
+    from backend.server import db
+    from backend.services.curriculum_sync_service import get_curriculum_sync_service
+    from backend.services.exercise_persistence_service import get_exercise_persistence_service
+
+    # Normaliser le code_officiel
+    normalized_code = code_officiel.upper().replace("-", "_")
+
+    # Récupérer le chapitre depuis MongoDB
+    curriculum_service_db = get_curriculum_sync_service(db)
+    chapter_from_db = await curriculum_service_db.get_chapter_by_code(normalized_code)
+
+    # Vérifier si c'est un chapitre GM07/GM08/TESTS_DYN
+    is_gm07 = is_gm07_request(normalized_code)
+    is_gm08 = is_gm08_request(normalized_code)
+    is_tests_dyn = is_tests_dyn_request(normalized_code)
+
+    # Déterminer le pipeline utilisé
+    pipeline_used = "unknown"
+    reason = "unknown"
+
+    if is_gm07:
+        pipeline_used = "GM07"
+        reason = "Chapitre GM07 détecté (fichier .py)"
+    elif is_gm08:
+        pipeline_used = "GM08"
+        reason = "Chapitre GM08 détecté (fichier .py)"
+    elif is_tests_dyn:
+        pipeline_used = "TESTS_DYN"
+        reason = "Chapitre TESTS_DYN détecté (fichier .py)"
+    elif chapter_from_db:
+        pipeline_used = chapter_from_db.get("pipeline", "SPEC")
+        reason = "Chapitre trouvé en DB avec pipeline configuré"
+    else:
+        # Vérifier dans le fichier JSON legacy
+        from curriculum.loader import get_chapter_by_official_code
+        chapter_legacy = get_chapter_by_official_code(code_officiel)
+        if chapter_legacy:
+            pipeline_used = "LEGACY_JSON"
+            reason = "Chapitre trouvé dans fichier JSON legacy"
+        else:
+            pipeline_used = "NOT_FOUND"
+            reason = "Chapitre non trouvé dans DB ni dans JSON"
+
+    # Compter les exercices en DB pour ce chapitre
+    exercise_service = get_exercise_persistence_service(db)
+    db_exercises_count = 0
+    try:
+        exercises = await exercise_service.get_exercises(chapter_code=normalized_code)
+        db_exercises_count = len(exercises)
+    except Exception:
+        # Si erreur, on continue avec 0
+        pass
+
+    # Vérifier si fallback est utilisé
+    fallback_used = chapter_from_db is None and get_chapter_by_official_code(code_officiel) is not None
+
+    return {
+        "code_officiel": code_officiel,
+        "normalized_code": normalized_code,
+        "pipeline_used": pipeline_used,
+        "reason": reason,
+        "db_exercises_count": db_exercises_count,
+        "fallback_used": fallback_used,
+        "chapter_found_in_db": chapter_from_db is not None,
+        "chapter_found_in_legacy": get_chapter_by_official_code(code_officiel) is not None,
+        "is_gm07": is_gm07,
+        "is_gm08": is_gm08,
+        "is_tests_dyn": is_tests_dyn,
+        "enabled_generators_count": len(chapter_from_db.get("enabled_generators", [])) if chapter_from_db else 0,
+        "has_pipeline_config": chapter_from_db.get("pipeline") is not None if chapter_from_db else False
+    }
+
+
+# ============================================================================
+# P4.1 - ENDPOINTS REROLL DATA VS NEW EXERCISE
+# ============================================================================
+
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+
+
+class RerollDataRequest(BaseModel):
+    """Request model pour reroll-data (changer les valeurs, même template)"""
+    generator_key: str = Field(..., description="Clé du générateur à utiliser")
+    template_id: str = Field(..., description="ID du template à conserver")
+    seed: Optional[int] = Field(None, description="Seed pour la génération (optionnel, généré si absent)")
+    params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Paramètres additionnels")
+    code_officiel: Optional[str] = Field(None, description="Code officiel du chapitre")
+    difficulty: Optional[str] = Field(None, description="Difficulté (facile, moyen, difficile)")
+
+
+class NewExerciseRequest(BaseModel):
+    """Request model pour new-exercise (nouvel énoncé, peut changer template)"""
+    generator_key: str = Field(..., description="Clé du générateur à utiliser")
+    seed: Optional[int] = Field(None, description="Seed pour la génération (optionnel, généré si absent)")
+    params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Paramètres additionnels")
+    code_officiel: Optional[str] = Field(None, description="Code officiel du chapitre")
+    difficulty: Optional[str] = Field(None, description="Difficulté (facile, moyen, difficile)")
+
+
+@router.post("/reroll-data", response_model=ExerciseGenerateResponse, tags=["Exercises v1"])
+async def reroll_exercise_data(request: RerollDataRequest):
+    """
+    P4.1: Regénérer les données d'un exercice avec le même template_id mais seed/variables changés.
+
+    Utilise le même générateur et le même template, mais régénère les valeurs numériques.
+    """
+    import uuid
+    request_start = time.time()
+    request_id = ensure_request_id()
+
+    logger.info(
+        f"[REROLL_DATA] ENTRY /reroll-data "
+        f"request_id={request_id} "
+        f"generator_key={request.generator_key} "
+        f"template_id={request.template_id} "
+        f"seed={request.seed}"
+    )
+
+    obs_logger.info(
+        "event=reroll_data_started",
+        event="reroll_data_started",
+        outcome="in_progress",
+        request_id=request_id,
+        generator_key=request.generator_key,
+        template_id=request.template_id,
+        seed=request.seed
+    )
+
+    try:
+        # Récupérer le générateur
+        from backend.generators.factory import GeneratorFactory
+
+        # Filtrer les paramètres pour ne garder que ceux valides dans le schéma
+        gen_class = GeneratorFactory.get(request.generator_key)
+        if not gen_class:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "GENERATOR_NOT_FOUND",
+                    "error": "generator_not_found",
+                    "message": f"Générateur '{request.generator_key}' non trouvé"
+                }
+            )
+        
+        schema = gen_class.get_schema()
+        schema_keys = {param.name for param in schema}
+        # Autoriser aussi les paramètres globaux (seed, difficulty, etc.)
+        global_params = GeneratorFactory._GLOBAL_PARAMS
+        
+        # Filtrer les params pour ne garder que ceux valides
+        valid_overrides = {}
+        if request.params:
+            for key, value in request.params.items():
+                if key in schema_keys or key in global_params:
+                    valid_overrides[key] = value
+        
+        # Ajouter difficulty et seed si présents
+        if request.difficulty:
+            valid_overrides["difficulty"] = request.difficulty
+        if request.seed is not None:
+            valid_overrides["seed"] = request.seed
+
+        # Forcer l'utilisation du même template_id
+
+
+        result = GeneratorFactory.generate(
+            key=request.generator_key,
+            exercise_params={},
+            overrides=valid_overrides,
+            seed=request.seed
+        )
+
+        # Construire la réponse similaire à generate_exercise
+        gen_meta = result.get("generation_meta", {})
+        variables = result.get("variables", {})
+
+        # Déterminer niveau et chapitre
+        niveau = (
+            overrides.get("grade") or
+            overrides.get("niveau") or
+            request.code_officiel.split('_')[0] if request.code_officiel else "6e"
+        )
+
+        chapitre = (
+            overrides.get("chapitre") or overrides.get("chapter") or
+            gen_meta.get("exercise_type") or
+            request.generator_key
+        )
+
+        # Construire énoncé et solution
+        figure_svg_enonce = result.get("figure_svg_enonce")
+        enonce_html = variables.get("enonce_html") or variables.get("enonce") or ""
+        if not enonce_html:
+            enonce_parts = []
+            if variables.get("consigne"):
+                enonce_parts.append(f"<p>{variables['consigne']}</p>")
+            if variables.get("expression") or variables.get("calcul"):
+                expr = variables.get("expression") or variables.get("calcul")
+                enonce_parts.append(f"<p class='math-expression'>{expr}</p>")
+            if figure_svg_enonce:
+                enonce_parts.append(f"<div class='exercise-figure'>{figure_svg_enonce}</div>")
+            enonce_html = f"<div class='exercise-enonce'>{''.join(enonce_parts) or '<p>Résoudre l exercice suivant.</p>'}</div>"
+
+        figure_svg_solution = result.get("figure_svg_solution")
+        solution_html = variables.get("solution_html") or variables.get("solution") or variables.get("correction") or ""
+        if not solution_html:
+            solution_parts = []
+            if variables.get("resultat") or variables.get("reponse"):
+                rep = variables.get("resultat") or variables.get("reponse")
+                solution_parts.append(f"<p><strong>Réponse :</strong> {rep}</p>")
+            if variables.get("etapes"):
+                solution_parts.append(f"<div class='solution-steps'>{variables['etapes']}</div>")
+            if figure_svg_solution:
+                solution_parts.append(f"<div class='solution-figure'>{figure_svg_solution}</div>")
+            solution_html = f"<div class='exercise-solution'>{''.join(solution_parts) or '<p>Voir correction.</p>'}</div>"
+
+        # Générer ID et token
+        effective_seed = gen_meta.get("seed") or request.seed or "random"
+        exercise_id = f"reroll_{request.generator_key}_{effective_seed}_{uuid.uuid4().hex[:8]}"
+
+        # Construire metadata avec les éléments stables
+        metadata = {
+            "generator_key": request.generator_key,
+            "template_id": request.template_id,  # Stable pour reroll-data
+            "seed": effective_seed,
+            "is_dynamic": True,
+            "is_reroll": True,
+            "original_template_preserved": True,
+            "variables": variables,
+            "duration_ms": int((time.time() - request_start) * 1000),
+        }
+
+        obs_logger.info(
+            "event=reroll_data_success",
+            event="reroll_data_success",
+            outcome="success",
+            request_id=request_id,
+            generator_key=request.generator_key,
+            template_id=request.template_id,
+            duration_ms=metadata["duration_ms"]
+        )
+
+        logger.info(f"✅ Reroll data successful: {request.generator_key} (template_id={request.template_id})")
+
+        return ExerciseGenerateResponse(
+            id_exercice=exercise_id,
+            niveau=niveau,
+            chapitre=chapitre,
+            enonce_html=enonce_html,
+            solution_html=solution_html,
+            svg=figure_svg_enonce,
+            figure_svg=figure_svg_enonce,
+            figure_svg_enonce=figure_svg_enonce,
+            figure_svg_solution=figure_svg_solution,
+            pdf_token=exercise_id,
+            metadata=metadata,
+            generation_meta=gen_meta
+        )
+
+    except Exception as e:
+        logger.error(f"[REROLL_DATA] Error: {e}", exc_info=True)
+        obs_logger.error(
+            "event=reroll_data_error",
+            event="reroll_data_error",
+            outcome="error",
+            request_id=request_id,
+            generator_key=request.generator_key,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "REROLL_FAILED",
+                "error": "reroll_failed",
+                "message": f"Erreur lors de la régénération des données: {str(e)}"
+            }
+        )
+
+
+@router.post("/new-exercise", response_model=ExerciseGenerateResponse, tags=["Exercises v1"])
+async def generate_new_exercise(request: NewExerciseRequest):
+    """
+    P4.1: Générer un nouvel exercice qui peut changer de template_id.
+
+    Utilise le même générateur mais peut sélectionner un template différent.
+    """
+    import uuid
+    request_start = time.time()
+    request_id = ensure_request_id()
+
+    logger.info(
+        f"[NEW_EXERCISE] ENTRY /new-exercise "
+        f"request_id={request_id} "
+        f"generator_key={request.generator_key} "
+        f"seed={request.seed}"
+    )
+
+    obs_logger.info(
+        "event=new_exercise_started",
+        event="new_exercise_started",
+        outcome="in_progress",
+        request_id=request_id,
+        generator_key=request.generator_key,
+        seed=request.seed
+    )
+
+    try:
+        # Récupérer le générateur
+        from backend.generators.factory import GeneratorFactory
+
+        # Filtrer les paramètres pour ne garder que ceux valides dans le schéma
+        gen_class = GeneratorFactory.get(request.generator_key)
+        if not gen_class:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "GENERATOR_NOT_FOUND",
+                    "error": "generator_not_found",
+                    "message": f"Générateur '{request.generator_key}' non trouvé"
+                }
+            )
+        
+        schema = gen_class.get_schema()
+        schema_keys = {param.name for param in schema}
+        # Autoriser aussi les paramètres globaux (seed, difficulty, etc.)
+        global_params = GeneratorFactory._GLOBAL_PARAMS
+        
+        # Filtrer les params pour ne garder que ceux valides
+        valid_overrides = {}
+        if request.params:
+            for key, value in request.params.items():
+                if key in schema_keys or key in global_params:
+                    valid_overrides[key] = value
+        
+        # Ajouter difficulty et seed si présents
+        if request.difficulty:
+            valid_overrides["difficulty"] = request.difficulty
+        if request.seed is not None:
+            valid_overrides["seed"] = request.seed
+
+        result = GeneratorFactory.generate(
+            key=request.generator_key,
+            exercise_params={},
+            overrides=valid_overrides,
+            seed=request.seed
+        )
+
+        # Construire la réponse similaire à generate_exercise
+        gen_meta = result.get("generation_meta", {})
+        variables = result.get("variables", {})
+
+        # Déterminer niveau et chapitre
+        niveau = (
+            overrides.get("grade") or
+            overrides.get("niveau") or
+            request.code_officiel.split('_')[0] if request.code_officiel else "6e"
+        )
+
+        chapitre = (
+            overrides.get("chapitre") or overrides.get("chapter") or
+            gen_meta.get("exercise_type") or
+            request.generator_key
+        )
+
+        # Construire énoncé et solution
+        figure_svg_enonce = result.get("figure_svg_enonce")
+        enonce_html = variables.get("enonce_html") or variables.get("enonce") or ""
+        if not enonce_html:
+            enonce_parts = []
+            if variables.get("consigne"):
+                enonce_parts.append(f"<p>{variables['consigne']}</p>")
+            if variables.get("expression") or variables.get("calcul"):
+                expr = variables.get("expression") or variables.get("calcul")
+                enonce_parts.append(f"<p class='math-expression'>{expr}</p>")
+            if figure_svg_enonce:
+                enonce_parts.append(f"<div class='exercise-figure'>{figure_svg_enonce}</div>")
+            enonce_html = f"<div class='exercise-enonce'>{''.join(enonce_parts) or '<p>Résoudre l exercice suivant.</p>'}</div>"
+
+        figure_svg_solution = result.get("figure_svg_solution")
+        solution_html = variables.get("solution_html") or variables.get("solution") or variables.get("correction") or ""
+        if not solution_html:
+            solution_parts = []
+            if variables.get("resultat") or variables.get("reponse"):
+                rep = variables.get("resultat") or variables.get("reponse")
+                solution_parts.append(f"<p><strong>Réponse :</strong> {rep}</p>")
+            if variables.get("etapes"):
+                solution_parts.append(f"<div class='solution-steps'>{variables['etapes']}</div>")
+            if figure_svg_solution:
+                solution_parts.append(f"<div class='solution-figure'>{figure_svg_solution}</div>")
+            solution_html = f"<div class='exercise-solution'>{''.join(solution_parts) or '<p>Voir correction.</p>'}</div>"
+
+        # Générer ID et token
+        effective_seed = gen_meta.get("seed") or request.seed or "random"
+        exercise_id = f"new_{request.generator_key}_{effective_seed}_{uuid.uuid4().hex[:8]}"
+
+        # Construire metadata avec les éléments stables
+        metadata = {
+            "generator_key": request.generator_key,
+            "template_id": gen_meta.get("template_id"),  # Peut changer pour new-exercise
+            "seed": effective_seed,
+            "is_dynamic": True,
+            "is_new_exercise": True,
+            "template_change_allowed": True,
+            "variables": variables,
+            "duration_ms": int((time.time() - request_start) * 1000),
+        }
+
+        obs_logger.info(
+            "event=new_exercise_success",
+            event="new_exercise_success",
+            outcome="success",
+            request_id=request_id,
+            generator_key=request.generator_key,
+            template_id=metadata.get("template_id"),
+            duration_ms=metadata["duration_ms"]
+        )
+
+        logger.info(f"✅ New exercise successful: {request.generator_key} (new exercise generated)")
+
+        return ExerciseGenerateResponse(
+            id_exercice=exercise_id,
+            niveau=niveau,
+            chapitre=chapitre,
+            enonce_html=enonce_html,
+            solution_html=solution_html,
+            svg=figure_svg_enonce,
+            figure_svg=figure_svg_enonce,
+            figure_svg_enonce=figure_svg_enonce,
+            figure_svg_solution=figure_svg_solution,
+            pdf_token=exercise_id,
+            metadata=metadata,
+            generation_meta=gen_meta
+        )
+
+    except Exception as e:
+        logger.error(f"[NEW_EXERCISE] Error: {e}", exc_info=True)
+        obs_logger.error(
+            "event=new_exercise_error",
+            event="new_exercise_error",
+            outcome="error",
+            request_id=request_id,
+            generator_key=request.generator_key,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "NEW_EXERCISE_FAILED",
+                "error": "new_exercise_failed",
+                "message": f"Erreur lors de la génération du nouvel exercice: {str(e)}"
+            }
+        )
+
+
+# ============================================================================
+# NOTE: Les routes /reroll-data et /new-exercise sont définies plus haut
+# (lignes ~3798 et ~3954). Le code ci-dessous était dupliqué et a été supprimé.
+# ============================================================================
+
+
 # Route de santé pour vérifier que le service fonctionne
 @router.get(
     "/api/v1/exercises/health",
@@ -3013,11 +4274,12 @@ async def generate_exercise(request: ExerciseGenerateRequest):
 )
 async def health_check():
     """Vérifie que le service exercises est opérationnel"""
-    
+
     curriculum_info = curriculum_service.get_curriculum_info()
-    
+
     return {
         "status": "healthy",
         "service": "exercises_v1",
         "curriculum": curriculum_info
     }
+

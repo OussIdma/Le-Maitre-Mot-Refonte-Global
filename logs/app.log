@@ -1,0 +1,711 @@
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T22:31:58Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:03:03Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:05:56Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:09:12Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:15:26Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:16:12Z_3f8063d
+[INFO][lemaitremot][] [DIAG_FLOW] ENTRY /generate request_id=20015afa code_officiel=6e_n01 niveau=6e chapitre=None offer=free difficulte=moyen seed=None
+[INFO][lemaitremot][] event=request_started
+[INFO][lemaitremot][] event=request_in
+[ERROR][lemaitremot][] [REQUEST_ERROR] method=POST path=/api/v1/exercises/generate duration=0.005s request_id=7d7c07e5-ef8b-4b90-9a9e-024c0f587bca error=No module named 'server'
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    raise app_exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        dependant=dependant, values=values, is_coroutine=is_coroutine
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1503, in generate_exercise
+    from server import db
+ModuleNotFoundError: No module named 'server'
+[ERROR][lemaitremot][] ❌ Unhandled exception: ModuleNotFoundError: No module named 'server'
+  + Exception Group Traceback (most recent call last):
+  |   File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+  |     yield
+  |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 190, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/usr/local/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 772, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 189, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/usr/local/Cellar/python@3.13/3.13.7/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 93, in collapse_excgroups
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    |     raise app_exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    |     response = await func(request)
+    |                ^^^^^^^^^^^^^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         dependant=dependant, values=values, is_coroutine=is_coroutine
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1503, in generate_exercise
+    |     from server import db
+    | ModuleNotFoundError: No module named 'server'
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 189, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/Cellar/python@3.13/3.13.7/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    raise app_exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        dependant=dependant, values=values, is_coroutine=is_coroutine
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1503, in generate_exercise
+    from server import db
+ModuleNotFoundError: No module named 'server'
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:20:42Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:21:40Z_3f8063d
+[INFO][lemaitremot][] [DIAG_FLOW] ENTRY /generate request_id=bf909aad code_officiel=6e_n01 niveau=6e chapitre=None offer=free difficulte=moyen seed=None
+[INFO][lemaitremot][] event=request_started
+[INFO][lemaitremot][] event=request_in
+[INFO][lemaitremot][] [DIAG_6E_G07] Normalisation code_officiel: requested='6e_n01' → normalized='6E_N01'
+[INFO][lemaitremot][] [CHAPTER_LOAD] source=db code=6e_n01 enabled_generators=[]
+[ERROR][lemaitremot][] [REQUEST_ERROR] method=POST path=/api/v1/exercises/generate duration=0.279s request_id=31362a22-d85e-4853-880b-2bc3a4bb47ab error=No module named 'curriculum'
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 159, in call_next
+    message = await recv_stream.receive()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/anyio/streams/memory.py", line 126, in receive
+    raise EndOfStream from None
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    raise app_exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        dependant=dependant, values=values, is_coroutine=is_coroutine
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1558, in generate_exercise
+    from curriculum.loader import is_test_chapter, should_show_test_chapters
+ModuleNotFoundError: No module named 'curriculum'
+[ERROR][lemaitremot][] ❌ Unhandled exception: ModuleNotFoundError: No module named 'curriculum'
+  + Exception Group Traceback (most recent call last):
+  |   File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+  |     yield
+  |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 190, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/usr/local/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 772, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 189, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/usr/local/Cellar/python@3.13/3.13.7/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 93, in collapse_excgroups
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    |     raise app_exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    |     raise exc
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    |     response = await func(request)
+    |                ^^^^^^^^^^^^^^^^^^^
+    |   File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         dependant=dependant, values=values, is_coroutine=is_coroutine
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1558, in generate_exercise
+    |     from curriculum.loader import is_test_chapter, should_show_test_chapters
+    | ModuleNotFoundError: No module named 'curriculum'
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 189, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/Cellar/python@3.13/3.13.7/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/_utils.py", line 93, in collapse_excgroups
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/middleware/request_id.py", line 35, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 165, in call_next
+    raise app_exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/base.py", line 151, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 756, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 776, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 297, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 77, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 72, in app
+    response = await func(request)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 278, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        dependant=dependant, values=values, is_coroutine=is_coroutine
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 1558, in generate_exercise
+    from curriculum.loader import is_test_chapter, should_show_test_chapters
+ModuleNotFoundError: No module named 'curriculum'
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:28:19Z_3f8063d
+[INFO][lemaitremot][] [DIAG_FLOW] ENTRY /generate request_id=c1f67744 code_officiel=6e_n01 niveau=6e chapitre=None offer=free difficulte=moyen seed=None
+[INFO][lemaitremot][] event=request_started
+[INFO][lemaitremot][] event=request_in
+[INFO][lemaitremot][] [DIAG_6E_G07] Normalisation code_officiel: requested='6e_n01' → normalized='6E_N01'
+[INFO][lemaitremot][] [CHAPTER_LOAD] source=db code=6e_n01 enabled_generators=[]
+[INFO][lemaitremot][] [P0] Chapitre 6e_n01 n'a pas de pipeline défini. Utilisation du pipeline AUTO (DYNAMIC → STATIC fallback).
+[INFO][lemaitremot][] [PERF_FIX] Single query for chapter=6E_N01, offer=free, difficulty=moyen
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01', 'offer': 'free', 'difficulty': 'moyen'}, difficulty_input='moyen', difficulty_effective='moyen'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [PERF_FIX] Single query result: total=0, dynamic=0, static=0
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generators_raw_type=list
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generators_raw=[]
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generator_keys (normalisés)=[]
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   Aucun enabled_generators dans ctx (ou normalisation vide), utilisant tous les 0 exercices dynamiques disponibles
+[INFO][lemaitremot][] [FALLBACK_DEBUG] Tentative fallback STATIC pour 6E_N01 (aucun exercice dynamique trouvé ou erreur). P0-C PERF: Using cached static_exercises=0
+[INFO][lemaitremot][] [REQUEST] method=POST path=/api/v1/exercises/generate status=422 duration=0.092s request_id=4ffbdba2-64a4-40f3-8736-adff4759766d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-02T23:29:12Z_3f8063d
+[INFO][lemaitremot][] [DIAG_FLOW] ENTRY /generate request_id=386e1965 code_officiel=6e_n01 niveau=6e chapitre=None offer=free difficulte=moyen seed=None
+[INFO][lemaitremot][] event=request_started
+[INFO][lemaitremot][] event=request_in
+[INFO][lemaitremot][] [DIAG_6E_G07] Normalisation code_officiel: requested='6e_n01' → normalized='6E_N01'
+[INFO][lemaitremot][] [CHAPTER_LOAD] source=db code=6e_n01 enabled_generators=[]
+[INFO][lemaitremot][] [P0] Chapitre 6e_n01 n'a pas de pipeline défini. Utilisation du pipeline AUTO (DYNAMIC → STATIC fallback).
+[INFO][lemaitremot][] [PERF_FIX] Single query for chapter=6E_N01, offer=free, difficulty=moyen
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01', 'offer': 'free', 'difficulty': 'moyen'}, difficulty_input='moyen', difficulty_effective='moyen'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [PERF_FIX] Single query result: total=0, dynamic=0, static=0
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generators_raw_type=list
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generators_raw=[]
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   enabled_generator_keys (normalisés)=[]
+[INFO][lemaitremot][] [PIPELINE_DEBUG]   Aucun enabled_generators dans ctx (ou normalisation vide), utilisant tous les 0 exercices dynamiques disponibles
+[INFO][lemaitremot][] [FALLBACK_DEBUG] Tentative fallback STATIC pour 6E_N01 (aucun exercice dynamique trouvé ou erreur). P0-C PERF: Using cached static_exercises=0
+[INFO][lemaitremot][] [REQUEST] method=POST path=/api/v1/exercises/generate status=422 duration=0.026s request_id=d6614d0f-fc6c-4185-8d68-8d78f6ea0d3d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T00:25:19Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T00:32:39Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.030s request_id=67e52eb7-f4f9-4965-8ec5-43d95bf49301
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=1e48d7b1-b194-49fd-b664-e00a47fa8dc2
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=DB_DYNAMIC, db_count=0, file_available=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=4798355f-f347-4c7c-9f15-4c29e303a2c5
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T01:33:23Z_3f8063d
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_N01: 'CurriculumSyncService' object has no attribute 'get_chapter_by_code'
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=500 duration=0.006s request_id=c8c96ea6-3a6e-4660-a3d5-4009b645d983
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_GM07'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_GM07
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.029s request_id=d022c041-a6ac-403d-9035-b4c2db93aa44
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_GM07'}, difficulty_input='None', difficulty_effective='None'
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=b9c775df-f475-4e8d-ae5e-6ea5a3c22f13
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_GM07'}, difficulty_input='None', difficulty_effective='None'
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.002s request_id=b989d18c-fc89-4219-b909-35fa493353dc
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_CODE_INEXISTANT: 'CurriculumSyncService' object has no attribute 'get_chapter_by_code'
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=500 duration=0.002s request_id=8aa81edd-accd-4bab-8144-fc5a61907749
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T01:46:06Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.028s request_id=11a3940c-9aee-4be8-8847-bd1163c4c932
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T01:47:11Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_CODE_INEXISTANT'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_CODE_INEXISTANT
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.027s request_id=7dc48ead-53bc-42e9-8fae-2a7c20a1b2ed
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T01:48:25Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.025s request_id=42cdc326-c09a-4127-8f61-b2383bba734d
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=3d42f19e-bb79-4718-a3a6-617a1343f9c4
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=c3216ded-6e68-4ff0-9a68-bd2bc3fbe90d
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=7363e8b4-e532-4567-b00e-445f5d2c45c6
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=500 duration=0.001s request_id=67323fe2-da60-40a9-b413-38c51d7aebc5
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T02:00:00Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_CODE_INEXISTANT'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_CODE_INEXISTANT
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.027s request_id=27b65c07-4930-47d2-b070-ea498ff8bc12
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T02:01:09Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.024s request_id=da7ce371-ac90-4e9e-b84b-189fa1ca49cc
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=93d96c5f-102f-4803-83a1-42959b56c071
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=FILE_GM07, db_count=0, file_available=True, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=664302ac-6b10-4f0f-b946-f112b9bfa63a
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=abbc95a9-b30b-446d-83c7-b79fea19cfed
+[WARNING][lemaitremot][] Erreur lors de la récupération du chapitre depuis DB: Event loop is closed
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=98a62176-8207-4673-8a0f-892f2a71cc5b
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T03:09:19Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.053s request_id=c5e21feb-db96-4318-a5e8-fda2df4ef6f8
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=e4b0aeb4 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[ERROR][lemaitremot][] event=generate_exception
+Traceback (most recent call last):
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/generators/factory.py", line 336, in generate
+    cls._validate_params_strict(normalized, merged)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/generators/factory.py", line 227, in _validate_params_strict
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: Paramètres non déclarés : template_id. Valides : difficulty, figure_type, force_agrandissement, force_coefficient, seed
+[ERROR][lemaitremot][] [REROLL_DATA] Error: Paramètres non déclarés : template_id. Valides : difficulty, figure_type, force_agrandissement, force_coefficient, seed
+Traceback (most recent call last):
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/routes/exercises_routes.py", line 3374, in reroll_exercise_data
+    result = GeneratorFactory.generate(
+        key=request.generator_key,
+    ...<2 lines>...
+        seed=request.seed
+    )
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/generators/factory.py", line 336, in generate
+    cls._validate_params_strict(normalized, merged)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/oussamaidamhane/Documents/le-maitre-mot/Projet/Le-Maitre-Mot-Refonte-Global-master-SAVE-20251225/backend/generators/factory.py", line 227, in _validate_params_strict
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: Paramètres non déclarés : template_id. Valides : difficulty, figure_type, force_agrandissement, force_coefficient, seed
+[ERROR][lemaitremot][] event=reroll_data_error
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=4c6887b5 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=1c4a4f8e-b823-4de2-806a-4346c0b5886e
+[WARNING][lemaitremot][] Erreur lors de la récupération du chapitre depuis DB: Event loop is closed
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=b66f9421-403e-4b27-ba2f-160fe39d9e4c
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T03:29:22Z_3f8063d
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=c9bde64c generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T03:31:22Z_3f8063d
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=5bcb6211 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T03:32:51Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.025s request_id=fe0f47b4-53dc-42c1-9ae7-488f42201c6c
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=2e5e1a04 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=5a075389 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=1cb41656-653d-45b5-9526-a4492596a039
+[WARNING][lemaitremot][] Erreur lors de la récupération du chapitre depuis DB: Event loop is closed
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=ee0112db-8efc-4ca8-a2d8-5e0784ecc2c6
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T03:55:25Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.026s request_id=5dc700f1-ab43-44e2-a060-a164c2029700
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=75713cf0 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=29ca1f87 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=e54a4aaa-200d-490e-b408-366b0e76eb72
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=8fca8dc1-a78a-4335-9dae-bcec519631c4
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T04:03:14Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.028s request_id=a1f70f93-4d10-4478-8a17-db50e621a028
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=1ca476e2 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=ff131fc8 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=fcf4958f-4855-4936-8d48-c3c8b2415651
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.001s request_id=000027e6-a980-4108-8461-61461495fb51
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T11:28:22Z_3f8063d
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=61dcde29 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=6e510d44 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=9c30215a generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=060e4079 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=bd2317e4 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T13:04:30Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_N01: name 'is_gm07' is not defined
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=500 duration=0.168s request_id=3957daa8-cf62-4b81-8234-9077dc8839be
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=77fcdb8b generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=78283fec generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_GM07: name 'is_gm07' is not defined
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=500 duration=0.003s request_id=94f981f4-f410-4150-bb53-8dfd5ccc9dc0
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[ERROR][lemaitremot][] Erreur lors du diagnostic du chapitre 6e_CODE_INEXISTANT: name 'is_gm07' is not defined
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=500 duration=0.003s request_id=254cfa62-b425-4d1e-a9a9-0194a1d927f0
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T13:18:06Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.041s request_id=c399ea29-dfa4-4333-b88f-c3ff400e9c47
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T13:19:21Z_3f8063d
+[INFO][lemaitremot][] [P0_FIX] MongoDB query: collection='admin_exercises', query={'chapter_code': '6E_N01'}, difficulty_input='None', difficulty_effective='None'
+[INFO][lemaitremot][] [P0_FIX] MongoDB result: 0 exercices trouvés pour 6E_N01
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_N01 → pipeline=DB_DYNAMIC, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_N01 status=200 duration=0.028s request_id=893ec7a0-a338-4778-a080-bae84e6efef4
+[INFO][lemaitremot][] [REROLL_DATA] ENTRY /reroll-data request_id=1c2c2059 generator_key=THALES_V1 template_id=default seed=12345
+[INFO][lemaitremot][] event=reroll_data_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=reroll_data_success
+[INFO][lemaitremot][] ✅ Reroll data successful: THALES_V1 (template_id=default)
+[INFO][lemaitremot][] [NEW_EXERCISE] ENTRY /new-exercise request_id=c44c0972 generator_key=THALES_V1 seed=12345
+[INFO][lemaitremot][] event=new_exercise_started
+[INFO][lemaitremot][] event=generate_in
+[INFO][lemaitremot][] event=generate_complete
+[INFO][lemaitremot][] event=new_exercise_success
+[INFO][lemaitremot][] ✅ New exercise successful: THALES_V1 (new exercise generated)
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_GM07: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_GM07 → pipeline=DB_DYNAMIC, db_count=0, file_available=True, fallback_used=True
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_GM07 status=200 duration=0.001s request_id=34e459c4-08cf-43c6-b9a3-2123d619450a
+[WARNING][lemaitremot][] Erreur lors du comptage des exercices DB pour 6E_CODE_INEXISTANT: Event loop is closed
+[INFO][lemaitremot][] [DIAGNOSTICS] Chapter: 6e_CODE_INEXISTANT → pipeline=NOT_FOUND, db_count=0, file_available=False, fallback_used=False
+[INFO][lemaitremot][] [REQUEST] method=GET path=/api/admin/diagnostics/chapter/6e_CODE_INEXISTANT status=200 duration=0.002s request_id=add63c9b-27b3-49fe-8847-5323a74c4293
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T22:55:00Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T23:02:49Z_3f8063d
+[INFO][lemaitremot][] APP_BUILD_ID=2026-01-03T23:07:54Z_3f8063d

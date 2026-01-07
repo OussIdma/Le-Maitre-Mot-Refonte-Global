@@ -7,7 +7,7 @@ import matplotlib.patches as patches
 import numpy as np
 from io import StringIO
 import logging
-from logger import get_logger, log_execution_time, log_schema_processing
+from backend.logger import get_logger, log_execution_time, log_schema_processing
 
 logger = get_logger()
 

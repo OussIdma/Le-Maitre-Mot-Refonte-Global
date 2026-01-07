@@ -152,7 +152,8 @@ const ExerciseGeneratorPage = () => {
   const [difficulte, setDifficulte] = useState("moyen");
   // P0 - État pour exercise_type (générateurs premium uniquement)
   const [exerciseType, setExerciseType] = useState("");
-  const [detectedGenerator, setDetectedGenerator] = useState(null); // CALCUL_NOMBRES_V1 ou RAISONNEMENT_MULTIPLICATIF_V1
+  const [detectedGenerator, setDetectedGenerator] = useState(null); // generator_key (dynamique depuis ui-schema)
+  const [exerciseTypeOptions, setExerciseTypeOptions] = useState([]); // Options dynamiques depuis ui-schema
   
   // États pour la génération en lot
   const [isGeneratingBatch, setIsGeneratingBatch] = useState(false);
@@ -223,20 +224,115 @@ const ExerciseGeneratorPage = () => {
     }
   };
   
+  // P4.1: Changer les valeurs (mêmes templates, seed/variables changent)
+  const handleRerollData = async (exercise) => {
+    if (!exercise.metadata?.generator_key) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de réinitialiser les valeurs - générateur non disponible",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const requestBody = {
+        generator_key: exercise.metadata.generator_key,
+        template_id: exercise.metadata.template_id || "default",
+        seed: Date.now(), // Nouvelle seed pour nouvelles valeurs
+        params: exercise.metadata.variables || {},
+        code_officiel: exercise.chapitre || selectedItem,
+        difficulty: exercise.metadata.difficulty || difficulte
+      };
+
+      const response = await axios.post(`${API_V1}/reroll-data`, requestBody, {
+        headers: {
+          'X-Session-Token': sessionToken,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+
+      // Mettre à jour l'exercice dans la liste
+      const updatedExercises = [...exercises];
+      updatedExercises[exercises.findIndex(ex => ex.id_exercice === exercise.id_exercice)] = response.data;
+      setExercises(updatedExercises);
+
+      toast({
+        title: "✅ Valeurs changées",
+        description: "Les valeurs numériques de l'exercice ont été regénérées"
+      });
+    } catch (error) {
+      console.error("Erreur lors du changement des valeurs:", error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de changer les valeurs de l'exercice",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // P4.1: Nouvel énoncé (peut changer de template_id)
+  const handleNewExercise = async (exercise) => {
+    if (!exercise.metadata?.generator_key) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de générer un nouvel énoncé - générateur non disponible",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const requestBody = {
+        generator_key: exercise.metadata.generator_key,
+        seed: Date.now(), // Nouvelle seed
+        params: exercise.metadata.variables || {},
+        code_officiel: exercise.chapitre || selectedItem,
+        difficulty: exercise.metadata.difficulty || difficulte
+      };
+
+      const response = await axios.post(`${API_V1}/new-exercise`, requestBody, {
+        headers: {
+          'X-Session-Token': sessionToken,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+
+      // Remplacer l'exercice dans la liste
+      const updatedExercises = [...exercises];
+      updatedExercises[exercises.findIndex(ex => ex.id_exercice === exercise.id_exercice)] = response.data;
+      setExercises(updatedExercises);
+
+      toast({
+        title: "✅ Nouvel énoncé",
+        description: "Un nouvel énoncé a été généré"
+      });
+    } catch (error) {
+      console.error("Erreur lors de la génération d'un nouvel énoncé:", error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de générer un nouvel énoncé",
+        variant: "destructive"
+      });
+    }
+  };
+
   // P3.0: Sauvegarder un exercice
   const handleSaveExercise = async (exercise) => {
-    // P0: Si pas Pro, ouvrir le modal de login avec message
-    if (!isPro || !sessionToken) {
+    // P0: Si pas connecté, ouvrir le modal de login
+    if (!sessionToken) {
       const currentPath = window.location.pathname;
       openLogin(currentPath);
       toast({
-        title: "Sauvegarde réservée aux Pro",
-        description: "Connectez-vous avec un compte Pro pour sauvegarder vos exercices",
+        title: "Connexion requise",
+        description: "Connectez-vous pour sauvegarder vos exercices",
         variant: "default"
       });
       return;
     }
-    
+
     // Vérifier si déjà sauvegardé
     if (savedExercises.has(exercise.id_exercice)) {
       toast({
@@ -246,9 +342,9 @@ const ExerciseGeneratorPage = () => {
       });
       return;
     }
-    
+
     setSavingExerciseId(exercise.id_exercice);
-    
+
     try {
       // Préparer les données pour la sauvegarde
       const saveData = {
@@ -266,7 +362,7 @@ const ExerciseGeneratorPage = () => {
           ...exercise.metadata
         }
       };
-      
+
       const response = await axios.post(
         `${BACKEND_URL}/api/user/exercises`,
         saveData,
@@ -321,12 +417,13 @@ const ExerciseGeneratorPage = () => {
     fetchCatalog();
   }, [selectedGrade]);
 
-  // P0 - Détecter le générateur pour le chapitre sélectionné via le catalogue (sans endpoint debug)
+  // P0 - Détecter le générateur pour le chapitre sélectionné via ui-schema (système générique)
   useEffect(() => {
     // Si pas de chapitre sélectionné ou mode macro, masquer le select
     if (!selectedItem || selectedItem.startsWith("macro:")) {
       setDetectedGenerator(null);
       setExerciseType("");
+      setExerciseTypeOptions([]);
       return;
     }
     
@@ -334,6 +431,7 @@ const ExerciseGeneratorPage = () => {
     if (!catalog || !catalog.domains) {
       setDetectedGenerator(null);
       setExerciseType("");
+      setExerciseTypeOptions([]);
       return;
     }
     
@@ -348,26 +446,69 @@ const ExerciseGeneratorPage = () => {
     if (!foundChapter || !foundChapter.generators || !Array.isArray(foundChapter.generators)) {
       setDetectedGenerator(null);
       setExerciseType("");
+      setExerciseTypeOptions([]);
       return;
     }
     
-    // Vérifier si CALCUL_NOMBRES_V1 ou RAISONNEMENT_MULTIPLICATIF_V1 est présent dans les générateurs
+    // Parcourir les générateurs pour trouver celui qui a un param exercise_type avec options
     const generators = foundChapter.generators;
-    const hasCalculNombres = generators.includes("CALCUL_NOMBRES_V1");
-    const hasRaisonnementMulti = generators.includes("RAISONNEMENT_MULTIPLICATIF_V1");
+    let cancelled = false;
     
-    if (hasCalculNombres) {
-      setDetectedGenerator("CALCUL_NOMBRES_V1");
-      // Défaut: operations_simples (seulement si pas déjà défini)
-      setExerciseType(prev => prev || "operations_simples");
-    } else if (hasRaisonnementMulti) {
-      setDetectedGenerator("RAISONNEMENT_MULTIPLICATIF_V1");
-      // Défaut: proportionnalite_tableau (seulement si pas déjà défini)
-      setExerciseType(prev => prev || "proportionnalite_tableau");
-    } else {
-      setDetectedGenerator(null);
-      setExerciseType("");
-    }
+    const checkGenerators = async () => {
+      for (const generatorKey of generators) {
+        if (cancelled) return; // Éviter les mises à jour si l'effet a été nettoyé
+        
+        try {
+          const response = await axios.get(`${API_V1}/generators/${generatorKey}/ui-schema`);
+          const schema = response.data;
+          
+          // Chercher un param avec name === "exercise_type" et options non vides
+          const exerciseTypeParam = schema.param_schema?.find(
+            param => param.name === "exercise_type" && param.options && param.options.length > 0
+          );
+          
+          if (exerciseTypeParam) {
+            if (cancelled) return; // Vérifier à nouveau avant de mettre à jour l'état
+            
+            // Normaliser les options: supporter ["a","b"] OU [{value,label}]
+            const normalizedOptions = exerciseTypeParam.options.map(opt => {
+              if (typeof opt === 'string') {
+                return { value: opt, label: opt };
+              } else if (typeof opt === 'object' && opt !== null) {
+                return { value: opt.value || opt.label || String(opt), label: opt.label || opt.value || String(opt) };
+              }
+              return { value: String(opt), label: String(opt) };
+            });
+            
+            setDetectedGenerator(generatorKey);
+            setExerciseTypeOptions(normalizedOptions);
+            
+            // Définir le default: schema.defaults.exercise_type si présent, sinon premier option
+            const defaultExerciseType = schema.defaults?.exercise_type || normalizedOptions[0]?.value || "";
+            setExerciseType(prev => prev || defaultExerciseType);
+            
+            return; // Stop la recherche
+          }
+        } catch (error) {
+          console.warn(`Erreur lors de la récupération du ui-schema pour ${generatorKey}:`, error);
+          // Continuer avec le générateur suivant
+        }
+      }
+      
+      // Si aucun générateur n'a exercise_type, masquer le select
+      if (!cancelled) {
+        setDetectedGenerator(null);
+        setExerciseType("");
+        setExerciseTypeOptions([]);
+      }
+    };
+    
+    checkGenerators();
+    
+    // Cleanup function pour annuler les appels si l'effet est nettoyé
+    return () => {
+      cancelled = true;
+    };
   }, [selectedItem, catalog]);
 
   const fetchCatalog = async () => {
@@ -1206,8 +1347,8 @@ const ExerciseGeneratorPage = () => {
                 </Select>
               </div>
 
-              {/* P0 - Type d'exercice (générateurs premium uniquement) */}
-              {detectedGenerator === "CALCUL_NOMBRES_V1" && (
+              {/* P0 - Type d'exercice (générateurs premium uniquement - dynamique depuis ui-schema) */}
+              {detectedGenerator && exerciseTypeOptions.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Type d&apos;exercice
@@ -1217,28 +1358,11 @@ const ExerciseGeneratorPage = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="operations_simples">Opérations simples</SelectItem>
-                      <SelectItem value="priorites_operatoires">Priorités opératoires</SelectItem>
-                      <SelectItem value="decimaux">Décimaux</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {detectedGenerator === "RAISONNEMENT_MULTIPLICATIF_V1" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Type d&apos;exercice
-                  </label>
-                  <Select value={exerciseType} onValueChange={setExerciseType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="proportionnalite_tableau">Proportionnalité (tableau)</SelectItem>
-                      <SelectItem value="pourcentage">Pourcentages</SelectItem>
-                      <SelectItem value="vitesse">Vitesse</SelectItem>
-                      <SelectItem value="echelle">Échelle</SelectItem>
+                      {exerciseTypeOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1473,6 +1597,31 @@ const ExerciseGeneratorPage = () => {
                           </>
                         )}
                       </Button>
+
+                      {/* P4.1: Boutons "Changer les valeurs" et "Nouvel énoncé" */}
+                      {exercise.metadata?.generator_key && (
+                        <div className="flex gap-2 ml-2">
+                          <Button
+                            onClick={() => handleRerollData(exercise)}
+                            variant="outline"
+                            size="sm"
+                            title="Changer les valeurs numériques (mêmes types d'exercices)"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Changer les valeurs
+                          </Button>
+
+                          <Button
+                            onClick={() => handleNewExercise(exercise)}
+                            variant="outline"
+                            size="sm"
+                            title="Générer un nouvel énoncé (peut changer de type)"
+                          >
+                            <FileText className="h-4 w-4 mr-1" />
+                            Nouvel énoncé
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
 

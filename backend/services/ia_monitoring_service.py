@@ -263,4 +263,7 @@ class IAMonitoringService:
 
 
 # Instance globale
-ia_monitoring = IAMonitoringService()
+import tempfile
+import os
+temp_log_file = os.path.join(tempfile.gettempdir(), "ia_monitoring.jsonl")
+ia_monitoring = IAMonitoringService(log_file=temp_log_file)

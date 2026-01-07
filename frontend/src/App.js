@@ -43,6 +43,7 @@ import SheetComposerPage from "./components/SheetComposerPage";
 import ProFeaturePage from "./components/ProFeaturePage";
 import { useAuth } from "./hooks/useAuth";
 import { useExportPdfGate } from "./lib/exportPdfUtils";
+import { useLogin } from "./contexts/LoginContext";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1598,7 +1599,7 @@ function AppWithNav({ children, showNav = true }) {
 function ProFeatureGuard({ children }) {
   const { isPro, isLoading } = useAuth();
   const location = useLocation();
-  
+
   // Si on charge encore, afficher un loader
   if (isLoading) {
     return (
@@ -1607,13 +1608,44 @@ function ProFeatureGuard({ children }) {
       </div>
     );
   }
-  
+
   // Si Free user, afficher la page upsell
   if (!isPro) {
     return <ProFeaturePage />;
   }
-  
+
   // Si Pro, afficher la page normale
+  return <>{children}</>;
+}
+
+// P0: Guard component pour protéger les routes qui nécessitent une authentification
+function AuthRequiredGuard({ children }) {
+  const { sessionToken, isLoading } = useAuth();
+  const { openLogin } = useLogin();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Si on charge encore, afficher un loader
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  // Si non connecté, ouvrir le modal de login et rediriger vers /generer
+  if (!sessionToken) {
+    // Ouvrir le modal de login avec le chemin actuel comme returnTo
+    openLogin(location.pathname);
+    // Rediriger vers /generer après un court délai pour permettre l'ouverture du modal
+    setTimeout(() => {
+      navigate('/generer');
+    }, 100);
+    return null;
+  }
+
+  // Si connecté, afficher la page normale
   return <>{children}</>;
 }
 
@@ -1738,27 +1770,27 @@ function App() {
             <RedirectToNewSheets />
           </AppWithNav>
         } />
-        {/* P3.1: Nouveau système "Mes fiches" - P0: Protégé Pro */}
+        {/* P3.1: Nouveau système "Mes fiches" - P1.2: Accessible aux Free users (authentification requise) */}
         <Route path="/mes-fiches" element={
           <AppWithNav>
-            <ProFeatureGuard>
+            <AuthRequiredGuard>
               <MySheetsPageP31 />
-            </ProFeatureGuard>
+            </AuthRequiredGuard>
           </AppWithNav>
         } />
         <Route path="/mes-fiches/:sheet_uid" element={
           <AppWithNav>
-            <ProFeatureGuard>
+            <AuthRequiredGuard>
               <SheetEditPageP31 />
-            </ProFeatureGuard>
+            </AuthRequiredGuard>
           </AppWithNav>
         } />
-        {/* P3.0: Bibliothèque d'exercices - P0: Protégé Pro */}
+        {/* P3.0: Bibliothèque d'exercices - P1.2: Accessible aux Free users (authentification requise) */}
         <Route path="/mes-exercices" element={
           <AppWithNav>
-            <ProFeatureGuard>
+            <AuthRequiredGuard>
               <MyExercisesPage />
-            </ProFeatureGuard>
+            </AuthRequiredGuard>
           </AppWithNav>
         } />
         <Route path="/pro/settings" element={

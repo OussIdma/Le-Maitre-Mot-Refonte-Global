@@ -252,7 +252,10 @@ class CacheManager:
 
 
 # Instance globale
-cache_manager = CacheManager()
+import tempfile
+import os
+temp_cache_dir = os.path.join(tempfile.gettempdir(), "lemaitremot_cache")
+cache_manager = CacheManager(cache_dir=temp_cache_dir)
 
 
 # Export des symboles publics
